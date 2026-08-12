@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Assigned_User__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Concrete user the work item was assigned to. For group levels this is the framework service user (arch doc 3.2, 5.1).</description>
+    <label>Assigned User</label>
+    <referenceTo>User</referenceTo>
+    <relationshipLabel>Approval Steps Assigned</relationshipLabel>
+    <relationshipName>Approval_Steps_Assigned</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

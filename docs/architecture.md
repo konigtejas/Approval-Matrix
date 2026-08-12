@@ -114,7 +114,7 @@
 | `Evaluated_Values__c` (Long Text, JSON) | Snapshot of every field value the engine compared |
 | `Status__c` | `In_Progress` \| `Approved` \| `Rejected` \| `Recalled` \| `Failed` |
 | `Current_Level__c` / `Total_Levels__c` | Progress |
-| `Submitted_By__c`, timestamps | Audit |
+| `Submitted_By__c` (Lookup User), `Submitted_At__c`, `Completed_At__c` (DateTime) | Audit |
 
 **`Approval_Chain_Step__c`** — one per level (created up front = the *planned* chain)
 
@@ -125,7 +125,7 @@
 | `Planned_Approver_Type__c` / `Planned_Approver__c` | What the rule resolved |
 | `Assigned_User__c` (Lookup User) | Concrete user the work item went to |
 | `Actual_Approver__c` (Lookup User) | Who actioned it (≠ assigned when reassigned or group-actioned) |
-| `Outcome__c`, `Comments__c`, `Actioned_At__c` | Result |
+| `Outcome__c` (`Pending` \| `Approved` \| `Rejected` \| `Recalled`), `Comments__c`, `Actioned_At__c` | Result. `Pending` marks the step open — this is what the §7.5 escalation batch scans for |
 | `Group_Members_Snapshot__c` (JSON) | Queue/group membership at assignment time (SOX) |
 
 ### 3.3 Per-Object Fields (added to each governed object)
@@ -277,7 +277,7 @@ The chain objects **are** the audit artifact:
 * *Who was supposed to approve:* planned steps, written before the first work item exists.
 * *Who actually did:* `Actual_Approver__c`, incl. group actor and reassignments.
 * *What the group looked like:* membership snapshot at assignment time.
-* Chain objects are **never deleted**; terminal chains are locked via a validation rule (edits blocked once `Status__c` is terminal, integration profile excepted).
+* Chain objects are **never deleted**; terminal chains are locked via the `Lock_Terminal_Chain` validation rule (edits blocked once `Status__c` is terminal). The exception is the `AMF_Bypass_Chain_Lock` **custom permission**, granted by `Approval_Matrix_Admin` — a custom permission rather than a named integration profile, so the rule stays portable across orgs. The rule tests `PRIORVALUE(Status__c)` and is skipped on insert, so the engine's own final transition *into* a terminal status succeeds while every later edit is blocked.
 * Config governance: CMDT changes deploy through the normal release pipeline — the framework removes *code* releases for rule changes, not change control. Rule `Version__c` ties every historical chain to the rule text that produced it.
 
 ---

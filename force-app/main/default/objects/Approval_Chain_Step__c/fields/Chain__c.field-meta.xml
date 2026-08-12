@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Chain__c</fullName>
+    <description>Parent chain (arch doc 3.2).</description>
+    <externalId>false</externalId>
+    <label>Chain</label>
+    <referenceTo>Approval_Chain__c</referenceTo>
+    <relationshipLabel>Approval Chain Steps</relationshipLabel>
+    <relationshipName>Approval_Chain_Steps</relationshipName>
+    <relationshipOrder>0</relationshipOrder>
+    <reparentableMasterDetail>false</reparentableMasterDetail>
+    <trackTrending>false</trackTrending>
+    <type>MasterDetail</type>
+    <writeRequiresMasterRead>false</writeRequiresMasterRead>
+</CustomField>

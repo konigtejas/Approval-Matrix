@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <deploymentStatus>Deployed</deploymentStatus>
+    <description>Pilot governed object for the approval matrix framework. sharingModel Private is what makes the object queue-assignable, and is also what arch doc 12 wants.</description>
+    <enableActivities>true</enableActivities>
+    <enableBulkApi>true</enableBulkApi>
+    <enableFeeds>false</enableFeeds>
+    <enableHistory>false</enableHistory>
+    <enableReports>true</enableReports>
+    <enableSearch>true</enableSearch>
+    <enableSharing>true</enableSharing>
+    <enableStreamingApi>true</enableStreamingApi>
+    <label>Purchase Request</label>
+    <nameField>
+        <displayFormat>PR-{00000000}</displayFormat>
+        <label>Purchase Request Number</label>
+        <type>AutoNumber</type>
+    </nameField>
+    <pluralLabel>Purchase Requests</pluralLabel>
+    <sharingModel>Private</sharingModel>
+</CustomObject>
