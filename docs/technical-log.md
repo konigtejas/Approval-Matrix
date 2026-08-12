@@ -495,3 +495,23 @@ value set, and the lock-bypass mechanism.
 | Escalation log field + `Skipped` outcome value | Phase 7 |
 | Enable **record locking/unlocking in Apex** in Setup (manual, admin) | Phase 4 |
 | Manual QA: open the CMDT records in Setup and confirm the sample rules read like a matrix a bank admin would write | user, before commit |
+
+### 1.12 Follow-up: CMDT list views (post-`a69e3c9`)
+
+Added an `All` list view to each of the four CMDT types, surfacing every configured field
+as a column. Without them the Setup "Manage Records" page shows only Label and
+DeveloperName, so reviewing the routing matrix means opening all 14 records one at a time —
+which is exactly the manual QA step this phase ends on. Four `listViews/All.listView-meta.xml`
+files, one per type; the `All` view already exists by default, so these update it rather than
+adding a view the reviewer has to go and select.
+
+Columns per type: object config shows all 7 config fields; rule shows priority, logic
+expression, version and active; condition shows rule, index, field path, operator and value;
+route step shows rule, level, approver type, reference, group completion, SLA and the skip
+flag.
+
+**`sortColumn` / `sortOrder` are not accepted on a CMDT list view.** Both `sortedBy` (wrong
+element name) and `sortColumn` (correct name for standard objects) were rejected with
+`Error parsing file: Element ... invalid at this location in type ListView`. Default sort was
+dropped; column headers remain clickable in the UI. Worth knowing before writing list views
+for the Phase 8 second object.
