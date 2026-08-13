@@ -8,6 +8,8 @@ Format: `YYYY-MM-DD — <what changed> — <why>`
 
 ---
 
+2026-08-13 — Architecture superseded by v2.1 (Option A, Single CMDT, Dual Execution) — the framework becomes an approval-process *selection* engine; chain objects, approver resolution, the Group Work Item pattern and the SLA batch leave the design. Every v1.0 entry below is historical context for `a69e3c9`, not current design. Build paused pending v2.0, which v2.1 defers to for the evaluator, engine flow, decision-log schema, template conventions and entry points.
+
 2026-08-12 — §3.2 chain timestamps named `Submitted_At__c` + `Completed_At__c` — the table said only "timestamps"; two DateTime fields cover chain start and terminal transition without duplicating the per-step `Actioned_At__c`.
 
 2026-08-12 — §3.2 `Approval_Chain_Step__c.Outcome__c` gains a `Pending` value — the doc named no values, but §7.5 scans "open steps", which requires a state meaning not-yet-actioned.

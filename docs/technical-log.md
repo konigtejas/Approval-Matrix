@@ -24,6 +24,46 @@ command output, not "should work"), and any debt carried into later phases.
 
 ---
 
+## ⚠ ARCHITECTURE SUPERSEDED — BUILD PAUSED (2026-08-13)
+
+`docs/architecture.md` in this repo is **v1.0** and is no longer the design. It is
+superseded by **Architecture v2.1 (Option A, Single CMDT, Dual Execution)**, which itself
+supersedes a v2.0 that is **not yet in this repo**.
+
+**Do not start Phase 2, and do not treat the v1.0 doc or the phase rows below as current.**
+
+What changed at the premise level: v1.0 was *"the framework decides who approves and in what
+order, via chained single-step processes."* v2.1 is *"the matrix decides **which** approval
+process runs; the platform executes it."* Consequently the chain objects, chained single-step
+execution, approver resolution, the Group Work Item pattern, the Approval Inbox LWC and the
+SLA escalation batch all leave the design. Routing conditions move from
+`Approval_Rule_Condition__mdt` rows to a compiled **expression grammar**, and configuration
+collapses from four CMDT types to one, `Approval_Matrix_Rule__mdt`. Execution becomes dual —
+Classic Approval Process or Flow Approval Orchestration, chosen per rule.
+
+**Impact on built work:** roughly 12 of the 66 components in `a69e3c9` survive —
+`Purchase_Request__c` and its five business fields, the two permission sets, and the
+`AMF_Bypass_Chain_Lock` custom permission. Both chain objects, three of the four CMDT types,
+the three per-object framework fields, all 14 CMDT records and three of the four list views
+are superseded.
+
+**One v1 finding carries forward and is confirmed by the new doc:** v2.1 §2.1 requires rule
+priority ordering to happen in Apex rather than SOQL — the same constraint recorded in §1.4f
+below. v2.1 §2.1 adds a second CMDT constraint worth pre-recording: `getAll()`/`getInstance()`
+truncate Long Text Area fields to 255 characters, so the rule provider must load via SOQL.
+
+**Blocked on:** v2.0, which v2.1 defers to for the expression evaluator design, the 11-step
+engine flow, the `Approval_Decision_Log__c` schema, template conventions and entry points.
+Writing the revised phases without it would mean inventing the design, which `CLAUDE.md`
+forbids.
+
+**Agreed plan once v2.0 is supplied:** reconcile v2.0 + v2.1 into a new `docs/architecture.md`;
+move the current file to `docs/archive/architecture-v1.md`; rewrite `docs/build-playbook.md`
+phases per v2.1 §6; remove the superseded metadata from the repo and destructively delete it
+from `amf-dev`; rebuild Phase 1 against the v2.1 data model.
+
+---
+
 ## Phase status board
 
 Each phase is built in its own chat session, so this table is the resume point: it, plus the
@@ -32,16 +72,14 @@ session needs. Update the row when a phase completes.
 
 | Phase | Name | Status | Commit |
 |---|---|---|---|
-| 0 | Scaffold & connectivity | Complete | `e3ac256` |
-| 1 | Data model | Complete, awaiting manual QA | `ea308b1` |
-| 2 | Rule engine core (§4) | Not started | |
-| 3 | Approver resolution (§5) | Not started | |
-| 4a | Spike: queue ids + unlock behaviour (§15) | Not started | |
-| 4b | Execution layer (§6, §7) | Not started | |
-| 5 | Entry points (§9) | Not started | |
-| 6 | Group Work Item pattern + Inbox (§5.1) | Not started | |
-| 7 | SLA escalation + config validator (§7.5, §13.6) | Not started | |
-| 8 | Portability proof + hardening (§13) | Not started | |
+Rows below are the **v1.0 plan** and are retained only as a record of what was built.
+The v2.1 phase plan replaces them once v2.0 arrives — see the banner above.
+
+| Phase | Name | Status | Commit |
+|---|---|---|---|
+| 0 | Scaffold & connectivity | Complete — survives v2.1 | `e3ac256` |
+| 1 | Data model (v1.0) | Built, then **superseded** by v2.1 | `ea308b1` |
+| 2–8 | v1.0 plan | **Cancelled** — replaced by the v2.1 phase plan | |
 
 **Starting a new phase:** read `CLAUDE.md`, then this file's most recent entry (especially its
 carried-forward table), then the phase prompt in `docs/build-playbook.md`. Do not rely on
