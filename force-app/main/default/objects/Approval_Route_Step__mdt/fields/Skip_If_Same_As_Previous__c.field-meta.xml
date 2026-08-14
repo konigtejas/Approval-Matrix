@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
-    <fullName>Skip_If_Same_As_Previous__c</fullName>
-    <defaultValue>false</defaultValue>
-    <description>De-duplicates a level whose resolved approver equals the previous level&apos;s, which happens when manager chains converge (arch doc 3.1, 5).</description>
-    <fieldManageability>DeveloperControlled</fieldManageability>
-    <label>Skip If Same As Previous</label>
-    <type>Checkbox</type>
-</CustomField>

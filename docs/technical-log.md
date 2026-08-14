@@ -57,6 +57,22 @@ engine flow, the `Approval_Decision_Log__c` schema, template conventions and ent
 Writing the revised phases without it would mean inventing the design, which `CLAUDE.md`
 forbids.
 
+**Progress since the pivot (2026-08-14):** the superseded v1 metadata has been removed from the
+repo and destructively deleted from `amf-dev` — all four CMDT types, all 14 CMDT records, both
+chain objects (bar one, below) and the three per-object framework fields. `Purchase_Request__c`
+is reduced to its five surviving business fields; the permission sets are reduced to that
+object plus the custom permission, pending rebuild against the v2.1 model.
+
+- **Outstanding manual step:** `Approval_Chain__c` could not be deleted — a soft-deleted
+  `Purchase_Request__c.Active_Chain_del__c` still holds a relationship to it and lives in the
+  recycle bin, where the Metadata API cannot see it. Erase it in **Setup → Object Manager →
+  Purchase Request → Fields & Relationships → Deleted Fields → Erase**, then
+  `sf project delete source -o amf-dev --no-prompt --metadata "CustomObject:Approval_Chain__c"`.
+  Its source is deliberately still in the repo so repo and org stay in step.
+- **Phase 4a spike is done** — see `docs/spike-results.md`. One finding contradicts v2.1 §3.3,
+  and one adds unbudgeted work to §3.4. Q3 (group step semantics) remains open and is the
+  highest-risk gap, because §3.4 routes every queue/group step to Flow on the strength of it.
+
 **Agreed plan once v2.0 is supplied:** reconcile v2.0 + v2.1 into a new `docs/architecture.md`;
 move the current file to `docs/archive/architecture-v1.md`; rewrite `docs/build-playbook.md`
 phases per v2.1 §6; remove the superseded metadata from the repo and destructively delete it
