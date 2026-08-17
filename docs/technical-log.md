@@ -95,7 +95,7 @@ session needs. Update the row when a phase completes.
 
 | Phase | Name | Status | Commit |
 |---|---|---|---|
-| **M0** | Baseline & cleanup | **Gates green**, 2 items open — see M0.7 | `9a54e68` |
+| **M0** | Baseline & cleanup | **Complete** — all gates green, no v1.0 metadata left | `9a54e68`, `6ccc2ed` + M0.8 |
 | M1 | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | Not started | |
 | M2 | Expression evaluator, reduced grammar | Not started | |
 | M3 | Engine, two Classic templates, submit action | Not started | |
@@ -592,7 +592,8 @@ for the Phase 8 second object.
 
 ## Phase M0 — Baseline & cleanup
 
-**Date:** 2026-08-17 · **Commit:** `9a54e68` · **Status:** all gates green; two items open, both listed in M0.7
+**Date:** 2026-08-17 · **Commits:** `9a54e68`, `6ccc2ed`, plus the M0.8 follow-up
+**Status:** complete — all gates green, and the two items M0.7 carried are closed in M0.8
 **Playbook goal:** repo and `amf-dev` hold exactly the surviving Phase 0/1 work plus the guard
 field, and nothing from the v1.0 design. No new design in this phase.
 
@@ -795,8 +796,8 @@ intact. The seed script needed no changes.
 
 | Item | Owed to |
 |---|---|
-| **Erase soft-deleted `Purchase_Request__c.Active_Chain_del__c`, then `sf project delete source --metadata "CustomObject:Approval_Chain__c"`** — the last v1.0 component in repo and org (M0.5a) | user, then M1 |
-| **Delete `Flow:AMF_Spike_Approval` from `amf-dev`** — refused by the agent's permission classifier, not by the org (M0.5d) | user, or M1 with permission |
+| ~~Erase `Active_Chain_del__c`, then delete `CustomObject:Approval_Chain__c`~~ | **closed in M0.8** |
+| ~~Delete `Flow:AMF_Spike_Approval` from `amf-dev`~~ | **closed in M0.8** |
 | Create `AMF_Bypass_Log_Lock` and grant it in `Approval_Matrix_Admin`; the admin set currently grants no custom permission | M1 |
 | Extend both permission sets to `Approval_Matrix_Rule__mdt` and `Approval_Decision_Log__c` with explicit FLS — without it the engine cannot see its own fields (§1.4d) | M1 |
 | Delete `AMF_Ping` / `AMF_PingTest` once real engine classes exist | M2 |
@@ -804,3 +805,62 @@ intact. The seed script needed no changes.
 | `scripts/seed-data.apex` cites v1.0 § numbers and seeds an `amfsvc` service user for the retired Group Work Item pattern. Harmless, but its comments now point at sections that mean something else | opportunistic |
 | Remove the standard **Submit for Approval** button from the `Purchase_Request__c` layout (§6.3); no layout is in the repo yet | M3 |
 | Manual QA: confirm `Matrix_Submission__c` is visible and un-tickable as a `Approval_Matrix_User` holder | user, before M3 |
+
+### M0.8 Follow-up: both carried items closed, same day
+
+**(a) `Approval_Chain__c` is gone.** The soft-deleted `Purchase_Request__c.Active_Chain_del__c`
+was erased in Setup, after which the delete that had failed identically three times succeeded
+first try:
+
+```
+sf project delete source -o amf-dev --no-prompt --metadata "CustomObject:Approval_Chain__c"
+Status: Succeeded    (object + 11 fields removed from org and repo)
+```
+
+That closes the v1.0 revert that `71fd786` started. **No v1.0 metadata remains in either the
+repo or the org** — four CMDT types, 14 CMDT records, both chain objects, three per-object
+fields, the chain validation rule and the chain lock permission are all gone.
+
+**(b) `AMF_Spike_Approval` is gone, and flows need a version-qualified name.** The unqualified
+metadata name reached the server and was refused:
+
+```
+sf project delete source --metadata "Flow:AMF_Spike_Approval"
+  → Error: insufficient access rights on cross-reference id
+```
+
+That message is misleading — it is not a permissions problem. A `Flow` component addresses a
+specific *version*, and the unqualified name resolves to the `FlowDefinition` wrapper, which is
+not deletable this way. Appending the version number works:
+
+```
+sf project delete source --metadata "Flow:AMF_Spike_Approval-1"
+Status: Succeeded
+Warning: Flow, AMF_Spike_Approval-1, returned from org, but not found in the local project
+```
+
+The warning is expected and correct — the spike was deployed from a scratchpad in MDAPI format
+and was never project source. **Worth remembering:** deleting a flow by its bare API name fails
+with an access error that sends you hunting for a permission problem that does not exist. Use
+`<ApiName>-<version>`.
+
+The agent permission classifier that had refused this command in M0.5d allowed it once the user
+asked for it directly, so nothing about the org or the CLI was ever the obstacle.
+
+**Re-verification after both deletions**
+
+```
+=== PHASE M0 GATE ===
+  Matrix_Submission__c: BOOLEAN, accessible=true, updateable=true, defaultedOnCreate=true
+  Approval_Chain__c present in org: false
+=== PHASE M0 GATE PASSED === 16 fields described on Purchase_Request__c
+
+sf org list metadata -m Flow          → only sfdc_default_ReportExport_Protection_Flow (standard)
+sf org list metadata -m CustomObject  → only Purchase_Request__c among AMF objects
+sf project deploy start               → Succeeded, 11/11 components, 0 errors (was 23/23 —
+                                        the 12 Approval_Chain__c components are gone)
+sf apex run test -l RunLocalTests     → Passed, 1/1, 100%, Test Run Id 707aj000019QQW3
+```
+
+The package is now exactly the MVP baseline: `Purchase_Request__c` with five business fields plus
+the guard, two permission sets, and `AMF_Ping`/`AMF_PingTest`. M1 starts from a clean org.
