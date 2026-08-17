@@ -95,7 +95,7 @@ session needs. Update the row when a phase completes.
 
 | Phase | Name | Status | Commit |
 |---|---|---|---|
-| **M0** | Baseline & cleanup | **Gates green**, 2 items open — see M0.7 | see M0 entry |
+| **M0** | Baseline & cleanup | **Gates green**, 2 items open — see M0.7 | `9a54e68` |
 | M1 | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | Not started | |
 | M2 | Expression evaluator, reduced grammar | Not started | |
 | M3 | Engine, two Classic templates, submit action | Not started | |
@@ -592,7 +592,7 @@ for the Phase 8 second object.
 
 ## Phase M0 — Baseline & cleanup
 
-**Date:** 2026-08-17 · **Status:** all gates green; two items open, both listed in M0.7
+**Date:** 2026-08-17 · **Commit:** `9a54e68` · **Status:** all gates green; two items open, both listed in M0.7
 **Playbook goal:** repo and `amf-dev` hold exactly the surviving Phase 0/1 work plus the guard
 field, and nothing from the v1.0 design. No new design in this phase.
 
