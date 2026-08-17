@@ -24,13 +24,16 @@ command output, not "should work"), and any debt carried into later phases.
 
 ---
 
-## ⚠ ARCHITECTURE SUPERSEDED — BUILD PAUSED (2026-08-13)
+## ARCHITECTURE PIVOT — RESOLVED, BUILD RESUMED (2026-08-17)
 
-`docs/architecture.md` in this repo is **v1.0** and is no longer the design. It is
-superseded by **Architecture v2.1 (Option A, Single CMDT, Dual Execution)**, which itself
-supersedes a v2.0 that is **not yet in this repo**.
+`docs/architecture.md` is now **v3.0 — consolidated and self-contained**, superseding v1.0,
+v2.0 and v2.1. The pause recorded below is lifted; the MVP build runs to the **M0–M3** plan
+in `docs/architecture.md` §13.4, expanded into phase prompts and gates in
+`docs/build-playbook.md`. The v1.0 phase rows further down are retained only as a record of
+what was built at `e3ac256` and `a69e3c9`.
 
-**Do not start Phase 2, and do not treat the v1.0 doc or the phase rows below as current.**
+The history of the pivot is kept verbatim below because commit `a69e3c9` contains code built
+to the v1.0 design, and because two of its findings are load-bearing for the MVP.
 
 What changed at the premise level: v1.0 was *"the framework decides who approves and in what
 order, via chained single-step processes."* v2.1 is *"the matrix decides **which** approval
@@ -52,10 +55,10 @@ priority ordering to happen in Apex rather than SOQL — the same constraint rec
 below. v2.1 §2.1 adds a second CMDT constraint worth pre-recording: `getAll()`/`getInstance()`
 truncate Long Text Area fields to 255 characters, so the rule provider must load via SOQL.
 
-**Blocked on:** v2.0, which v2.1 defers to for the expression evaluator design, the 11-step
-engine flow, the `Approval_Decision_Log__c` schema, template conventions and entry points.
-Writing the revised phases without it would mean inventing the design, which `CLAUDE.md`
-forbids.
+**~~Blocked on:~~ CLEARED (2026-08-17).** The block was v2.0, which v2.1 deferred to for the
+expression evaluator design, the 11-step engine flow, the `Approval_Decision_Log__c` schema,
+template conventions and entry points. v3.0 consolidates all of it into one self-contained
+document, so nothing defers to an absent version any more.
 
 **Progress since the pivot (2026-08-14):** the superseded v1 metadata has been removed from the
 repo and destructively deleted from `amf-dev` — all four CMDT types, all 14 CMDT records, both
@@ -73,10 +76,12 @@ object plus the custom permission, pending rebuild against the v2.1 model.
   and one adds unbudgeted work to §3.4. Q3 (group step semantics) remains open and is the
   highest-risk gap, because §3.4 routes every queue/group step to Flow on the strength of it.
 
-**Agreed plan once v2.0 is supplied:** reconcile v2.0 + v2.1 into a new `docs/architecture.md`;
-move the current file to `docs/archive/architecture-v1.md`; rewrite `docs/build-playbook.md`
-phases per v2.1 §6; remove the superseded metadata from the repo and destructively delete it
-from `amf-dev`; rebuild Phase 1 against the v2.1 data model.
+**~~Agreed plan once v2.0 is supplied:~~ DONE (2026-08-17).** v2.0 and v2.1 were reconciled into
+`docs/architecture.md` **v3.0**, which is self-contained and records every abandoned design in
+its Appendix B rather than archiving the old file. `docs/build-playbook.md` was rewritten to the
+M0–M3 plan. The superseded metadata was removed from the repo and destructively deleted from
+`amf-dev` at `71fd786`, bar `Approval_Chain__c` — cleared in M0 below. The data model is rebuilt
+against v3.0 §3 in M1.
 
 ---
 
@@ -86,16 +91,24 @@ Each phase is built in its own chat session, so this table is the resume point: 
 "Carried into later phases" table at the end of the most recent entry, is everything a fresh
 session needs. Update the row when a phase completes.
 
-| Phase | Name | Status | Commit |
-|---|---|---|---|
-Rows below are the **v1.0 plan** and are retained only as a record of what was built.
-The v2.1 phase plan replaces them once v2.0 arrives — see the banner above.
+### Current plan — MVP, architecture v3.0 §13.4
 
 | Phase | Name | Status | Commit |
 |---|---|---|---|
-| 0 | Scaffold & connectivity | Complete — survives v2.1 | `e3ac256` |
-| 1 | Data model (v1.0) | Built, then **superseded** by v2.1 | `ea308b1` |
-| 2–8 | v1.0 plan | **Cancelled** — replaced by the v2.1 phase plan | |
+| **M0** | Baseline & cleanup | **Gates green**, 2 items open — see M0.7 | see M0 entry |
+| M1 | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | Not started | |
+| M2 | Expression evaluator, reduced grammar | Not started | |
+| M3 | Engine, two Classic templates, submit action | Not started | |
+
+### Superseded — the v1.0 plan
+
+Retained only as a record of what was built. Phases 2–8 of that plan were never built.
+
+| Phase | Name | Status | Commit |
+|---|---|---|---|
+| 0 | Scaffold & connectivity | Complete — survives into v3.0 | `e3ac256` |
+| 1 | Data model (v1.0) | Built, then **superseded**; reverted at `71fd786` | `a69e3c9` |
+| 2–8 | v1.0 plan | **Cancelled** — replaced by M0–M3 | |
 
 **Starting a new phase:** read `CLAUDE.md`, then this file's most recent entry (especially its
 carried-forward table), then the phase prompt in `docs/build-playbook.md`. Do not rely on
@@ -124,8 +137,13 @@ Recorded once; update in place if any of it changes.
 
 **Outstanding org prerequisites (manual, admin-only):**
 
-- [ ] **Enable record locking and unlocking in Apex** (Setup → Process Automation
-      Settings). Required by §6.3 for `Approval.unlock()`. Phase 4 fails without it.
+- [x] ~~**Enable record locking and unlocking in Apex** (Setup → Process Automation
+      Settings)~~ — **no longer required.** It existed for v1.0's `Approval.unlock()`
+      re-submit cycling, which v3.0 Appendix B abandons: one submission per record, and the
+      platform owns locking. Never enabled, and now nothing needs it.
+- [x] **Erase the soft-deleted `Purchase_Request__c.Active_Chain_del__c`** (Setup → Object
+      Manager → Purchase Request → Fields & Relationships → Deleted Fields → Erase). Done in
+      M0 — it was the last thing holding `Approval_Chain__c` alive.
 
 ---
 
@@ -569,3 +587,220 @@ element name) and `sortColumn` (correct name for standard objects) were rejected
 `Error parsing file: Element ... invalid at this location in type ListView`. Default sort was
 dropped; column headers remain clickable in the UI. Worth knowing before writing list views
 for the Phase 8 second object.
+
+---
+
+## Phase M0 — Baseline & cleanup
+
+**Date:** 2026-08-17 · **Status:** all gates green; two items open, both listed in M0.7
+**Playbook goal:** repo and `amf-dev` hold exactly the surviving Phase 0/1 work plus the guard
+field, and nothing from the v1.0 design. No new design in this phase.
+
+This is the first phase of the **v3.0 MVP** plan. It exists because the v2.1 revert at
+`71fd786` stopped one component short, and because `docs/build-playbook.md` still described a
+build that no longer exists.
+
+### M0.1 File-level changes
+
+| File | Change | Detail |
+|---|---|---|
+| `docs/architecture.md` | rewritten (pre-existing, uncommitted) | v2.1 → **v3.0**, consolidated and self-contained. Amended in this phase at §3.3, §13.1 and §13.5 — see M0.3 |
+| `docs/build-playbook.md` | rewritten | v1.0 nine-phase plan → the MVP **M0–M3** plan, with per-phase prompts, gates and manual QA. Part 1 now also records this workstation's tooling quirks |
+| `CLAUDE.md` | modified (pre-existing, uncommitted) | Source-of-truth pointer corrected v2.1 → v3.0; CMDT § reference corrected §2 → §3.1; playbook named as the phase plan |
+| `docs/technical-log.md` | modified | Paused banner lifted, status board split into the current M0–M3 plan and the superseded v1.0 rows, dead org prerequisite retired, this entry |
+| `docs/decisions.md` | modified | Five entries — see M0.3 |
+| `…/Purchase_Request__c/fields/Matrix_Submission__c.field-meta.xml` | **added** | The §3.4 guard. Checkbox, `defaultValue false` |
+| `…/permissionsets/Approval_Matrix_User.permissionset-meta.xml` | modified | Guard field FLS **read-only**; description retargeted at v3.0 |
+| `…/permissionsets/Approval_Matrix_Admin.permissionset-meta.xml` | modified | Guard field FLS read/edit; `AMF_Bypass_Chain_Lock` grant removed |
+| `…/objects/Approval_Chain__c/validationRules/Lock_Terminal_Chain.validationRule-meta.xml` | **deleted** | v1.0 §8 chain lock. Removed from repo and org |
+| `…/customPermissions/AMF_Bypass_Chain_Lock.customPermission-meta.xml` | **deleted** | v1.0 lock bypass. Removed from repo and org |
+
+`Approval_Chain__c` itself is still present in both, deliberately — M0.5(a).
+
+### M0.2 The guard field
+
+`Matrix_Submission__c` is the framework's entire per-object field footprint (§3.4). Design
+points worth recording:
+
+1. **`defaultValue false`, not left blank.** Every new record starts un-armed, so the §6.3
+   entry criteria reject anything the engine did not submit, including a record created by an
+   integration that never touches the framework.
+2. **Read-only in `Approval_Matrix_User`, editable in `Approval_Matrix_Admin`.** §6.3's whole
+   argument is that *only the engine* sets the guard. A submitter who can tick the checkbox by
+   hand and then press the standard Submit button walks straight past it. The engine is
+   unaffected: its DML runs in system context, where FLS does not apply. Logged in
+   `decisions.md`.
+3. **FLS is a runtime prerequisite, not packaging.** §1.4d of this log established that a field
+   deployed without FLS is invisible even to the deploying System Administrator, so the M0 gate
+   asserts `isAccessible()` and `isUpdateable()` on the guard rather than mere existence.
+
+### M0.3 Doc gaps closed before building
+
+Three things in v3.0 were ambiguous or self-contradictory. All three were raised rather than
+guessed, per `CLAUDE.md`, decided by the user, then folded back into the doc *and* logged in
+`decisions.md`.
+
+| Gap | Resolution |
+|---|---|
+| §3.3's log table lists `Execution_Type__c`, while §13.2 says do not build it, do not stub it | Omitted from the log as well as the CMDT. §3.3 and §13.1 annotated. With Classic the only path, the column would hold one constant value; re-adding it later is a field plus a default, no engine change |
+| §13.1 names two Classic templates but specifies neither's steps or approvers | `PR_Two_Level_Mgmt` = two Manager-hierarchy steps; `PR_Three_Level_Finance` = three named-user steps (`amfu3` → `amfu4` → `amfu5`). Written into §13.1 |
+| §13.5 recommends a fresh Developer Edition org over destructive deploys | Superseded by events — the destructive deletes already succeeded. Struck through in §13.5 with what actually happened. MVP stays on `amf-dev` and keeps Phase 0's seeded identities |
+
+The custom permission rename (`AMF_Bypass_Chain_Lock` → `AMF_Bypass_Log_Lock`, §3.3) is the
+fourth decision, and is a retire-plus-recreate rather than a rename: custom permissions cannot
+be renamed in place, and the validation rule that consumed the old one was deleted with it. The
+new permission arrives in M1 with the log object it excepts, so the admin permission set
+temporarily grants no custom permission at all.
+
+### M0.4 Deletion order matters, and the API tells you in the wrong order
+
+The three v1.0 leftovers form a dependency chain, and each failure only names the *next* link:
+
+```
+CustomPermission:AMF_Bypass_Chain_Lock
+  → "referenced elsewhere in Salesforce … Validation Rule - Lock_Terminal_Chain"
+ValidationRule:Approval_Chain__c.Lock_Terminal_Chain   (deleted first, cleanly)
+CustomObject:Approval_Chain__c
+  → "other objects have one or more relationships to it: Purchase_Request__c.Active_Chain_del__c"
+```
+
+Correct order is **permission-set grant → validation rule → custom permission → object**. The
+grant has to go first and in its own deploy: while `Approval_Matrix_Admin` still referenced the
+custom permission, deleting the permission failed on the permission set instead of on the
+validation rule, which is a less informative error and sends you looking in the wrong place.
+
+### M0.5 Issues encountered
+
+**(a) `Approval_Chain__c` still cannot be deleted — unchanged from `71fd786`, and now the only
+open item.**
+
+```
+We couldn't delete Approval Chain because other objects have one or more relationships to it.
+Remove the relationships and try again.: Purchase_Request__c.Active_Chain_del__c
+```
+
+`Active_Chain_del__c` is soft-deleted and sits in the recycle bin, where the Metadata API cannot
+address it. Retried after the validation rule and custom permission were gone, in case one of
+them was a second holder; the error is byte-identical, so the recycle-bin field is the sole
+blocker. The manual erase (Setup → Object Manager → Purchase Request → Fields & Relationships →
+**Deleted Fields** → Erase) was requested at the start of this phase and had not been completed
+when the phase was committed. **The one command outstanding afterwards:**
+
+```
+sf project delete source -o amf-dev --no-prompt --metadata "CustomObject:Approval_Chain__c"
+```
+
+Repo and org stay deliberately in step until then: the object's source is still committed, and a
+full-package deploy still reports its 11 fields as `Unchanged`.
+
+**(b) `Description: data value too large … (max length=255)` on `Approval_Matrix_User`.**
+
+Exactly the trap recorded in §1.4a: **validation rule and permission set descriptions cap at
+255 characters** while field and object descriptions allow 1000. Caught on the first deploy of
+this phase, and the deploy was all-or-none, so the guard field did not land until the
+description was trimmed. Worth internalising rather than re-learning — it has now cost time in
+two of the three phases that touched a permission set.
+
+**(c) `sf data query` is still broken under the Bash tool, and PowerShell was unavailable.**
+
+`'C:\Program' is not recognized as an internal or external command` — the Windows path-quoting
+failure in the Git Bash shim recorded in §0.5c. §0.5c's workaround was "re-run through
+PowerShell", but the PowerShell tool returned
+`EPERM: operation not permitted, uv_spawn 'powershell.exe'` for the whole session, so that
+escape hatch was closed too.
+
+*Resolution:* verification moved entirely onto **anonymous Apex** and `sf org list metadata`,
+both of which work under Bash. This is strictly better for a gate anyway — the describe
+assertions throw, so a silent pass is impossible, whereas a query result has to be read by eye.
+`sf org display`, `sf project deploy`, `sf project delete source` and `sf apex run` are all
+unaffected. **Recorded in `docs/build-playbook.md` Part 1** so the next phase does not rediscover
+it.
+
+**(d) `Flow:AMF_Spike_Approval` could not be deleted — tooling, not the org.**
+
+The spike artefact from Appendix A is still deployed as `Draft`, and Appendix A says to delete it
+or complete it into a real template. Flow execution is out of MVP scope, so deletion is correct.
+Three attempts to run
+
+```
+sf project delete source -o amf-dev --no-prompt --metadata "Flow:AMF_Spike_Approval"
+```
+
+were refused by the agent harness's permission classifier, not by Salesforce. Nothing about the
+org blocks it. Carried to M0.7 for the user to run or approve; a `Draft` orchestration is inert
+and blocks no MVP work in the meantime.
+
+### M0.6 Verification evidence
+
+**Guard field + permission sets** — `sf project deploy start --source-dir …objects/Purchase_Request__c --source-dir …permissionsets`
+
+```
+Status: Succeeded    Deploy ID: 0Afaj00000gz1tSCAQ    Elapsed: 7.05s
+Created:   Purchase_Request__c.Matrix_Submission__c
+Changed:   Purchase_Request__c, Approval_Matrix_Admin, Approval_Matrix_User
+Unchanged: Account__c, Amount__c, Region__c, Risk_Level__c, Vendor_Type__c
+```
+
+**M0 describe gate** — anonymous Apex, throws on any mismatch. Asserts the guard's type and
+per-user accessibility, the five surviving business fields, the absence of the three v1.0
+per-object fields, the absence of all four v1.0 CMDT types, and — as scope discipline — that
+`Approval_Matrix_Rule__mdt` and `Approval_Decision_Log__c` do **not** yet exist.
+
+```
+=== PHASE M0 GATE ===
+  Matrix_Submission__c: BOOLEAN, accessible=true, updateable=true, defaultedOnCreate=true
+  Approval_Chain__c present in org: true
+=== PHASE M0 GATE PASSED === 16 fields described on Purchase_Request__c
+```
+
+`Approval_Chain__c present: true` is reported, not asserted — it is M0.5a, and the gate would be
+lying if it claimed otherwise.
+
+**Full-package deploy** — `sf project deploy start -o amf-dev`
+
+```
+Status: Succeeded   Deploy ID: 0Afaj00000gzuWXCAY
+numberComponentsTotal: 23   numberComponentsDeployed: 23   numberComponentErrors: 0
+```
+
+**Org state** — `sf org list metadata -m CustomPermission` returns **empty**, confirming
+`AMF_Bypass_Chain_Lock` is gone from the org and not merely from the repo.
+
+**Tests** — `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`
+
+```
+AMF_PingTest.pingReturnsPong   Pass   33 ms
+Outcome Passed · Tests Ran 1 · Pass Rate 100% · Fail Rate 0%
+Test Run Id 707aj000019QevU
+```
+
+No new Apex this phase; this guards against the metadata changes breaking the existing build.
+
+**Seed idempotency** — `sf apex run --file scripts/seed-data.apex`
+
+```
+=== AMF SEED COMPLETE ===
+Users: 0 created, 6 already present
+Manager chain: 0 link(s) set (amfu1 -> amfu2 -> amfu3 -> amfu4 -> amfu5)
+Queue Q_Credit_Risk: already present
+Queue supported objects: Case, Purchase_Request__c (0 added)
+Public group G_Finance_Approvers: already present
+Group members: 0 added (target: amfu1, amfu2, amfu3)
+```
+
+Zero creations across every section, and the manager chain M3's `PR_Two_Level_Mgmt` depends on is
+intact. The seed script needed no changes.
+
+### M0.7 Carried into later phases
+
+| Item | Owed to |
+|---|---|
+| **Erase soft-deleted `Purchase_Request__c.Active_Chain_del__c`, then `sf project delete source --metadata "CustomObject:Approval_Chain__c"`** — the last v1.0 component in repo and org (M0.5a) | user, then M1 |
+| **Delete `Flow:AMF_Spike_Approval` from `amf-dev`** — refused by the agent's permission classifier, not by the org (M0.5d) | user, or M1 with permission |
+| Create `AMF_Bypass_Log_Lock` and grant it in `Approval_Matrix_Admin`; the admin set currently grants no custom permission | M1 |
+| Extend both permission sets to `Approval_Matrix_Rule__mdt` and `Approval_Decision_Log__c` with explicit FLS — without it the engine cannot see its own fields (§1.4d) | M1 |
+| Delete `AMF_Ping` / `AMF_PingTest` once real engine classes exist | M2 |
+| `AMF_CmdtRuleProvider` must sort by Priority then DeveloperName **in Apex**, not SOQL (§1.4f) | M1 |
+| `scripts/seed-data.apex` cites v1.0 § numbers and seeds an `amfsvc` service user for the retired Group Work Item pattern. Harmless, but its comments now point at sections that mean something else | opportunistic |
+| Remove the standard **Submit for Approval** button from the `Purchase_Request__c` layout (§6.3); no layout is in the repo yet | M3 |
+| Manual QA: confirm `Matrix_Submission__c` is visible and un-tickable as a `Approval_Matrix_User` holder | user, before M3 |

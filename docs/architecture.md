@@ -1,355 +1,458 @@
-# Hybrid Approval Matrix Framework — Technical Architecture
+# Approval Matrix Framework — Technical Architecture
 
-**Version:** 1.0 draft · **Scope:** 2–3 objects, unlimited approval depth, user/queue/group approvers
-**Execution layer:** Native Salesforce Approval Process (chained single-step pattern), with a pluggable strategy seam for Flow Approval Orchestration
+**Version 3.0 — consolidated and self-contained.** Supersedes v1.0, v2.0 and v2.1. This is the only architecture document; nothing here defers to an earlier version. Where a design changed, Appendix B records what was abandoned and why, because commit `a69e3c9` contains code built to the v1.0 design.
+
+**What the framework is:** an **approval process selection engine**. Prioritised rules held in Custom Metadata are matched against a record by an expression evaluator; the winning rule names a **template** — a real, pre-built Salesforce approval process — and the engine submits the record into it. Salesforce executes everything: steps, approvers, queues, locking, history, notifications. The framework decides *which process* and records *why*.
+
+**Lineage:** the matrix-selects-template pattern was proven in a prior ISV-based implementation. That version was simple because the ISV supplied both the approval engine and the expression evaluator. On vanilla Salesforce the evaluator is ours to build, and three flaws in the original are corrected by design: **no priority ordering** (§3.1), **silent evaluation failures** (§4.6), and **history destroyed by re-evaluation overwriting the template field** (§8).
+
+---
+
+## 0. How to read this document
+
+| Section | Status |
+|---|---|
+| §1–§12 | Target design |
+| §13 | **MVP scope — what is being built right now.** Anything in §1–§12 not listed in §13 is out of scope until the MVP demo passes |
+| Appendix A | Spike findings, with confidence labels |
+| Appendix B | Superseded designs — do not build |
+
+MVP is **Classic execution only**. Flow execution (§5.3, §6.2) is designed but not built.
 
 ---
 
 ## 1. Design Principles
 
-1. **Configuration over code.** All routing logic lives in Custom Metadata. Onboarding a new rule, or changing an existing one, is a config release — no Apex changes.
-2. **Enhance native, don't replace it.** Salesforce executes the approvals: record locking, work items, notifications, approval history. The framework decides *who* and *in what order*; the platform handles *how*.
-3. **Unlimited depth via chaining, not steps.** One generic single-step Approval Process per object, invoked once per level. Depth is data (chain records), not design (process steps), so it is genuinely unbounded.
-4. **Every decision is explainable.** The engine persists the matched rule, the field values it evaluated, and the planned vs. actual approver chain. Native approval history answers *who/when*; the decision log answers *why*.
-5. **Testable and portable.** All Custom Metadata access sits behind an interface with test injection. All `Approval.process()` calls sit behind a submission strategy interface. The framework deploys to a new org with zero code changes.
+1. **Configuration over code.** Routing lives in Custom Metadata. A new rule or a changed rule is a config release, never an Apex change.
+2. **Select, don't resolve.** The framework picks a process. It does not resolve approver chains, advance levels, or manage approval state. Depth, queues, groups, escalation and parallelism are properties of the template.
+3. **Explain every decision.** Native history answers *who* and *when*. The decision log answers *why*, and is immutable.
+4. **Fail loudly.** A malformed expression fails at deployment. A runtime evaluation error blocks the submission and logs it. Never fall through to a wrong template — a stopped approval is recoverable, a mis-routed one is a finding.
+5. **Testable and portable.** All Custom Metadata access behind an interface with test injection; all submission behind a strategy interface. Deploys to a new org with zero code changes.
 
 ---
 
 ## 2. Component Overview
 
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│  ENTRY POINTS                                                       │
-│  Quick Action (LWC) · Invocable (Flow) · Apex API · REST wrapper    │
-└────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  APEX ENGINE                                                        │
-│                                                                      │
-│  ApprovalMatrixService (facade, bulk-safe)                          │
-│    ├── RuleProvider (interface) ── CmdtRuleProvider / TestStub      │
-│    ├── ConditionEvaluator  — typed matching + logic expressions     │
-│    ├── FieldPathResolver   — cross-object paths via dynamic SOQL    │
-│    ├── ApproverResolver    — user / queue / group / manager chain   │
-│    ├── ChainManager        — creates + advances chain state         │
-│    └── SubmissionStrategy (interface)                               │
-│          ├── NativeProcessStrategy   (this document)                │
-│          └── OrchestrationStrategy   (future seam, §14)             │
-└────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  EXECUTION LAYER (per object)                                       │
-│  Generic 1-step Approval Process  ──  Current_Approver__c           │
-│  Record-triggered Flow "Chain Advancer" on step outcome             │
-└────────────────────────────────────────────────────────────────────┘
-                                   │
-                                   ▼
-┌────────────────────────────────────────────────────────────────────┐
-│  AUDIT LAYER                                                        │
-│  Approval_Chain__c + Approval_Chain_Step__c  (decision log + state) │
-└────────────────────────────────────────────────────────────────────┘
+Entry points
+  Submit quick action (LWC) · Invocable · REST
+        │
+        ▼
+AMF_ApprovalMatrixService          (facade, bulk-safe)
+   ├── RuleProvider (interface) ◄── AMF_CmdtRuleProvider | test stub
+   ├── AMF_ExprCache            ──► AMF_ExprCompiler ──► AMF_Lexer, AMF_Parser
+   ├── AMF_Evaluator                (AST + record → Boolean + evaluated values)
+   ├── AMF_FieldPathResolver        (union of paths → ONE dynamic SOQL per object)
+   ├── AMF_DecisionLogWriter
+   └── SubmissionStrategy (interface)
+         ├── AMF_ClassicProcessStrategy   ── Approval.process(
+         │                                     setProcessDefinitionNameOrId(name))
+         └── AMF_FlowApprovalStrategy     ── launches named Approval Orchestration
+        │
+        ▼
+Template — a native approval process (Classic process OR Flow orchestration)
+        │
+        ▼
+Approval_Decision_Log__c  ──joins──►  ProcessInstance (Classic)
+                                      ApprovalSubmission / ApprovalWorkItem (Flow)
 ```
 
 ---
 
 ## 3. Data Model
 
-### 3.1 Configuration (Custom Metadata Types)
+Three artefacts total: one Custom Metadata type, one custom object, one field per governed object.
 
-**`Approval_Object_Config__mdt`** — one per governed object
+### 3.1 `Approval_Matrix_Rule__mdt` — the matrix
 
-| Field | Type | Purpose |
-|---|---|---|
-| `Object_API_Name__c` | Text | e.g. `Purchase_Request__c` |
-| `Process_API_Name__c` | Text | DeveloperName of that object's generic process |
-| `Fallback_Approver__c` | Text (username) | Used when a resolved approver is inactive |
-| `No_Match_Behavior__c` | Picklist | `Block` \| `Route_To_Fallback` \| `Auto_Approve` |
-| `Rejection_Behavior__c` | Picklist | `Terminate` \| `Return_To_Submitter` |
-| `Recall_Reevaluates__c` | Checkbox | Re-run rules on resubmit after recall |
-| `Active__c` | Checkbox | Kill switch per object |
-
-**`Approval_Rule__mdt`** — one per routing scenario
+One row is one complete routing statement: *when this expression is true, use that process.*
 
 | Field | Type | Purpose |
 |---|---|---|
-| `Object_API_Name__c` | Text | Rule's target object |
-| `Priority__c` | Number | Lower wins; ties broken by DeveloperName (deterministic) |
-| `Logic_Expression__c` | Text | e.g. `1 AND (2 OR 3)`; blank = AND of all conditions |
-| `Version__c` | Number | Incremented on change; stamped into the decision log |
+| `Object_API_Name__c` | Text(80) | Target object |
+| `Priority__c` | Number(5,0) | Lower wins. Ties broken by DeveloperName, so ordering is always deterministic |
+| `Expression__c` | Long Text Area(2000) | `Amount__c > 100000 && Account__r.Owner.Region__c == 'APAC'` |
+| `Execution_Type__c` | Picklist | `Classic` \| `Flow` |
+| `Process_API_Name__c` | Text(80) | Classic: `ProcessDefinition` DeveloperName. Flow: API name of the Approval Orchestration |
+| `Description__c` | Text(255) | "High-value APAC → 3-level credit chain" |
+| `Version__c` | Number(4,0) | Incremented on any change; stamped into every decision log row |
 | `Active__c` | Checkbox | |
 
-**`Approval_Rule_Condition__mdt`** — child of rule (metadata relationship)
+**Platform constraint — mandatory.** Apex `getAll()` and `getInstance()` truncate Long Text Area fields to 255 characters. `AMF_CmdtRuleProvider` must load rules by **SOQL**, never the cached accessors, or long expressions corrupt silently. CMDT SOQL consumes no query limits. Pin this with a test whose expression exceeds 255 characters, and state it in the class ApexDoc.
+
+Priority ordering is applied in Apex after load rather than relying on CMDT SOQL ordering.
+
+### 3.2 Conventions replacing per-object configuration
+
+There is no object-config metadata type. Three conventions replace it:
+
+- **Guard field** is always `Matrix_Submission__c` (Checkbox) on every governed object. A framework convention, not a configurable name.
+- **No-match** blocks and writes a `Blocked_No_Match` log row. An org wanting default routing adds a visible catch-all rule: priority 9999, expression `TRUE`. The default path then appears *in the matrix*, in priority order, where an auditor reads it — better than a hidden config switch.
+- **Governed** ⇔ the object has active rules. Deactivating an object's rules is the kill switch.
+
+### 3.3 `Approval_Decision_Log__c` — the audit artefact
 
 | Field | Type | Purpose |
 |---|---|---|
-| `Rule__c` | MD relationship | Parent rule |
-| `Index__c` | Number | Referenced by the logic expression |
-| `Field_Path__c` | Text | `Amount__c` or `Account__r.Owner.Region__c` (max 4 hops) |
-| `Operator__c` | Picklist | `equals, not_equals, greater, greater_equal, less, less_equal, in, not_in, contains, starts_with, is_null, is_not_null` |
-| `Value__c` | Text | Comparison value; comma-separated for `in`; ISO format for dates |
+| `Record_Id__c` | Text(18), External Id, **not unique** | Governed record. One record accumulates one row per submission; rows are never deleted |
+| `Object_API_Name__c` | Text(80) | |
+| `Matched_Rule__c` | Text(80) | Rule DeveloperName. **Platform-forced:** no relationship exists from a custom object to a custom metadata record |
+| `Rule_Version__c` | Number(4,0) | |
+| `Expression_Snapshot__c` | Long Text(2000) | The expression text as evaluated — survives later edits to the rule |
+| `Evaluated_Values__c` | Long Text(32k) | JSON of every field value the evaluator read |
+| `Selected_Process__c` | Text(80) | |
+| `Execution_Type__c` | Picklist | `Classic` \| `Flow` — tells the timeline which objects to query. **Not built in MVP** (§13.2): with Classic the only execution path the column would carry one constant value. Adding it is a field plus a default, with no engine change |
+| `Execution_Ref_Id__c` | Text(18) | `ProcessInstance.Id` (Classic) or `ApprovalSubmission.Id` (Flow) |
+| `Outcome__c` | Picklist | `Submitted` \| `Blocked_No_Match` \| `Failed` |
+| `Failure_Detail__c` | Long Text(4000) | Exception text when `Failed` |
+| `Submitted_By__c` | Lookup(User) | |
+| `Submitted_At__c` | DateTime | |
 
-**`Approval_Route_Step__mdt`** — child of rule; one per level
+**Immutability.** A validation rule blocks edits after creation. The exception is the **`AMF_Bypass_Log_Lock` custom permission**, not a named profile — a profile name hardcoded into a validation rule does not survive deployment to another org.
 
-| Field | Type | Purpose |
-|---|---|---|
-| `Rule__c` | MD relationship | Parent rule |
-| `Level__c` | Number | 1..N — no ceiling; depth is data |
-| `Approver_Type__c` | Picklist | `Named_User` \| `Related_User_Field` \| `Manager_Chain` \| `Queue` \| `Public_Group` |
-| `Approver_Reference__c` | Text | Username, field path, queue/group DeveloperName, or chain depth for `Manager_Chain` |
-| `Group_Completion__c` | Picklist | `Any_Member` \| `Unanimous` (queue/group only) |
-| `SLA_Hours__c` | Number | Optional; drives escalation (§7.5) |
-| `Skip_If_Same_As_Previous__c` | Checkbox | De-dupe when manager chain converges |
+**Permission sets.** `Approval_Matrix_Admin` deliberately withholds Modify All on the log object: the platform makes Modify All depend on Delete, and the log must not be deletable. View All plus edit gives admins what they need without opening the audit trail to deletion.
 
-### 3.2 Runtime State (Custom Objects)
+Final approval status is **not** duplicated onto the log — it lives on `ProcessInstance` / `ApprovalSubmission` and is reportable through `Execution_Ref_Id__c`.
 
-**`Approval_Chain__c`** — one per submission; doubles as the decision log
+### 3.4 Per-object fields
 
-| Field | Purpose |
-|---|---|
-| `Record_Id__c` (Text, indexed, ext id) | Polymorphic pointer to the governed record |
-| `Object_API_Name__c` | For reporting and the Chain Advancer |
-| `Matched_Rule__c` / `Rule_Version__c` | Which rule fired, at which version |
-| `Evaluated_Values__c` (Long Text, JSON) | Snapshot of every field value the engine compared |
-| `Status__c` | `In_Progress` \| `Approved` \| `Rejected` \| `Recalled` \| `Failed` |
-| `Current_Level__c` / `Total_Levels__c` | Progress |
-| `Submitted_By__c` (Lookup User), `Submitted_At__c`, `Completed_At__c` (DateTime) | Audit |
-
-**`Approval_Chain_Step__c`** — one per level (created up front = the *planned* chain)
-
-| Field | Purpose |
-|---|---|
-| `Chain__c` (Master-Detail) | Parent |
-| `Level__c` | Sequence |
-| `Planned_Approver_Type__c` / `Planned_Approver__c` | What the rule resolved |
-| `Assigned_User__c` (Lookup User) | Concrete user the work item went to |
-| `Actual_Approver__c` (Lookup User) | Who actioned it (≠ assigned when reassigned or group-actioned) |
-| `Outcome__c` (`Pending` \| `Approved` \| `Rejected` \| `Recalled`), `Comments__c`, `Actioned_At__c` | Result. `Pending` marks the step open — this is what the §7.5 escalation batch scans for |
-| `Group_Members_Snapshot__c` (JSON) | Queue/group membership at assignment time (SOX) |
-
-### 3.3 Per-Object Fields (added to each governed object)
-
-| Field | Purpose |
-|---|---|
-| `Current_Approver__c` (Lookup User) | Related User field the generic process reads |
-| `Active_Chain__c` (Lookup Approval_Chain__c) | Joins record → chain; entry-criteria guard |
-| `Chain_Step_Outcome__c` (Picklist) | Written by process field updates; fires the Chain Advancer |
+`Matrix_Submission__c` (Checkbox). That is the entire per-object field footprint.
 
 ---
 
-## 4. Rule Evaluation Engine
+## 4. Expression Evaluator
 
-### 4.1 Evaluation Algorithm
+The centrepiece build. What the ISV supplied for free in the prior implementation is ours to own here.
+
+### 4.1 Grammar
 
 ```
-submit(recordIds):
-  1. Load Approval_Object_Config__mdt; abort per config if inactive
-  2. RuleProvider.getActiveRules(objectApiName) ordered by Priority, DeveloperName
-  3. Collect the union of all Field_Path__c across all rules
-  4. FieldPathResolver builds ONE dynamic SOQL per object covering every path
-     (relationship dot-notation; 4-hop platform limit enforced at config validation)
-  5. For each record, for each rule in priority order:
-       evaluate each condition (typed, §4.2)
-       feed boolean results into the logic-expression evaluator (§4.3)
-       FIRST match wins — stop
-  6. No match → apply No_Match_Behavior__c
-  7. ApproverResolver expands route steps to concrete assignees (§5)
-  8. ChainManager writes Approval_Chain__c + all Approval_Chain_Step__c rows
-  9. SubmissionStrategy.submit(level 1)  — same transaction, before lock
+expression   := or_expr
+or_expr      := and_expr ( ('||' | 'OR') and_expr )*
+and_expr     := unary_expr ( ('&&' | 'AND') unary_expr )*
+unary_expr   := ('!' | 'NOT') unary_expr
+              | '(' expression ')'
+              | comparison
+              | bool_atom
+comparison   := operand comp_op operand
+              | operand ('IN' | 'NOT IN') list
+              | operand ('CONTAINS' | 'STARTS_WITH') operand
+comp_op      := '==' | '!=' | '>' | '>=' | '<' | '<='
+bool_atom    := TRUE | FALSE | boolean_field_path
+operand      := field_path | literal
+field_path   := IDENT ( '.' IDENT )*                    // max 4 hops, __r traversal
+literal      := NUMBER | 'STRING' | DATE | DATETIME
+              | TRUE | FALSE | NULL | TODAY | TODAY(±n)
+list         := '(' literal ( ',' literal )* ')'
 ```
 
-### 4.2 Typed Comparison
+Keywords are case-insensitive. Both symbol and word forms of and/or/not are accepted, so admins may write `AND` and developers `&&`. A bare `TRUE`, `FALSE`, or Checkbox field path is a complete valid expression — this is what makes catch-all rules expressible.
 
-`Value__c` is stored as text; the engine coerces using `Schema.DisplayType` from the field describe of the *final* field in the path:
+Operator precedence: `NOT` binds tightest, then comparisons, then `AND`, then `OR`. `a || b && c` parses as `a || (b && c)`.
 
-| DisplayType | Coercion | Notes |
+### 4.2 Pipeline
+
+```
+Expression__c ──► AMF_Lexer ──► AMF_Parser ──► AST ──► AMF_ExprCompiler ──► CompiledExpression
+                                                                                    │ cached by
+                                                                                    │ rule + version
+Record + CompiledExpression ──► AMF_Evaluator ──► Boolean + Map<String,Object>
+```
+
+| Class | Responsibility |
+|---|---|
+| `AMF_Lexer` | String → token stream, tracking character position for error messages: `Unexpected token ']' at position 34` |
+| `AMF_Parser` | Recursive descent → AST. Node types: `BinaryNode`, `UnaryNode`, `ComparisonNode`, `FieldNode`, `LiteralNode`, `ListNode`. Fails with position and expected-token detail |
+| `AMF_ExprCompiler` | Parse **plus static analysis against the schema**: every field path resolves via describe, ≤4 hops, operator/type compatibility enforced. `CONTAINS` on a Currency field is a compile error, not a runtime false. Output: AST + field-path list + describe map |
+| `AMF_ExprCache` | Static map keyed by rule DeveloperName + `Version__c` → `CompiledExpression`. Each expression compiles once per transaction regardless of record count |
+| `AMF_Evaluator` | AST + SObject → Boolean, and emits the evaluated-values map for the decision log |
+
+### 4.3 Type semantics
+
+| Field type | Comparison | Notes |
 |---|---|---|
-| CURRENCY, DOUBLE, PERCENT, INTEGER | `Decimal.valueOf` | Locale-independent (dot decimal) |
-| DATE / DATETIME | `Date/Datetime.valueOf` ISO | Reject ambiguous formats at config validation |
-| BOOLEAN | `Boolean.valueOf` | |
-| PICKLIST / STRING / ID / REFERENCE | Case-insensitive string | `in` splits on comma, trims |
-| MULTIPICKLIST | Set semantics | `contains` = includes value |
+| Currency, Number, Percent | Decimal | Literal must lex as NUMBER or it is a compile error |
+| Date, DateTime | Chronological | Literals `2026-01-31`, ISO datetime, `TODAY`, `TODAY(±n)` |
+| Boolean | Identity | Only `==` / `!=` permitted, compile-enforced |
+| Picklist, String, Id, Reference | Case-insensitive equality; `CONTAINS`, `STARTS_WITH`, `IN` |
+| Multipicklist | `CONTAINS` = set membership; `==` = exact set match |
 
-Null handling is explicit: `greater/less` against null → `false` (never throws); use `is_null` / `is_not_null` for presence checks.
+**Null rules**, stated once and tested exhaustively: `null == null` is true; `null` against `>`, `>=`, `<`, `<=` is false and never throws; `IN` with a null operand is false; null anywhere in a relationship path makes the comparison false. Presence checks are written `Field__c == NULL` / `Field__c != NULL`.
 
-### 4.3 Logic Expression Evaluator
+### 4.4 Field path resolution
 
-Grammar: integers reference condition `Index__c`; operators `AND`, `OR`, `NOT`; parentheses. Implementation: tokenizer → shunting-yard → RPN evaluation. Expressions are **validated at config-deploy time** by a validation utility (checks: all indices exist, balanced parens, no orphan conditions), so runtime never sees a malformed expression.
+`AMF_FieldPathResolver` collects the union of every field path across all rules for an object and builds **one** dynamic SOQL query covering them, executed once per object per transaction. Relationship traversal uses `__r` dot notation, capped at 4 hops (platform limit), enforced at compile time.
 
-### 4.4 RuleProvider Interface (testability — non-negotiable)
+### 4.5 Caching
+
+Compilation is the expensive step; evaluation is cheap. The cache key includes `Version__c` so a rule edit invalidates naturally without a flush mechanism.
+
+### 4.6 Failure behaviour — the anti-Sitetracker rule
+
+The prior implementation wrapped evaluation in `try { … } catch { return false; }`. A malformed criteria string therefore never matched, forever, silently. Here:
+
+- **Compile errors cannot reach runtime.** The config validator (§9) compiles every active expression at deploy time and fails the deployment with position-annotated messages.
+- **Runtime errors** (schema drift after deploy — a referenced field deleted) mark the submission `Failed`, write the exception to `Failure_Detail__c`, and **block**. They never fall through to the next rule.
+
+No catch block in the evaluator package may swallow an exception into a boolean.
+
+### 4.7 Test strategy
+
+Table-driven: a static list of `(expression, field values, expected)` triples covering every operator against every supported type, all null rules, precedence, both keyword forms, whitespace variants, multi-hop paths, and bare boolean atoms. Plus a malformed-input suite — unbalanced parens, unknown field, over-deep path, bad literal, type mismatch, empty `IN` list — asserting each throws with the correct character position. Target ≥95% coverage on the evaluator package with zero dependence on org CMDT rows.
+
+---
+
+## 5. Template Layer
+
+Templates are approval processes **authored as metadata and versioned in the repo**. They are deliverables, not org clicks.
+
+### 5.1 Versioning convention
+
+A live template is never edited in place. Changes clone to `_v2`, the rule's `Process_API_Name__c` is repointed, and the previous version is deactivated. In-flight instances and historical accuracy both survive.
+
+Naming: `<OBJ>_<Shape>`, e.g. `PR_Three_Level_Finance`.
+
+### 5.2 Classic templates
+
+Native Approval Processes as metadata XML.
+
+- **Entry criteria on every template**: `Matrix_Submission__c = true`. This is the guard (§6.3).
+- **Final approval and rejection actions** reset `Matrix_Submission__c = false`, re-arming the guard.
+- Steps, approvers, parallel approvers and static queue steps are configured natively.
+
+### 5.3 Flow templates
+
+A Flow Approval Process is a `Flow` with `processType` **`ApprovalWorkflow`**. Confirmed contract (Appendix A, Q1):
+
+- Requires exactly three input variables, all String, all `isInput=true`: **`recordId`**, **`submitter`**, **`submissionComments`**. The third is not `comments` — that spelling is rejected.
+- Approval steps use `actionType` **`stepApproval`**. `stepInteractive` is rejected for this process type.
+- **Each approval step delegates to a companion screen flow** that the approver runs. A Flow template is therefore an orchestration *plus* at least one screen flow per approval step. Budget accordingly.
+- **A structurally invalid orchestration deploys cleanly as `Draft`** and only fails on activation. Existence checks must verify *active*, not merely present (§9).
+
+Launch is via `AMF_FlowApprovalStrategy`; the exact Apex call is unconfirmed (Appendix A, Q1) — no standard invocable action starts an orchestration, so the likely mechanism is `Flow.Interview.createInterview` with the three inputs. The strategy interface isolates whichever lands.
+
+### 5.4 Choosing Classic or Flow per rule
+
+| Classic | Flow |
+|---|---|
+| Simple sequential user chains | Any queue or group step — `ReviewedById` gives the true actor natively |
+| Existing org standards require it | Multi-stage flows, background steps, conditional stages, sub-flow reuse |
+| Fewer moving parts (no companion screen flows) | Platform direction; no automation-credit consumption |
+
+**Open risk:** the case for routing every group step to Flow rests on native any-member/unanimous semantics that are **not yet verified** (Appendix A, Q3). Do not commit the template library to that assumption until it is tested.
+
+### 5.5 The shape-count trade
+
+Conditions are unlimited configuration; **shapes are processes**. "Route to APAC vs EMEA credit queue" is two templates, because the queue is a design-time step property. The framework keeps this honest by making shapes cheap (metadata in the repo, cloned in minutes) and visible (the matrix lists every process in use). If an org ever needs more approver-*shape* variability than approver-*condition* variability, the `SubmissionStrategy` seam is where a chain-resolving execution would plug in without touching the evaluator or the matrix.
+
+---
+
+## 6. Engine
+
+### 6.1 Submission flow
+
+```
+submit(List<Id> recordIds):
+ 1. Load rules via RuleProvider for the object; none active → not governed, error
+ 2. Order by Priority__c, then DeveloperName
+ 3. Compile all expressions once via AMF_ExprCache
+ 4. Union of field paths → ONE dynamic SOQL (§4.4)
+ 5. Per record, rules in priority order → FIRST true expression wins
+ 6. No match → write Blocked_No_Match log row, throw a clear error
+ 7. Resolve template: Process_API_Name__c + Execution_Type__c
+ 8. Write Approval_Decision_Log__c (rule, version, expression snapshot,
+    evaluated values JSON, selected process)
+ 9. Set Matrix_Submission__c = true — same transaction, before submit
+10. SubmissionStrategy.submit(...) per Execution_Type__c; chunk ≤100 per
+    Approval.process() call
+11. Stamp Execution_Ref_Id__c onto the log row
+```
+
+### 6.2 Submission strategies
 
 ```apex
-public interface RuleProvider {
-    List<RuleDefinition> getActiveRules(String objectApiName);
-    ObjectConfig getObjectConfig(String objectApiName);
+public interface SubmissionStrategy {
+    // returns the execution reference id (ProcessInstance or ApprovalSubmission)
+    List<SubmitResult> submit(List<SubmitRequest> requests);
 }
 ```
 
-`CmdtRuleProvider` maps CMDT rows into plain-Apex `RuleDefinition` DTOs. Tests inject a stub via `@TestVisible static RuleProvider instance`. **Custom Metadata cannot be inserted in unit tests** — without this seam every test depends on org config and the framework is not portable. DTOs also mean the engine never touches `__mdt` types directly, which keeps the Orchestration strategy and any future rule source (e.g., a custom-object rule store for sandbox experimentation) drop-in.
+`AMF_ClassicProcessStrategy` calls `Approval.process()` with `ProcessSubmitRequest.setProcessDefinitionNameOrId(processApiName)` and returns `ProcessInstance` Ids. `AMF_FlowApprovalStrategy` launches the named orchestration and returns `ApprovalSubmission` Ids. Nothing upstream of step 10 knows which is in play.
+
+### 6.3 The guard
+
+The standard **Submit for Approval** button is removed from every governed object's layouts. Every Classic template's entry criteria require `Matrix_Submission__c = true`, which only the engine sets, and only in the same transaction as its own submission. A submission that bypasses the engine therefore fails entry criteria loudly rather than routing silently.
+
+Flow templates need no entry-criteria dance — an autolaunched orchestration runs only when explicitly launched — but the guard field is still set, for uniform decision-log semantics and as defence against a record-triggered orchestration someone adds later.
+
+### 6.4 Preview
+
+`preview(List<Id>)` runs steps 1–7 and returns matched rule, description and template name **without** writing a log row or submitting. Same code path, `commit = false`. This drives the submit action's confirmation modal.
+
+### 6.5 What the engine does not do
+
+No approver resolution. No chain advancement. No lock management. No mid-flight state. Recall, reassignment, delegation and escalation are the template's and the platform's concern. The engine's runtime responsibility ends at step 11.
 
 ---
 
-## 5. Approver Resolution
-
-| Approver_Type | Resolution |
-|---|---|
-| `Named_User` | Username → active User lookup |
-| `Related_User_Field` | Field path on the record (e.g. `Account__r.OwnerId`) resolved in the same consolidated query |
-| `Manager_Chain` | Walk `User.ManagerId` N hops from submitter (or from a field-path user); reference format `SUBMITTER:2` = manager's manager |
-| `Queue` | Queue DeveloperName → members expanded (§5.1) |
-| `Public_Group` | Group DeveloperName → members expanded recursively (nested groups, roles) |
-
-Every resolved user passes an **active check**; inactive → `Fallback_Approver__c`, and the substitution is recorded on the chain step. `Skip_If_Same_As_Previous__c` collapses converged manager chains.
-
-### 5.1 Queue / Public Group Levels Under the Native Constraint
-
-This is the honest hard part. A Related User field must be a **user** lookup, and a native process step can only target a queue *statically at design time* — dynamic per-record queue assignment is not possible through approver fields. The framework handles group levels with the **Group Work Item pattern**:
-
-1. `ApproverResolver` snapshots the group membership into `Group_Members_Snapshot__c`.
-2. The work item is assigned to a designated **framework service user** (`Current_Approver__c` = service user), so the native machinery — lock, history, timing — still runs.
-3. Members see the pending item in a custom **Approval Inbox LWC** (home page + record page), driven by `Approval_Chain_Step__c` where the running user is in the membership snapshot.
-4. When a member actions it, Apex (system context, after re-verifying membership) calls `Approval.process()` with a `ProcessWorkitemRequest` on the service user's work item and stamps `Actual_Approver__c` = the member. Standard email notifications are supplemented by a framework notification (custom notification + email alert) to all members at assignment.
-5. `Group_Completion__c = Unanimous` keeps the step open, tracking member votes on a child JSON structure until all approve; any rejection closes it.
-
-Trade-off stated plainly: native approval history shows the service user as the actor; the *true* actor lives on the chain step, which is the SOX artifact anyway. **Spike (3 days, before build):** validate whether `ProcessSubmitRequest.nextApproverIds` accepts queue IDs for custom objects with queues enabled — documentation is ambiguous, and if it works, queue levels simplify to native queue work items and the Inbox LWC becomes optional for `Any_Member` semantics.
-
----
-
-## 6. Execution Layer — Chained Single-Step Process
-
-### 6.1 Why Chained
-
-A native process has design-time steps (max 30). "Unlimited depth" therefore requires **one generic single-step process per object, invoked once per level**. Depth becomes chain data. Each cycle is its own transaction, so a 40-level chain has identical governor cost per level as a 2-level chain.
-
-### 6.2 The Generic Process (per object, built once, never edited again)
-
-| Element | Setting |
-|---|---|
-| Entry criteria | `Current_Approver__c != null AND Active_Chain__c != null` — **this is the guard**: a standard-button or rogue-code submission fails entry because the engine never populated the fields |
-| Step 1 approver | Automatically assign to Related User: `Current_Approver__c` |
-| Approval actions | Field update `Chain_Step_Outcome__c = 'Approved'`; keep record locked |
-| Rejection actions | Field update `Chain_Step_Outcome__c = 'Rejected'`; keep locked (engine decides unlock) |
-| Recall actions | Field update `Chain_Step_Outcome__c = 'Recalled'` |
-| Initial submit | Lock record |
-
-### 6.3 The Chain Advancer
-
-A record-triggered Flow on the governed object (after-save, fires on `Chain_Step_Outcome__c` change) calls a single invocable, which routes to `ChainManager.advance()`:
-
-```
-advance(recordId, outcome):
-  APPROVED  → close current Approval_Chain_Step__c
-              more levels?  → resolve next approver (re-check active),
-                               set Current_Approver__c,
-                               Approval.unlock() → Approval.process() next cycle
-              last level?   → Chain Status = Approved, final unlock,
-                               clear Current_Approver__c, completion actions
-  REJECTED  → Chain Status = Rejected, apply Rejection_Behavior__c, unlock
-  RECALLED  → Chain Status = Recalled, unlock; resubmission re-evaluates
-              rules if Recall_Reevaluates__c
-```
-
-`Approval.unlock()` requires the **Enable record locking/unlocking in Apex** org setting — a documented prerequisite. The advance runs in the approval transaction's after-save; the resubmit is done via a Queueable to keep each cycle's transaction clean and to survive mixed-DML edges around user-context operations.
-
-### 6.4 Lock Lifecycle
-
-Locked at first submit → stays locked across cycles (unlock/resubmit happens inside one engine call, milliseconds of exposure, acceptable; if the resubmit Queueable fails, the record remains locked and the chain is flagged `Failed` for admin retry) → unlocked at terminal state only.
-
----
-
-## 7. Chain Lifecycle Rules
-
-1. **One active chain per record.** Enforced by `Active_Chain__c` + engine check; a second submit while `In_Progress` is rejected with a clear error.
-2. **Reassignment** (native "Reassign" on the work item) is detected by the Advancer comparing work-item actor vs. `Assigned_User__c`, stamped into `Actual_Approver__c`.
-3. **Approver deactivated mid-chain:** the next `advance()` re-checks active status *at each hop*, not just at submit; substitution → fallback, logged.
-4. **Record edited mid-chain:** locked, so only admins can edit. Admin edits do **not** re-trigger evaluation (rules matched at submit time — the evaluated snapshot is the audit truth). Re-evaluation requires recall + resubmit.
-5. **SLA escalation:** a scheduled batch scans open steps past `SLA_Hours__c`; behavior per step config — remind, auto-reassign to fallback, or skip level (each action logged).
-6. **Data-load safety:** entry points are explicit (no record-trigger auto-submit in v1), so bulk loads cannot accidentally start chains.
-
----
-
-## 8. Decision Log & SOX Posture
-
-The chain objects **are** the audit artifact:
-
-* *Why this path:* `Matched_Rule__c` + `Rule_Version__c` + `Evaluated_Values__c` JSON.
-* *Who was supposed to approve:* planned steps, written before the first work item exists.
-* *Who actually did:* `Actual_Approver__c`, incl. group actor and reassignments.
-* *What the group looked like:* membership snapshot at assignment time.
-* Chain objects are **never deleted**; terminal chains are locked via the `Lock_Terminal_Chain` validation rule (edits blocked once `Status__c` is terminal). The exception is the `AMF_Bypass_Chain_Lock` **custom permission**, granted by `Approval_Matrix_Admin` — a custom permission rather than a named integration profile, so the rule stays portable across orgs. The rule tests `PRIORVALUE(Status__c)` and is skipped on insert, so the engine's own final transition *into* a terminal status succeeds while every later edit is blocked.
-* Config governance: CMDT changes deploy through the normal release pipeline — the framework removes *code* releases for rule changes, not change control. Rule `Version__c` ties every historical chain to the rule text that produced it.
-
----
-
-## 9. Entry Points & Standard-Button Lockdown
+## 7. Entry Points
 
 | Path | Mechanism |
 |---|---|
-| UI | Headless LWC Quick Action per object → `ApprovalMatrixService.submit()` (shows resolved chain preview before confirm — strong demo moment) |
-| Flow | Invocable `SubmitForMatrixApproval` |
+| UI | `amfSubmitForApproval` headless LWC quick action → preview → confirm → submit |
+| Flow | `AMF_SubmitForMatrixApproval` invocable |
 | Apex | Direct service call |
 | Integration | `@RestResource` wrapper |
 
-Standard **Submit for Approval** removed from all layouts *and*, as defense in depth, the process entry criteria (§6.2) reject any submission the engine didn't stage. A stray standard submit therefore fails loudly instead of silently bypassing routing.
+**Recall.** For Classic submissions, native recall applies. For Flow submissions, `recallApprovalSubmission`, `cancelApprovalSubmission`, `reassignApprovalWorkItem` and `reviewApprovalWorkItem` exist as standard invocable actions with REST endpoints, callable from Apex via `Invocable.Action.createStandardAction(...)` — but none has been executed against a live submission (Appendix A, Q4). Do not design a screen-flow-only recall path, and do not build the Apex path either, until one has been proven.
 
 ---
 
-## 10. Bulkification & Limits
+## 8. Auditability
 
-* `submit()` accepts `List<Id>`; `Approval.process()` takes up to 100 requests per call — the engine chunks and, above a configurable threshold, defers to a Queueable.
-* CMDT reads are limit-free; the **one consolidated dynamic SOQL per object** (§4.1) is the only per-transaction query cost of evaluation.
-* Expression parsing is O(conditions) per rule; rules are evaluated in priority order with early exit.
-* Each chain cycle is a separate transaction — depth never accumulates governor cost.
+- **Why** — `Approval_Decision_Log__c`: matched rule, version, expression snapshot, evaluated values. Immutable, never deleted.
+- **Who and when** — native. Classic: `ProcessInstance` / `ProcessInstanceStep`. Flow: `ApprovalSubmission` / `ApprovalWorkItem`, where `ReviewedById` is the actual approver natively.
 
----
+```
+Approval_Decision_Log__c.Execution_Ref_Id__c == ApprovalSubmission.Id   (Flow)
 
-## 11. Testability Architecture
+SELECT Id, Status, AssignedToId, ReviewedById, ReviewedDate, Comments, ParentWorkItemId
+FROM   ApprovalWorkItem
+WHERE  ApprovalSubmissionId = :executionRefId
+ORDER BY CreatedDate
+```
 
-* `RuleProvider` stub — in-memory rule definitions (builder pattern: `RuleBuilder.forObject(...).condition(...).route(...)`).
-* `SubmissionStrategy` stub — asserts staged approver + guard fields without executing a real process (real `Approval.process` covered by a thin integration test per object against a test-only process).
-* `FieldPathResolver` tested against standard objects to avoid org-specific schema coupling.
-* Target: engine logic ≥ 90% covered with zero dependence on org CMDT rows.
+`ApprovalSubmission.RelatedRecordId` points back at the governed record, so submissions are reachable without the log. `Execution_Ref_Id__c` therefore earns its place as an immutable provenance stamp rather than the only join path — it must not be "optimised" away.
 
----
+A read-only timeline LWC renders both halves as one narrative: *"Matched **High-value APAC** v3 because Amount = 24,00,000 and Region = APAC → PR_Three_Level_Finance → [native step history]"*.
 
-## 12. Security Model
-
-* Engine runs `without sharing` for chain writes and work-item actions (it is infrastructure), but **authorizes explicitly**: submit requires read access on the record; group actions re-verify live membership before actioning.
-* Approval Inbox LWC enforces membership server-side (never trusts the client list).
-* Chain objects: read for approvers/submitter via sharing rules; create/edit restricted to the framework's permission set. Two permission sets ship: `Approval_Matrix_User`, `Approval_Matrix_Admin`.
+**This fixes the prior implementation's deepest flaw.** There, re-evaluation overwrote the template field, so the mechanism that kept routing current destroyed the historical record. Here every submission writes a permanent row; the current answer and the historical answer are different records.
 
 ---
 
-## 13. Packaging & Object Onboarding (2–3 objects)
+## 9. Config Validator
 
-**Shared core (unmanaged package / repo module):** all Apex, LWC, CMDT type definitions, chain objects, permission sets.
-**Per-object add-on (checklist, ~half a day each):**
+Runs at deploy time and is also exposed as an invocable for post-deploy pipeline checks. Deployment fails when:
 
-1. Create the three per-object fields (§3.3)
-2. Clone the generic 1-step Approval Process from the template spec
-3. Create the record-triggered Chain Advancer flow (template)
-4. Add the Quick Action + layout changes; remove standard submit
-5. One `Approval_Object_Config__mdt` row
-6. Run the config validator; smoke-test with a 2-level rule
-
----
-
-## 14. Known Constraints & Trade-Offs (state these to stakeholders)
-
-1. **Approval history is per-cycle.** A 5-level chain shows 5 process instances, not one 5-step history. The chain record page (with a timeline LWC) is the human-readable view; this is a presentation cost of unlimited depth.
-2. **Group levels show the service user in native history.** True actor is on the chain step (§5.1).
-3. **`Approval.unlock()` org setting** must be enabled.
-4. **Delegated approvers** (native `DelegatedApproverId`) work per cycle but the delegate is recorded as actual approver — matches SOX expectations, but confirm with compliance.
-5. **Platform direction:** Salesforce's investment is in Flow Approval Orchestration; legacy processes have no announced retirement but the trajectory is clear. The `SubmissionStrategy` seam exists precisely so the execution layer can be swapped to an `OrchestrationStrategy` (which would natively solve queue/group work items and the history-fragmentation trade-off) without touching the rule engine, config schema, or decision log. Position this in the deck as a deliberate migration path, not a risk.
+- Any active expression fails to compile (message includes character position)
+- A `Classic` rule's `Process_API_Name__c` has no **active** `ProcessDefinition` of type Approval for that object
+- A `Flow` rule's `Process_API_Name__c` has no **active** flow of `processType` `ApprovalWorkflow` — active, not merely present, because Draft orchestrations deploy clean (§5.3)
+- Two active rules share the same object and priority
+- A governed object lacks `Matrix_Submission__c`
+- A Classic template's entry criteria omit the guard
 
 ---
 
-## 15. Recommended Build Sequence
+## 10. Testability
 
-| Phase | Content |
+- `RuleProvider` stub with a fluent `AMF_RuleBuilder` fixture — no test depends on org CMDT rows.
+- `SubmissionStrategy` stub asserts the staged guard field and selected process without executing a real approval; one thin integration test per template exercises the real path.
+- Evaluator tested against standard objects where possible to avoid org-specific schema coupling.
+- Custom Metadata cannot be inserted in tests. This is why the provider interface is non-negotiable rather than a nicety.
+
+---
+
+## 11. Security
+
+- The service runs `without sharing` (it is infrastructure) but authorises explicitly: submission requires read access to the record.
+- Two permission sets: `Approval_Matrix_User` (submit, read own logs), `Approval_Matrix_Admin` (read all logs, manage config — Modify All deliberately withheld, §3.3).
+- Flow approvals additionally require access to `ApprovalSubmission` and `ApprovalWorkItem`, and edit on the submitted object; Run Flows may be required depending on context.
+
+---
+
+## 12. Known Constraints and Open Questions
+
+1. **Group any-member / unanimous semantics on Flow steps are unverified** (Appendix A, Q3). §5.4's guidance depends on them. Highest-priority open item.
+2. **The Flow launch call is inferred, not executed** (Appendix A, Q1).
+3. **Flow templates cost more than one flow each** — orchestration plus a companion screen flow per approval step.
+4. **Retiring a shape** means editing every rule that references it; there is no template registry. The validator makes stale references a deployment failure. If an org ever has dozens of rules sharing shapes, a registry reintroduces additively with no engine change.
+5. **Classic remains fully supported** and Flow Approval Processes consume no automation credits. The dual-strategy design is the hedge: rules migrate `Classic` → `Flow` one row at a time with zero engine change.
+
+---
+
+## 13. MVP Scope
+
+The MVP proves one thing: **an admin changes one Custom Metadata row, the next submission routes to a different approval process, and a log record explains why.** Everything else is hardening.
+
+### 13.1 In scope
+
+- One object: `Purchase_Request__c` (`Amount__c`, `Region__c`, `Risk_Level__c`)
+- `Approval_Matrix_Rule__mdt` — **without `Execution_Type__c`** (Classic-only)
+- `Approval_Decision_Log__c` — also **without `Execution_Type__c`**, for the same reason — and `Matrix_Submission__c`
+- `RuleProvider` + `AMF_CmdtRuleProvider` (SOQL-based, §3.1)
+- Expression evaluator, **reduced grammar** (§13.3)
+- Engine steps 1–11, Classic branch only
+- `SubmissionStrategy` + `AMF_ClassicProcessStrategy`
+- Two Classic templates, whose shapes this document originally left unstated and which are now
+  fixed as: `PR_Two_Level_Mgmt` — two steps up the **Manager hierarchy**, which is what the
+  seeded `amfu1 → amfu5` chain exists for; `PR_Three_Level_Finance` — three **named-user** steps,
+  `amfu3 → amfu4 → amfu5`. Two visibly different shapes, so the rule-flip demo is unmistakable
+- Submit quick action, **no preview modal**
+
+### 13.2 Out of scope — do not build, do not stub
+
+Flow strategy · `Execution_Type__c` · queue or committee templates · preview modal · timeline LWC · config validator · bulk chunking · recall handling · second object · `_v2` cloning · template registry.
+
+### 13.3 Reduced MVP grammar
+
+Supported: `&&`, `||`, parentheses, `== != > >= < <=`; field paths up to 2 hops; types Number/Currency, String, Picklist, Boolean, Date; literals NUMBER, `'STRING'`, TRUE, FALSE, NULL, `YYYY-MM-DD`; bare `TRUE` as a complete expression.
+
+Deferred: `IN`, `NOT IN`, `CONTAINS`, `STARTS_WITH`, `NOT`/`!`, `TODAY(±n)`, multipicklist, 3+ hop paths.
+
+The lexer, parser and AST must be structured so these are **additive** — no special-casing around their absence.
+
+### 13.4 Phases
+
+| Phase | Content | Gate |
+|---|---|---|
+| **M0** | Scaffold, org connectivity, `Purchase_Request__c`, guard field, seed users with manager chain | Deploy + seed green |
+| **M1** | Single CMDT, decision log, three sample rules, SOQL-based provider | Long-expression (>255 char) test passes |
+| **M2** | Evaluator, reduced grammar, table-driven + malformed-input suites | ≥90% coverage, zero org dependence |
+| **M3** | Engine, Classic strategy, two templates, log write, submit action | **Manual QA:** change a rule's process in CMDT, redeploy, watch routing change with no code touched |
+
+### 13.5 Repository state
+
+Commit `a69e3c9` contains Phase 0 and Phase 1 built to the **v1.0** design: four Custom Metadata types, chain objects, permission sets, 14 CMDT records, list views. None of it matches this document.
+
+**Reusable:** `sfdx-project.json`, `AMF_Ping`, `scripts/seed-data.apex`, `Purchase_Request__c`.
+**Retired:** all four v1 CMDT types, both chain objects, v1 permission sets and list views.
+
+~~Because the v1 metadata is also deployed to `amf-dev`, a fresh Developer Edition org is faster than destructive deploys against Custom Metadata types.~~ **Superseded by events.** The destructive deletes succeeded against `amf-dev` at `71fd786` and in M0, so the MVP builds there and keeps Phase 0's seeded users, queue and group. The one thing that genuinely resisted deletion was `Approval_Chain__c`, held by a soft-deleted `Purchase_Request__c.Active_Chain_del__c` in the recycle bin — a relationship the Metadata API cannot address, cleared by a manual Setup erase rather than a new org.
+
+---
+
+## Appendix A — Spike Findings (2026-08-14, `amf-dev`, API 62.0)
+
+Full detail in `docs/spike-results.md`. Confidence labels are load-bearing.
+
+| # | Question | Status |
+|---|---|---|
+| Q1 | Flow template contract: `processType ApprovalWorkflow`, three String inputs (`recordId`, `submitter`, `submissionComments`), `actionType stepApproval`, companion screen flow per step, Draft deploys unvalidated | **CONFIRMED** |
+| Q1 | Apex launch call for an orchestration | **INFERRED** — no standard invocable exists; `Flow.Interview.createInterview` is the likely mechanism; blocked on completing a companion screen flow |
+| Q2 | Timeline join: `ApprovalSubmission` / `ApprovalWorkItem` field shapes; `ReviewedById` supplies the true approver natively | **CONFIRMED** |
+| Q3 | Group step any-member / unanimous semantics | **OPEN** — highest-risk gap; `ParentWorkItemId` is the structure to examine |
+| Q4 | `recallApprovalSubmission`, `cancelApprovalSubmission`, `reassignApprovalWorkItem`, `reviewApprovalWorkItem` exist as standard invocable actions with REST endpoints | **CONFIRMED as available**, execution untested |
+
+Q4 contradicts the earlier assumption that recall was unavailable to autolaunched flows and must be a screen flow. Neither design should be built until an action has been executed against a live submission.
+
+Artefact: `AMF_Spike_Approval` is deployed to `amf-dev` as Draft. Not project source — delete it or complete it into the first real Flow template.
+
+---
+
+## Appendix B — Superseded Designs (do not build)
+
+The v1.0 design resolved approver chains rather than selecting templates. Everything below was deleted when the architecture changed, and represents roughly 60% of the original build. Code for some of it exists at commit `a69e3c9`.
+
+| Abandoned | Replaced by |
 |---|---|
-| **Spike (wk 0)** | `nextApproverIds` + queue validation (§5.1); `Approval.unlock` behavior across cycles |
-| **Phase 1 (wks 1–3)** | Object #1: CMDT schema, engine (evaluator, resolver — users + manager chain), chain objects, single-step process, Advancer, decision log. Demo: admin edits a rule in config → next submission routes differently → chain record explains why |
-| **Phase 2 (wks 4–5)** | Group Work Item pattern + Approval Inbox LWC; SLA escalation batch |
-| **Phase 3 (wk 6)** | Objects #2–3 via the onboarding checklist (proves portability); config validator; hardening + bulk tests |
+| Chained single-step approval process + Chain Advancer flow | Templates are real multi-step processes; depth lives in the template |
+| `Approval.unlock()` re-submit cycling | One submission per record |
+| `Approver_1..N__c` / `Current_Approver__c` staging fields | No field-based approver injection |
+| `AMF_ApproverResolver` (user/queue/group/manager expansion) | Approvers are configured inside the template |
+| Group Work Item pattern, service user, Approval Inbox LWC | Native group work items on Flow templates (pending Q3) |
+| `Approval_Chain__c` / `Approval_Chain_Step__c` state machine | Native `ProcessInstance` / `ApprovalSubmission` + decision log |
+| Four CMDT types incl. numbered conditions and route steps | One CMDT type with a single expression string |
+| SLA escalation batch | Template-level time-dependent actions |
+| Template registry CMDT | Direct `Process_API_Name__c` + validator existence checks |
+
+The corresponding entries in `docs/decisions.md` dated 2026-08-12 are historical context for `a69e3c9`, not current design. Four of those decisions survive and are incorporated above: `Matched_Rule__c` as Text (§3.3), `Record_Id__c` non-unique external id (§3.3), custom permission rather than profile for the immutability bypass (§3.3), and Modify All withheld from the admin permission set (§3.3).

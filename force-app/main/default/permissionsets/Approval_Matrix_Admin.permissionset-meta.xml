@@ -1,12 +1,8 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
     <label>Approval Matrix Admin</label>
-    <description>Framework administrators. Reduced to the pilot object plus the decision-log bypass during the v2.1 architecture pivot; CMDT and log grants are rebuilt against the v2.1 data model.</description>
+    <description>Framework administrators. Reduced to the pilot object during the architecture pivot; CMDT and decision-log grants, and the AMF_Bypass_Log_Lock custom permission, are rebuilt against the v3.0 data model in M1.</description>
     <hasActivationRequired>false</hasActivationRequired>
-    <customPermissions>
-        <enabled>true</enabled>
-        <name>AMF_Bypass_Chain_Lock</name>
-    </customPermissions>
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>true</allowDelete>
@@ -24,6 +20,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Purchase_Request__c.Amount__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Purchase_Request__c.Matrix_Submission__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

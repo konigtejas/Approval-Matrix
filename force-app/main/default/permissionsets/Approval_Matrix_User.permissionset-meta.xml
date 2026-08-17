@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
     <label>Approval Matrix User</label>
-    <description>Submitters and approvers. Reduced to the pilot object during the v2.1 architecture pivot; chain-object and CMDT grants are rebuilt against the v2.1 data model (Approval_Matrix_Rule__mdt, Approval_Decision_Log__c).</description>
+    <description>Submitters and approvers. Pilot object only; CMDT and decision-log grants arrive in M1. Matrix_Submission__c is deliberately read-only here — only the engine sets the guard (arch doc 6.3).</description>
     <hasActivationRequired>false</hasActivationRequired>
     <objectPermissions>
         <allowCreate>true</allowCreate>
@@ -20,6 +20,11 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Purchase_Request__c.Amount__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Purchase_Request__c.Matrix_Submission__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

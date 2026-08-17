@@ -1,47 +1,55 @@
-# Approval Matrix Framework
+# Approval Matrix Framework — MVP
 
-Salesforce DX project. Hybrid approval routing framework: Custom Metadata rules,
-Apex evaluation engine, chained single-step native Approval Processes.
+Salesforce DX. The matrix selects WHICH native approval process a record enters.
+Custom Metadata rules → expression evaluator → priority match → submit by process
+name → decision log explains why.
 
 ## Source of truth
-docs/architecture.md defines ALL schema, class responsibilities, and patterns.
-Section references (§) in tasks point there. If a task seems to conflict with the
-doc, or the doc is ambiguous, STOP and ask — never guess, never redesign.
-Approved deviations get one line in docs/decisions.md.
+docs/architecture.md (v3.0) defines the full target design; its §13 is this MVP scope.
+WE ARE BUILDING THE MVP SUBSET ONLY (see MVP SCOPE). If the doc describes something
+not in MVP scope, do NOT build it. If a task seems to conflict with the doc, STOP and
+ask. docs/build-playbook.md carries the phase plan (M0–M3) and the gate for each.
 
-## Change logging (every phase, no exceptions)
-Each phase is built in a fresh chat session, so there is no conversation history to
-rely on. START HERE: docs/technical-log.md — its phase status board says where the
-build is, and the most recent entry's "Carried into later phases" table says what
-that phase owes you. Then read the phase prompt in docs/build-playbook.md.
+## MVP SCOPE — build ONLY these
+- One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)
+- One CMDT: Approval_Matrix_Rule__mdt (§3.1)
+- One custom object: Approval_Decision_Log__c
+- One guard checkbox: Matrix_Submission__c
+- Expression evaluator, REDUCED GRAMMAR (see below)
+- Engine: priority-ordered first match, log write, submit
+- ClassicProcessStrategy only
+- Two Classic approval processes
+- Submit quick action, no preview modal
 
-docs/technical-log.md is the running technical record. Append a full entry at the
-end of every phase — before the phase commit — and after any out-of-phase fix.
-Update the phase status board in the same edit.
+## EXPLICITLY OUT OF MVP — do not build, do not stub, do not mention
+Flow strategy / Execution_Type__c / FlowApprovalStrategy · queue or committee
+templates · preview modal · timeline LWC · config validator · bulk chunking ·
+recall handling · second object · _v2 template cloning · TemplateRegistry ·
+ApproverResolver · chain objects
 
-## Finishing a phase
-When a phase's acceptance gates are green: write the log entry, update the status
-board, then COMMIT AND PUSH to the working branch without being asked. One commit
-per phase, message `Phase N: <name>`. Do not leave a completed phase uncommitted —
-the next phase starts in a fresh session and inherits the repo, not the chat.
-An entry covers: file-level change list, reasoning behind non-obvious choices,
-every failure hit and how it was resolved, verification evidence (real command
-output, never "should work"), and debt carried into later phases. Read it at the
-start of a phase: it carries the state that /clear throws away.
-
-## Environment
-- Org alias: amf-dev (Developer Edition). Deploy: sf project deploy start -o amf-dev
-- Run tests: sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human
-- Apex API version 62.0. LWC only (no Aura).
+## MVP GRAMMAR — reduced
+Supported: && || ( ) == != > >= < <= ; field paths up to 2 hops (Account__r.Region__c);
+types Number/Currency, String, Picklist, Boolean, Date; literals NUMBER, 'STRING',
+TRUE, FALSE, NULL, YYYY-MM-DD; bare TRUE as a complete expression (catch-all rules).
+NOT supported yet: IN, NOT IN, CONTAINS, STARTS_WITH, NOT/!, TODAY(±n), multipicklist,
+3+ hop paths. Structure the lexer/parser/AST so these are additive later — do not
+special-case around their absence.
 
 ## Non-negotiable conventions
-- All CMDT access via RuleProvider interface (§4.4). Engine classes NEVER query __mdt directly.
-- All Approval.process()/unlock() calls via SubmissionStrategy (§11). Never inline.
-- Unit tests use RuleBuilder + stub providers — zero dependence on org CMDT rows.
-- Bulk-safe everywhere: List<Id> inputs, no SOQL/DML in loops.
-- Every class: ApexDoc header stating its §section in the architecture doc.
-- Naming: AMF_ prefix on all Apex classes; amf prefix on LWC.
+- CMDT access ONLY via RuleProvider interface. Engine classes never query __mdt.
+- CRITICAL: CmdtRuleProvider must use SOQL, never getAll()/getInstance().
+  Those truncate Long Text Area fields to 255 chars and would silently corrupt
+  Expression__c. CMDT SOQL is governor-free. Pin this with a test.
+- All Approval.process() calls ONLY via SubmissionStrategy interface.
+- Tests use in-memory rule fixtures — zero dependence on org CMDT rows.
+- Evaluation errors FAIL LOUDLY (block + log). Never catch-and-return-false.
+- Naming: AMF_ on Apex classes, amf on LWC. ApexDoc header cites its § section.
+
+## Environment
+- Org alias: amf-dev. Deploy: sf project deploy start -o amf-dev
+- Tests: sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human
+- API 62.0. LWC only.
 
 ## Scope discipline
-Only touch files the current task allows. Do not refactor previous phases.
-Do not create metadata the current phase doesn't require.
+Only touch files the current phase allows. Never refactor previous phases.
+Never create metadata the current phase doesn't require.

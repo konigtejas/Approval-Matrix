@@ -1,6 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
-    <isLicensed>false</isLicensed>
-    <label>AMF Bypass Chain Lock</label>
-    <description>Exempts the holder from the Lock_Terminal_Chain validation rule so an integration or admin can correct a terminal chain. Granted by Approval_Matrix_Admin (arch doc 8).</description>
-</CustomPermission>
