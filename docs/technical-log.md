@@ -96,7 +96,7 @@ session needs. Update the row when a phase completes.
 | Phase | Name | Status | Commit |
 |---|---|---|---|
 | **M0** | Baseline & cleanup | **Complete** — all gates green, no v1.0 metadata left | `9a54e68`, `6ccc2ed` + M0.8 |
-| **M1** | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | **Complete** — >255 gate green, 20/20 tests | _pending, see M1.8_ |
+| **M1** | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | **Complete** — >255 gate green, 20/20 tests | `26a157f` |
 | M2 | Expression evaluator, reduced grammar | Not started | |
 | M3 | Engine, two Classic templates, submit action | Not started | |
 
@@ -869,7 +869,7 @@ the guard, two permission sets, and `AMF_Ping`/`AMF_PingTest`. M1 starts from a 
 
 ## Phase M1 — Data model
 
-**Date:** 2026-08-18 · **Commit:** _recorded in M1.11_
+**Date:** 2026-08-18 · **Commit:** `26a157f`
 **Status:** complete — the >255-character gate is green and all 20 tests pass
 **Playbook goal:** the matrix itself, the audit artefact, and the only sanctioned way to read
 Custom Metadata.
