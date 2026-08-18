@@ -98,7 +98,7 @@ session needs. Update the row when a phase completes.
 | **M0** | Baseline & cleanup | **Complete** — all gates green, no v1.0 metadata left | `9a54e68`, `6ccc2ed` + M0.8 |
 | **M1** | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | **Complete** — >255 gate green, 20/20 tests | `26a157f` |
 | **M2** | Expression evaluator, reduced grammar | **Complete** — 100% coverage on all eight evaluator classes, 108/108 tests | `ce47137` |
-| **M3** | Engine, two Classic templates, submit action | **Code complete** — 141/141 Apex tests, 6/6 Jest, service and log writer at 100%; awaiting the manual QA gate | pending |
+| **M3** | Engine, two Classic templates, submit action | **Code complete** — 141/141 Apex tests, 6/6 Jest, service and log writer at 100%; awaiting the manual QA gate | `d13241f` |
 
 ### Superseded — the v1.0 plan
 
@@ -1442,7 +1442,7 @@ later than it eventually will.
 
 ## Phase M3 — Engine, templates, submit action
 
-**Date:** 2026-08-18 · **Commit:** _pending_
+**Date:** 2026-08-18 · **Commit:** `d13241f`
 **Status:** code complete — 141/141 Apex tests, 6/6 Jest tests, `AMF_ApprovalMatrixService`
 and `AMF_DecisionLogWriter` at 100%, org-wide 99%. **The phase gate is manual and has not
 been run yet** (see M3.7).
