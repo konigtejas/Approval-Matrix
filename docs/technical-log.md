@@ -97,7 +97,7 @@ session needs. Update the row when a phase completes.
 |---|---|---|---|
 | **M0** | Baseline & cleanup | **Complete** — all gates green, no v1.0 metadata left | `9a54e68`, `6ccc2ed` + M0.8 |
 | **M1** | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | **Complete** — >255 gate green, 20/20 tests | `26a157f` |
-| **M2** | Expression evaluator, reduced grammar | **Complete** — 100% coverage on all eight evaluator classes, 108/108 tests | `PENDING` |
+| **M2** | Expression evaluator, reduced grammar | **Complete** — 100% coverage on all eight evaluator classes, 108/108 tests | `ce47137` |
 | M3 | Engine, two Classic templates, submit action | Not started | |
 
 ### Superseded — the v1.0 plan
@@ -1178,7 +1178,7 @@ log rather than in the design document.
 
 ## Phase M2 — Expression evaluator
 
-**Date:** 2026-08-18 · **Commit:** `PENDING`
+**Date:** 2026-08-18 · **Commit:** `ce47137`
 **Status:** complete — 100% coverage on all eight evaluator classes, 108/108 tests pass
 **Playbook goal:** the hard part. The reduced grammar, compiled and evaluated, with zero
 dependence on org configuration.
