@@ -3,6 +3,10 @@
     <label>Approval Matrix User</label>
     <description>Submitters and approvers. Decision log is read-only and record-scoped; the matrix is not exposed at all. Matrix_Submission__c is read-only too, because only the engine sets the guard (arch doc 6.3, 11).</description>
     <hasActivationRequired>false</hasActivationRequired>
+    <classAccesses>
+        <apexClass>AMF_ApprovalMatrixService</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>false</allowDelete>

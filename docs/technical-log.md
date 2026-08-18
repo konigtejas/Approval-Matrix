@@ -98,7 +98,7 @@ session needs. Update the row when a phase completes.
 | **M0** | Baseline & cleanup | **Complete** — all gates green, no v1.0 metadata left | `9a54e68`, `6ccc2ed` + M0.8 |
 | **M1** | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | **Complete** — >255 gate green, 20/20 tests | `26a157f` |
 | **M2** | Expression evaluator, reduced grammar | **Complete** — 100% coverage on all eight evaluator classes, 108/108 tests | `ce47137` |
-| M3 | Engine, two Classic templates, submit action | Not started | |
+| **M3** | Engine, two Classic templates, submit action | **Code complete** — 141/141 Apex tests, 6/6 Jest, service and log writer at 100%; awaiting the manual QA gate | pending |
 
 ### Superseded — the v1.0 plan
 
@@ -1437,3 +1437,333 @@ later than it eventually will.
 | §9's config validator would move compile errors from submit time to deploy time (M2.6) | post-MVP |
 | Word forms `AND`/`OR` are two entries in `AMF_Lexer.KEYWORDS`; `IN`, `CONTAINS`, `STARTS_WITH`, `NOT`, `TODAY(n)` and multipicklist each need one node type and one branch per stage | post-MVP |
 | Raising the path cap from 2 to §4.4's platform 4 is `AMF_ExprCompiler.MAX_PATH_SEGMENTS` plus the mirrored constant in `AMF_FieldPathResolver` | post-MVP |
+
+---
+
+## Phase M3 — Engine, templates, submit action
+
+**Date:** 2026-08-18 · **Commit:** _pending_
+**Status:** code complete — 141/141 Apex tests, 6/6 Jest tests, `AMF_ApprovalMatrixService`
+and `AMF_DecisionLogWriter` at 100%, org-wide 99%. **The phase gate is manual and has not
+been run yet** (see M3.7).
+**Playbook goal:** the demo. End to end, one rule change away from different routing.
+
+The last phase of the **v3.0 MVP** plan, and the one that turns three phases of parts into
+the thing §13 claims: *an admin changes one Custom Metadata row, the next submission routes
+to a different approval process, and a log record explains why.* Seven production Apex
+classes, one test fixture, four test classes, two native approval processes, a workflow field
+update, an LWC quick action and a layout change.
+
+### M3.1 File-level changes
+
+| File | Change | Detail |
+|---|---|---|
+| `classes/AMF_SubmissionStrategy.cls` | **added** | The interface. The only sanctioned route to `Approval.process()` (§6.2) |
+| `classes/AMF_SubmitRequest.cls` | **added** | Record + process name. The engine's output, the strategy's input |
+| `classes/AMF_SubmitResult.cls` | **added** | Record + execution reference, typed `String` so Flow's `ApprovalSubmission.Id` is additive |
+| `classes/AMF_ClassicProcessStrategy.cls` | **added** | The one place `Approval.process()` appears (§6.2, §5.2) |
+| `classes/AMF_SubmissionException.cls` | **added** | The engine's error type, for whole-call faults only |
+| `classes/AMF_DecisionLogWriter.cls` | **added** | Row builders per outcome, `save`, and the step-11 `stamp` (§3.3) |
+| `classes/AMF_ApprovalMatrixService.cls` | **added** | §6.1 steps 1–11, plus the `@AuraEnabled` UI entry point (§7) |
+| `classes/AMF_StrategyStub.cls` | **added** | `@IsTest`. Records requests **and re-reads the guard from inside submit()** |
+| `classes/AMF_ApprovalMatrixServiceTest.cls` | **added** | 17 tests — the engine's whole behaviour, zero org CMDT rows |
+| `classes/AMF_DecisionLogWriterTest.cls` | **added** | 7 tests |
+| `classes/AMF_ClassicProcessStrategyTest.cls` | **added** | 4 tests — guard clauses, not the platform call |
+| `classes/AMF_SubmissionIntegrationTest.cls` | **added** | 2 tests — the only real `Approval.process()` in the suite |
+| `approvalProcesses/Purchase_Request__c.PR_Two_Level_Mgmt.approvalProcess-meta.xml` | **added** | Two `userHierarchyField` steps (§5.2) |
+| `approvalProcesses/Purchase_Request__c.PR_Three_Level_Finance.approvalProcess-meta.xml` | **added** | Three named-user steps, `amfu3` → `amfu4` → `amfu5` |
+| `workflows/Purchase_Request__c.workflow-meta.xml` | **added** | `AMF_Clear_Matrix_Submission`, referenced by both templates from final approval **and** final rejection |
+| `quickActions/Purchase_Request__c.AMF_Submit_For_Approval.quickAction-meta.xml` | **added** | `LightningWebComponent` type — see M3.4a |
+| `lwc/amfSubmitForApproval/*` | **added** | Headless action, empty template, 6 Jest tests |
+| `layouts/Purchase_Request__c-Purchase Request Layout.layout-meta.xml` | **added** | Retrieved from the org, then: governed fields added, empty `<quickActionList/>` added (§6.3) |
+| `permissionsets/Approval_Matrix_*.permissionset-meta.xml` | modified | `classAccesses` for `AMF_ApprovalMatrixService`, so the LWC's Apex is callable |
+| `docs/decisions.md` | modified | Four entries — see M3.2 |
+| `docs/technical-log.md` | modified | Status board, this entry |
+
+### M3.2 Doc conflicts, resolved before building
+
+| Conflict | Resolution |
+|---|---|
+| §6.1 step 6 wants the `Blocked_No_Match` row **written** and an error **thrown** | Mutually exclusive in Apex — an exception escaping the top of a request rolls back the row. **Per-record blocked Outcome**, exceptions reserved for whole-call faults. Raised with the user before any code was written |
+| §4.6 forbids catching into a boolean, but also requires a runtime error to mark the row `Failed` and block | Both hold. The prohibition binds the **evaluator package**, which still swallows nothing; §4.6 itself *requires* the engine to catch, and the engine's catch produces a `Failed` row rather than a false |
+| §7 writes the UI row as a "LightningComponent" quick action | `LightningWebComponent`. The Aura pair does not resolve an LWC (M3.4a) |
+| §6.4's `preview()` | Not built. §13.1 says "no preview modal" and nothing in the MVP calls it; building an unused method would be stubbing an out-of-scope feature |
+
+### M3.3 Design choices worth recording
+
+1. **The blocked path is the one that had to be got right.** Every other outcome writes a row
+   and moves on; a blocked one has to write a row that *survives*. Making the service return
+   Outcomes rather than throw is what buys that, and it is why `Blocked_No_Match` carries the
+   union of values read across **every** rule tried rather than one rule's — with no winner
+   there is nothing else to show the auditor. A matched row uses the winning rule's own map,
+   because §8's narrative sentence is about the rule that won.
+2. **`allOrNone = true` on `Approval.process()`,** which is the M1.10 carried item honoured.
+   By step 10 the log rows already say `Submitted`, and `Lock_Decision_Log` permits exactly
+   one post-insert update — `Execution_Ref_Id__c`, blank to populated — and explicitly not a
+   change to `Outcome__c`. There is therefore **no way to walk a row back** from `Submitted`
+   to `Failed`. A partial success would leave the audit trail lying, so the whole transaction
+   fails instead.
+3. **The step-11 stamp builds fresh SObjects** carrying only `Id` and `Execution_Ref_Id__c`,
+   rather than re-saving the inserted instances. That is the same carried item from the other
+   side: a row rebuilt from scratch cannot dirty a field the validation rule watches, however
+   the caller has handled it in between.
+4. **`AMF_StrategyStub` re-queries the record from inside `submit()`.** §6.1 step 9 is an
+   *ordering* requirement — the guard true in the same transaction, before submit — and a stub
+   that only recorded the requests could not tell a guard set before submit from one set
+   after. Asserting `guardAtSubmit` is the only honest way to pin §6.3 without a real approval.
+5. **A rule that will not compile blocks every record in the call.** See `docs/decisions.md`.
+   The alternative — skip the broken rule, let a lower-priority one match — is the
+   anti-Sitetracker failure wearing a different hat.
+6. **The engine is object-agnostic.** The guard is staged through
+   `newSObject(id).put('Matrix_Submission__c', true)` and the stub reads it through dynamic
+   SOQL, because §3.2 makes the guard a convention on *every* governed object. Hardcoding
+   `Purchase_Request__c` would have made the second object a code change.
+7. **`requireGuardField` fails early, before any log row exists.** An object without the guard
+   is misconfigured rather than differently configured, and the alternative is a
+   field-not-found deep inside step 9 with a row already written.
+8. **Authorisation is `UserRecordAccess`, not a CRUD check.** §11 says the service runs
+   `without sharing` but authorises explicitly; a record-level question needs a record-level
+   answer, and the class has deliberately stepped outside the sharing that would have given it.
+9. **One object per call.** Both the rule set (step 1) and the union query (step 4) are per
+   object, so a mixed batch is a caller error rather than something to silently partition.
+10. **Both templates clear the guard from final *rejection* as well as final approval.** A
+    rejected record that kept `Matrix_Submission__c = true` would stay permanently bypassable.
+
+### M3.4 Issues encountered
+
+**(a) The quick action could not find its own component, and the error named the wrong thing.**
+
+`<type>LightningComponent</type>` with `<lightningComponent>amfSubmitForApproval</lightningComponent>`
+— which is how §7's wording reads — failed with *"Unable to retrieve lightning component by
+namespace/developer name : amfSubmitForApproval"*. The message points at the component, so the
+first three attempts went looking at the component: the `c:` namespace prefix (same error),
+the element order in `js-meta.xml`, and a redeploy in case of indexing lag.
+
+The component was never the problem. Probing the org settled it:
+
+```
+LightningComponentBundle  amfSubmitForApproval  ApiVersion 62  IsExposed true
+TargetConfigs  <targetConfig targets="lightning__RecordAction"><actionType>Action</actionType>
+```
+
+and an attempt to flip `actionType` was refused with *"Cannot change the type of the existing
+Lightning Web Component action"* — the org knew it as a headless LWC action all along.
+`<lightningComponent>` resolves against **Aura bundles only**. The LWC pair is
+`<type>LightningWebComponent</type>` + `<lightningWebComponent>`, and it deployed first time.
+*Lesson: when an error names an object that demonstrably exists, suspect the element that
+names it, not the object.*
+
+One genuine finding came out of the detour: the platform enforces `<targets>` **before**
+`<targetConfigs>` in `js-meta.xml`, rejecting the documented alphabetical order with *"You
+must specify targets first, before targetConfigs."*
+
+**(b) An LWC quick action cannot be put on a page layout by the Metadata API at all.**
+
+With the type fixed, the layout then failed: *"You can't add QuickActionType
+LightningWebComponent to a QuickActionList."* Confirmed at API 62.0 **and** 64.0, so it is a
+platform rule rather than a version gap.
+
+Retrieving `Account-Account Layout` to see what a stock `quickActionList` actually contains
+was what made the way forward clear:
+
+```
+FeedItem.TextPost  FeedItem.ContentPost  NewTask  NewContact  NewCase  LogACall
+NewNote  NewOpportunity  NewEvent  FeedItem.LinkPost  FeedItem.PollPost  SendEmail
+```
+
+Two things follow. `Edit`, `Delete` and `Clone` are **not** in it — they render as standard
+buttons regardless, which is why an earlier attempt to list them failed with *"no QuickAction
+named Edit found"*. And neither is `SubmitForApproval`: the standard button appears because
+Lightning falls back to a **default action set** when a layout declares no `quickActionList`
+at all. Declaring the list — even empty — is therefore what removes it, which is what §6.3
+asks for. `<quickActionList/>` deploys clean.
+
+The consequence is recorded in `docs/decisions.md` and carried in M3.8: the framework's action
+is deployed and functional but is **not on the layout**, and putting it there is a Setup step
+whose result cannot be redeployed.
+
+**(c) Three metadata length and shape limits, all found only by deploying.**
+
+`WorkflowFieldUpdate`, `QuickAction` and `ApprovalProcess` all cap `<description>` at **255
+characters**, and the first drafts of all four were 260–474. An approval step with a single
+named approver still requires `<whenMultipleApprovers>`. And `unfiled$public/ApprovalRequest`
+does not exist in this org — the `<emailTemplate>` element was dropped rather than pointed at
+a template the repo does not own.
+
+**(d) A green test that proved nothing, caught by a red one next to it.**
+
+`AMF_DecisionLogWriterTest.aSecondStampIsRefusedByTheImmutabilityRule` failed with *"A second
+stamp must be refused"* — the second stamp succeeded. The cause is the M2.7 carried item
+arriving early: **the test-running admin holds `AMF_Bypass_Log_Lock`** via
+`Approval_Matrix_Admin`, so `Lock_Decision_Log` never fires for them.
+
+The failing test was removed rather than fixed: `AMF_DecisionLogLockTest` already owns the
+lock's semantics and already runs every case as the seeded `amfu1`, who has no bypass.
+Re-asserting it here would have duplicated that coverage and added a second dependency on a
+seeded org user.
+
+The more useful half of the finding is what it implied about the test *next to* it.
+`stampWritesTheExecutionReferenceAndNothingElse` was passing as the admin — which proved
+nothing, because the bypass meant the rule was never consulted. It now runs inside
+`System.runAs(subjectWithoutBypass())`, so it actually proves what it claims: that the
+engine's step-11 stamp survives the lock in the conditions a real submitter meets. *A false
+green sitting beside a false red; only the red announced itself.*
+
+**(e) Node.js is not installed on this workstation.**
+
+`npm` is absent from both shells, so the phase's Jest gate initially had no way to run. The
+Salesforce CLI bundles its own runtime — `C:\Program Files\sf\client\bin\node.exe` (v22.22.0)
+and `npm-cli.js` alongside it — which installs the dev dependencies and runs Jest. One extra
+step: `sfdx-lwc-jest` spawns a bare `node`, so its directory has to be on `PATH` for the call.
+The `npm install` itself reports failure from the `husky` prepare hook under `cmd.exe`; the
+install completes regardless.
+
+```
+$env:PATH = "C:\Program Files\sf\client\bin;$env:PATH"
+node node_modules\jest\bin\jest.js --ci
+```
+
+### M3.5 Verification evidence
+
+**Deploy — full package, green:**
+
+```
+Status: Succeeded
+```
+
+**Tests — 141/141:**
+
+```
+Outcome              Passed
+Tests Ran            141
+Pass Rate            100%
+Org Wide Coverage    99%
+
+CLASSES                     PERCENT  UNCOVERED LINES
+AMF_ApprovalMatrixService   100%
+AMF_DecisionLogWriter       100%
+AMF_SubmitRequest           100%
+AMF_SubmitResult            100%
+AMF_ClassicProcessStrategy  81%      78,79,80,81,82
+AMF_SubmissionException     0%       (no executable lines — an empty Exception subclass)
+```
+
+`AMF_ClassicProcessStrategy`'s five uncovered lines are one guard: a platform result that
+reports success while returning no `ProcessInstance` Id. It cannot be produced —
+`Approval.ProcessResult` is not constructible and the platform does not behave that way — so
+it is left uncovered rather than contrived around. **The same invariant is covered at the
+engine level**, where `AMF_StrategyStub.returnBlankReference` drives
+`aSubmissionWithoutAnExecutionReferenceIsAContradiction`. The guard stays because §8 is
+explicit that `Execution_Ref_Id__c` must not be optimised away, so "submitted, reference
+unknown" has to be a failure rather than a result.
+
+**Jest — 6/6:**
+
+```
+PASS force-app/main/default/lwc/amfSubmitForApproval/__tests__/amfSubmitForApproval.test.js
+  √ renders nothing: it is a headless action (arch doc 13.1, no preview modal)
+  √ reports the matched rule and the process it routed to
+  √ surfaces a blocked submission as an error without treating it as a thrown fault
+  √ keeps the positioned Apex message when the call throws
+  √ falls back to a readable message when the error carries no body
+  √ refreshes the record however the submission ended
+Tests: 6 passed, 6 total
+```
+
+**The real `Approval.process()` path, in a test transaction** — the two integration tests both
+pass, and together they are §6.3 stated twice:
+
+- `aRealSubmissionEntersTheNamedProcessAndJoinsBackToIt` — the engine's chosen process name is
+  accepted by the platform, entry criteria pass *because* step 9 staged the guard first, the
+  returned Id resolves to a real `ProcessInstance` with `Status = Pending` and
+  `TargetObjectId` pointing back at the record, step 1 of the template produced a work item,
+  and the decision log row carries the same reference (§8's join).
+- `bypassingTheEngineFailsEntryCriteriaRatherThanRoutingSilently` — a direct
+  `Approval.process()` with the guard still false is **refused**, and nothing routes. This is
+  the assertion that makes the guard worth having; if the entry criteria are ever lost from a
+  template, this test goes red.
+
+**The shipped CMDT matrix, read through the real provider and evaluator** (steps 1–7, run as
+anonymous Apex — no submission, no rows written, nothing left in the org):
+
+```
+--- steps 1-2: active rules in priority order ---
+  10  PR_High_Value_APAC  v1  ->  PR_Three_Level_Finance
+  20  PR_High_Risk  v1  ->  PR_Three_Level_Finance
+  9999  PR_Catch_All  v1  ->  PR_Two_Level_Mgmt
+--- steps 3-4: one query for the union ---
+  SELECT Id, Amount__c, Region__c, Risk_Level__c FROM Purchase_Request__c WHERE Id IN :recordIds
+--- steps 5-7: first true expression wins ---
+  Amount=500 Region=EMEA Risk=Low      ->  PR_Catch_All v1        ->  PR_Two_Level_Mgmt       evaluated={}
+  Amount=250000 Region=APAC Risk=Low   ->  PR_High_Value_APAC v1  ->  PR_Three_Level_Finance  evaluated={"Region__c":"APAC","Amount__c":250000}
+--- templates present and active ---
+  PR_Three_Level_Finance  Approval  Active
+  PR_Two_Level_Mgmt       Approval  Active
+```
+
+Both templates deployed **active**, and the catch-all still reads no fields — M1.8's
+observation that a matrix of catch-alls costs nothing at step 4 survives into the engine.
+
+**The rule-flip, proved at the seam a CMDT edit acts on.**
+`aRuleFlipRoutesTheSameRecordSomewhereElseWithNoCodeChange` submits the same record twice with
+the *only* difference being `Process_API_Name__c`, and asserts two log rows carrying the same
+`Expression_Snapshot__c` and two different `Selected_Process__c` values. That is §8's deepest
+claim as a unit test: keeping routing current did not destroy the historical record. The org
+demo in M3.7 is the same thing with human eyes on it.
+
+### M3.6 Architecture deviations
+
+Four entries appended to `docs/decisions.md` (M3.2, M3.4b). No amendment to
+`docs/architecture.md` was needed: §6.1's step list remains the design, and the one place the
+MVP departs from its wording — how a block is signalled — is a platform constraint on *this*
+implementation rather than a change to what the framework does. A blocked record still does
+not route, still logs, and still explains itself.
+
+### M3.7 The manual QA gate — NOT YET RUN
+
+This phase's gate is human. Nothing below has been executed; the code is complete and green,
+and the playbook budgets an hour for this.
+
+**Prerequisite, and it will otherwise look like a bug.** `PR_Two_Level_Mgmt` resolves its
+approvers from the **submitter's** `User.Manager` chain. The admin user has no manager, so
+submitting a record that routes to it fails with *no approver found*. Either set your own
+Manager to `amfu4` in Setup (giving `amfu4` → `amfu5`), or run those steps as `amfu1`.
+`PR_Three_Level_Finance` uses named users and is unaffected, which is why the automated
+integration test routes there.
+
+**Second prerequisite.** The framework's Submit for Approval action is deployed but is **not
+on the layout** (M3.4b). Add it in Setup → Object Manager → Purchase Request → Page Layouts →
+Purchase Request Layout → Salesforce Mobile and Lightning Experience Actions. Do **not**
+retrieve the layout afterwards — the result is not redeployable.
+
+Then, in this order:
+
+1. Submit a matching record → correct process, work item with the right approver, record locks.
+2. Open the `Approval_Decision_Log__c` row → matched rule, version, expression snapshot,
+   evaluated values JSON, `Execution_Ref_Id__c` populated and joining to `ProcessInstance`.
+3. Approve through to the end → `Matrix_Submission__c` back to false.
+4. Reject a second record → also back to false.
+5. Deactivate the catch-all, submit a record that matches nothing → blocked, with a
+   `Blocked_No_Match` row explaining it. **Run this as a non-admin** (M1.6e).
+6. Try to edit a decision log row → blocked. **Also as a non-admin**, or the bypass hides it.
+7. The rule-flip: edit `PR_Catch_All`'s `Process_API_Name__c` to `PR_Three_Level_Finance`,
+   redeploy **that CMDT record only**, submit an identical record. It must route to the
+   three-level process with no Apex changed and no code deployed.
+
+### M3.8 Carried into later phases
+
+| Item | Owed to |
+|---|---|
+| ~~Name the strategy interface `AMF_SubmissionStrategy`~~ | **closed in M3** |
+| ~~The step-11 stamp must change no field but `Execution_Ref_Id__c`; a post-write failure must roll back (M1.3)~~ | **closed in M3** — fresh SObjects, and `allOrNone = true` |
+| ~~Remove the standard Submit for Approval button from the layout (§6.3)~~ | **closed in M3** — by declaring an empty `<quickActionList/>` |
+| ~~A runtime evaluation error must mark the row `Failed`, write the exception and block~~ | **closed in M3** |
+| ~~M3 must load records through `AMF_FieldPathResolver.load`~~ | **closed in M3** |
+| **The framework's quick action is not on the layout, and cannot be put there by the Metadata API** (M3.4b). Adding it in Setup works but produces a layout that will not redeploy | user, before QA |
+| **M3 manual QA steps 5 and 6 must be run as a non-admin** — `Approval_Matrix_Admin` grants the bypass (M1.6e) | user, during QA |
+| **`PR_Two_Level_Mgmt` needs the submitting user to have a Manager** (M3.7) | user, during QA |
+| Node.js is not installed on this workstation; Jest runs through the CLI's bundled runtime (M3.4e) | any new workstation |
+| `AMF_ClassicProcessStrategy`'s blank-reference guard is unreachable through the platform; the same invariant is covered at the engine level | post-MVP |
+| §9's config validator would move compile errors from submit time to deploy time, and would catch a `Process_API_Name__c` naming a process that does not exist — currently a `Failed` row at submit | post-MVP |
+| Bulk: a `Blocked_No_Match` row written for record A is rolled back if record B's submission then fails, because `allOrNone = true` condemns the transaction. Harmless while the UI submits one record at a time; revisit with chunking | post-MVP |
+| `_v2` template cloning (§5.1) is untouched — both templates are v1 and editing one in place is currently possible | post-MVP |

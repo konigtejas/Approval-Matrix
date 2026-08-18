@@ -3,6 +3,10 @@
     <label>Approval Matrix Admin</label>
     <description>Framework administrators: manage the routing matrix, read every decision log row. Modify All is deliberately withheld on the log, because the platform makes it depend on Delete and audit rows must not be deletable (arch doc 3.3, 11).</description>
     <hasActivationRequired>false</hasActivationRequired>
+    <classAccesses>
+        <apexClass>AMF_ApprovalMatrixService</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <customPermissions>
         <enabled>true</enabled>
         <name>AMF_Bypass_Log_Lock</name>

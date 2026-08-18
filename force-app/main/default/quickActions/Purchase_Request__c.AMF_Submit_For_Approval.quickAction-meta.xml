@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<QuickAction xmlns="http://soap.sforce.com/2006/04/metadata">
+    <description>Runs the approval matrix and submits the record to whichever process its highest-priority matching rule names (arch doc 7). Replaces the standard Submit for Approval button, removed from the layout so every submission goes through the engine (6.3).</description>
+    <label>Submit for Approval</label>
+    <lightningWebComponent>amfSubmitForApproval</lightningWebComponent>
+    <optionsCreateFeedItem>false</optionsCreateFeedItem>
+    <type>LightningWebComponent</type>
+</QuickAction>

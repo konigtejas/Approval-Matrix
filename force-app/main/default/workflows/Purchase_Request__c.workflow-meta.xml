@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Workflow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fieldUpdates>
+        <fullName>AMF_Clear_Matrix_Submission</fullName>
+        <description>Re-arms the framework guard (arch doc 5.2, 6.3). Every Classic template calls this from BOTH its final approval and its final rejection actions, so a record that has finished with an approval process is once again submittable only through the engine.</description>
+        <field>Matrix_Submission__c</field>
+        <literalValue>0</literalValue>
+        <name>AMF Clear Matrix Submission</name>
+        <notifyAssignee>false</notifyAssignee>
+        <operation>Literal</operation>
+        <protected>false</protected>
+        <reevaluateOnChange>false</reevaluateOnChange>
+    </fieldUpdates>
+</Workflow>
