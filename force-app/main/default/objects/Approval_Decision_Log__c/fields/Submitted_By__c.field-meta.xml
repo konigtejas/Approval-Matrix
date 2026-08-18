@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Submitted_By__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>User whose submission produced this decision. SetNull rather than Restrict: the audit row must outlive the user record (arch doc 3.3, 8).</description>
+    <label>Submitted By</label>
+    <referenceTo>User</referenceTo>
+    <relationshipLabel>Approval Decisions Submitted</relationshipLabel>
+    <relationshipName>Approval_Decisions_Submitted</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

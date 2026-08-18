@@ -8,6 +8,12 @@ Format: `YYYY-MM-DD — <what changed> — <why>`
 
 ---
 
+2026-08-18 — `Lock_Decision_Log` permits **exactly one** post-insert update — `Execution_Ref_Id__c` moving blank → populated with no other governed field changed — rather than freezing the row outright. §3.3 says the log "blocks edits after creation" while §6.1 step 11 requires the engine to stamp `Execution_Ref_Id__c` *after* submit; a blanket freeze would have made M3 impossible. Rows that never get stamped (`Blocked_No_Match`, `Failed`) freeze on insert. Known residual: that single stamping update could also alter the three Long Text Area fields, because `ISCHANGED` does not support that type. Pinned by `AMF_DecisionLogLockTest`.
+
+2026-08-18 — One **inactive** CMDT record, `PR_Long_Expression_Pin`, is exempt from `CLAUDE.md`'s "zero dependence on org CMDT rows" — the >255-character round trip proves a *platform* behaviour (Long Text Area truncation) that no in-memory fixture can demonstrate, and `Approval_Matrix_Rule__mdt` cannot be inserted in a test (§10). The record ships in the repo rather than being org configuration, is `Active__c = false` so it routes nothing, and exactly one test class reads it. Every other rule test uses `AMF_RuleBuilder` fixtures.
+
+2026-08-18 — The rule-provider interface is named **`AMF_RuleProvider`**, not the bare `RuleProvider` that §2, §10 and the M1 prompt all write — `CLAUDE.md`'s "AMF_ on Apex classes" is the override document and an interface is an Apex class file. Sets the precedent: M3's strategy interface is `AMF_SubmissionStrategy`.
+
 2026-08-17 — Architecture consolidated into **v3.0**, self-contained, superseding v1.0/v2.0/v2.1; `docs/build-playbook.md` rewritten from the v1.0 nine-phase plan to the MVP's **M0–M3** — the old plan built chained single-step approvals, approver resolution, the Group Work Item pattern and an SLA batch, none of which are in the design any more.
 
 2026-08-17 — `Execution_Type__c` omitted from **`Approval_Decision_Log__c`** as well as from `Approval_Matrix_Rule__mdt` — §3.3's table lists it on the log while §13.2 says do not build and do not stub it; with Classic the only MVP execution path the column would hold one constant value, and re-adding it is a field plus a default with no engine change. §3.3 and §13.1 annotated to match.

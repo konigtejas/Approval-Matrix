@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomMetadata xmlns="http://soap.sforce.com/2006/04/metadata" xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+    <label>ZZ - Long Expression Pin (INACTIVE)</label>
+    <protected>false</protected>
+    <values>
+        <field>Object_API_Name__c</field>
+        <value xsi:type="xsd:string">Purchase_Request__c</value>
+    </values>
+    <values>
+        <field>Priority__c</field>
+        <value xsi:type="xsd:double">9998.0</value>
+    </values>
+    <values>
+        <field>Expression__c</field>
+        <value xsi:type="xsd:string">(Amount__c &gt; 100000 &amp;&amp; Region__c == 'APAC') || (Amount__c &gt; 250000 &amp;&amp; Region__c == 'EMEA') || (Amount__c &gt; 500000 &amp;&amp; Region__c == 'AMER') || (Risk_Level__c == 'High' &amp;&amp; Amount__c &gt; 50000) || (Risk_Level__c == 'Medium' &amp;&amp; Amount__c &gt; 150000) || (Risk_Level__c == 'Low' &amp;&amp; Amount__c &gt; 750000)</value>
+    </values>
+    <values>
+        <field>Process_API_Name__c</field>
+        <value xsi:type="xsd:string">PR_Two_Level_Mgmt</value>
+    </values>
+    <values>
+        <field>Description__c</field>
+        <value xsi:type="xsd:string">TEST FIXTURE, NOT A ROUTING RULE. Inactive by design. Its expression exceeds 255 characters, which is what pins AMF_CmdtRuleProvider to SOQL: getAll() would truncate it. Valid reduced grammar, so M2 compiles it.</value>
+    </values>
+    <values>
+        <field>Version__c</field>
+        <value xsi:type="xsd:double">1.0</value>
+    </values>
+    <values>
+        <field>Active__c</field>
+        <value xsi:type="xsd:boolean">false</value>
+    </values>
+</CustomMetadata>

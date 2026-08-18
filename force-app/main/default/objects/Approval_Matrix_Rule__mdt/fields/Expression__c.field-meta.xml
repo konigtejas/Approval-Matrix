@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Expression__c</fullName>
+    <description>Routing condition, compiled by the arch doc 4 evaluator. MUST be read by SOQL: getAll()/getInstance() truncate Long Text Area to 255 characters and would corrupt this field silently (arch doc 3.1).</description>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <label>Expression</label>
+    <length>2000</length>
+    <type>LongTextArea</type>
+    <visibleLines>5</visibleLines>
+</CustomField>

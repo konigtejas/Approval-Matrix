@@ -96,7 +96,7 @@ session needs. Update the row when a phase completes.
 | Phase | Name | Status | Commit |
 |---|---|---|---|
 | **M0** | Baseline & cleanup | **Complete** — all gates green, no v1.0 metadata left | `9a54e68`, `6ccc2ed` + M0.8 |
-| M1 | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | Not started | |
+| **M1** | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | **Complete** — >255 gate green, 20/20 tests | _pending, see M1.8_ |
 | M2 | Expression evaluator, reduced grammar | Not started | |
 | M3 | Engine, two Classic templates, submit action | Not started | |
 
@@ -864,3 +864,312 @@ sf apex run test -l RunLocalTests     → Passed, 1/1, 100%, Test Run Id 707aj00
 
 The package is now exactly the MVP baseline: `Purchase_Request__c` with five business fields plus
 the guard, two permission sets, and `AMF_Ping`/`AMF_PingTest`. M1 starts from a clean org.
+
+---
+
+## Phase M1 — Data model
+
+**Date:** 2026-08-18 · **Commit:** _recorded in M1.11_
+**Status:** complete — the >255-character gate is green and all 20 tests pass
+**Playbook goal:** the matrix itself, the audit artefact, and the only sanctioned way to read
+Custom Metadata.
+
+Second phase of the **v3.0 MVP** plan. 34 new components: one Custom Metadata type and its seven
+fields, one custom object with twelve fields and a validation rule, one custom permission, six Apex
+classes, four CMDT records, a list view, and FLS for all of it.
+
+### M1.1 File-level changes
+
+| File | Change | Detail |
+|---|---|---|
+| `objects/Approval_Matrix_Rule__mdt/` | **added** | Type + 7 fields + `All` list view (§3.1). `Execution_Type__c` deliberately absent |
+| `objects/Approval_Decision_Log__c/` | **added** | Object + 12 fields + `Lock_Decision_Log` validation rule (§3.3). `Execution_Type__c` deliberately absent |
+| `customPermissions/AMF_Bypass_Log_Lock.customPermission-meta.xml` | **added** | The §3.3 immutability exception. Closes the M0.7 debt |
+| `customMetadata/Approval_Matrix_Rule.PR_High_Value_APAC.md-meta.xml` | **added** | Priority 10, active |
+| `customMetadata/Approval_Matrix_Rule.PR_High_Risk.md-meta.xml` | **added** | Priority 20, active |
+| `customMetadata/Approval_Matrix_Rule.PR_Long_Expression_Pin.md-meta.xml` | **added** | Priority 9998, **inactive** — the >255-character test fixture |
+| `customMetadata/Approval_Matrix_Rule.PR_Catch_All.md-meta.xml` | **added** | Priority 9999, active, expression `TRUE` |
+| `classes/AMF_RuleProvider.cls` | **added** | Interface. The only sanctioned read path for the matrix |
+| `classes/AMF_RuleDefinition.cls` | **added** | DTO, `implements Comparable` — owns the priority ordering |
+| `classes/AMF_CmdtRuleProvider.cls` | **added** | SOQL implementation. Never `getAll()`/`getInstance()` |
+| `classes/AMF_RuleBuilder.cls` | **added** | `@IsTest` fluent fixture + `Stub` provider (§10) |
+| `classes/AMF_RuleDefinitionTest.cls` | **added** | 6 tests, entirely in-memory |
+| `classes/AMF_CmdtRuleProviderTest.cls` | **added** | 7 tests, including the phase gate |
+| `classes/AMF_DecisionLogLockTest.cls` | **added** | 6 tests pinning the immutability rule — see M1.3 |
+| `permissionsets/Approval_Matrix_Admin.permissionset-meta.xml` | modified | Log object read/edit/View All, FLS on 12 fields, CMDT type access, `AMF_Bypass_Log_Lock` grant |
+| `permissionsets/Approval_Matrix_User.permissionset-meta.xml` | modified | Log object read-only, FLS readable-not-editable on 12 fields, no CMDT access |
+| `docs/decisions.md` | modified | Three entries — see M1.2 |
+| `docs/technical-log.md` | modified | Status board, this entry |
+
+`AMF_Ping`/`AMF_PingTest` are untouched; M2 owns their deletion.
+
+### M1.2 Three doc conflicts, resolved before building
+
+Each was raised with the user rather than guessed, per `CLAUDE.md`, and each is now a line in
+`docs/decisions.md`.
+
+| Conflict | Resolution |
+|---|---|
+| §3.3 "blocks edits after creation" vs §6.1 step 11's post-insert `Execution_Ref_Id__c` stamp | The rule permits exactly one update: the stamp, blank to populated, nothing else changed |
+| `CLAUDE.md` "zero dependence on org CMDT rows" vs a >255 round trip that needs a real row | One inactive pin record, read by exactly one test class; every other rule test uses in-memory fixtures |
+| `CLAUDE.md` "AMF_ on Apex classes" vs the doc's bare `RuleProvider` | `AMF_RuleProvider`. M3's strategy interface follows as `AMF_SubmissionStrategy` |
+
+### M1.3 The immutability rule is not a plain freeze
+
+A blanket "no edits after insert" rule is what §3.3 reads like in isolation, and it would have
+made M3 impossible: §6.1 step 11 has the engine write the log row *before* submitting, then stamp
+`Execution_Ref_Id__c` back onto it afterwards. The formula therefore allows exactly one transition:
+
+```
+AND(
+  NOT(ISNEW()),
+  NOT($Permission.AMF_Bypass_Log_Lock),
+  OR(
+    NOT(ISBLANK(PRIORVALUE(Execution_Ref_Id__c))),   /* already stamped -> frozen forever */
+    ISBLANK(Execution_Ref_Id__c),                    /* an update that is not the stamp */
+    ISCHANGED(Record_Id__c), ISCHANGED(Object_API_Name__c), ISCHANGED(Matched_Rule__c),
+    ISCHANGED(Rule_Version__c), ISCHANGED(Selected_Process__c), ISCHANGED(Outcome__c),
+    ISCHANGED(Submitted_By__c), ISCHANGED(Submitted_At__c)
+  )
+)
+```
+
+Consequences worth stating explicitly, because M3 depends on all of them:
+
+1. **`Blocked_No_Match` and `Failed` rows freeze on insert.** They never receive a stamp, so
+   `ISBLANK(Execution_Ref_Id__c)` catches every update to them.
+2. **The stamp is one-shot.** A second stamp trips the `PRIORVALUE` clause.
+3. **The engine must not change any other field during the stamp** — not even `Outcome__c`. If a
+   submission fails after the row is written, M3 must let the transaction roll back rather than try
+   to flip the row to `Failed`.
+4. **Known residual hole, deliberately not hidden:** the single stamping update could also alter
+   `Expression_Snapshot__c`, `Evaluated_Values__c` or `Failure_Detail__c`, because **`ISCHANGED` is
+   not supported on Long Text Area fields**. Closing it would need a trigger, which is out of MVP
+   scope. The exposure is one update, on a row nobody but the engine has yet touched, after which
+   the row is frozen permanently.
+
+`AMF_DecisionLogLockTest` pins all four. That class is the one addition beyond the M1 prompt's
+literal list, and it earns its place: the rule's formula is the resolution of a doc conflict, M3's
+step 11 rests on it, and discovering it wrong during M3's manual QA would cost far more than the
+six tests cost to write.
+
+### M1.4 The truncation claim, measured rather than inherited
+
+§3.1 asserts that `getAll()`/`getInstance()` truncate Long Text Area to 255 characters. Rather than
+encode that as folklore, it was measured on `amf-dev` against `PR_Long_Expression_Pin`, whose
+expression is 290 characters:
+
+```
+SOQL          -> 290 characters, intact
+getInstance() -> 255 characters
+getAll()      -> 255 characters
+```
+
+Both truncated forms cut off inside `(Risk_Level`, mid-token. That is the whole danger in one
+image: the expression does not fail loudly, it comes back as a **different, shorter, still-parseable
+expression**, and every record routes by it silently. The two halves are asserted separately —
+`longExpressionSurvivesSoqlLoad` proves SOQL returns all 290 characters byte for byte, and
+`getAllTruncatesWhereSoqlDoesNot` proves `getAll()` does not. Together they make it impossible for
+the gate to pass against a `getAll()`-based provider, which is the playbook's stated requirement.
+
+### M1.5 Design choices worth recording
+
+1. **Ordering lives in `AMF_RuleDefinition.compareTo`, not in the provider.** §6.1 step 2 is
+   "priority-ordered first match", and §1.4f established that CMDT SOQL rejects `ORDER BY` on a
+   relationship field. Putting the comparator on the DTO means every call site — real provider,
+   test stub, future engine — gets the same total order for free. Nulls sort last rather than
+   throwing: `Priority__c` is required on the CMDT so the provider cannot emit one, but a
+   `Comparable` that can NPE inside `List.sort()` is a landmine.
+2. **`AMF_CmdtRuleProvider.load(objectApiName, activeOnly)` is `@TestVisible`, not public.** The
+   interface stays a single method. The second parameter exists only so the gate can reach the
+   inactive pin, which is what lets the pin stay inactive and route nothing.
+3. **The stub honours the same contract as the real provider**, asserted by a shared
+   `assertProviderContract` helper run against both. Otherwise M2 and M3 would build on a fixture
+   that had quietly drifted from production behaviour.
+4. **`Outcome__c` carries no default.** A default of `Submitted` would let a row the engine failed
+   to populate masquerade as a successful submission. Blank is a bug made visible.
+5. **`Active__c` defaults false.** A newly added rule is inert until someone deliberately switches
+   it on, which is the safer failure mode for a routing table.
+6. **The log's `sharingModel` is Private**, which is what makes §11's "read own logs" work with no
+   extra machinery: the engine's rows are owned by the submitter.
+7. **`Approval_Matrix_User` gets no CMDT access at all.** Reading the matrix through SOQL in Apex
+   does not require it; only editing rows in Setup does, and submitters have no business there.
+
+### M1.6 Issues encountered
+
+**(a) `CustomPermission` descriptions also cap at 255 — a third metadata type with that limit.**
+
+```
+CustomPermission  AMF_Bypass_Log_Lock
+  Value too long for field: Description maximum length is:255
+```
+
+§1.4a recorded the cap for **validation rules and permission sets**; M0.5b hit it again on a
+permission set. Custom permissions belong on that list too. Field and object descriptions still
+allow 1000, which is what makes the inconsistency easy to walk into. **Running tally of the
+255-character description cap: validation rules, permission sets, custom permissions.**
+
+**(b) `MasterLabel` on a Custom Metadata record caps at 40 characters.**
+
+```
+CustomMetadata  Approval_Matrix_Rule.PR_Long_Expression_Pin
+  Value too long for field: MasterLabel maximum length is:40
+```
+
+The pin's original label, `ZZ - Long Expression Pin (test fixture, inactive)`, is 48. Shortened to
+`ZZ - Long Expression Pin (INACTIVE)`. Not documented anywhere in the v1.0 phases because none of
+the 14 v1 records came close to the limit.
+
+**(c) A Long Text Area field cannot be marked `required`.** `Expression__c` is the one §3.1 field
+without `required=true`; the platform forbids it on that type. A rule with a null expression is
+therefore possible at the schema level and must be caught by §9's config validator, which is out of
+MVP scope. Recorded in the carried-forward table.
+
+**(d) The validation rule's dependency ordering is the reverse of M0.4's deletion ordering.** The
+first deploy failed twice over: the custom permission was rejected for its description, and the
+validation rule was then rejected with `Field AMF_Bypass_Log_Lock does not exist. Check spelling.`
+The second error is a *cascade*, not a real problem — `$Permission.X` cannot resolve while `X` is
+failing to deploy. Creation order is permission then rule, exactly inverse to M0.4's
+rule then permission deletion order. Worth knowing so the misleading "does not exist" message does
+not send the next person hunting for a typo.
+
+**(e) Assigning `Approval_Matrix_Admin` to yourself silently disarms the log lock.** The permission
+set grants `AMF_Bypass_Log_Lock`, and the running user
+(`tejas.vernekar.0d104ca05e80@agentforce.com`) holds the set from §1.4d's FLS fix.
+`FeatureManagement.checkPermission('AMF_Bypass_Log_Lock')` returns **true** for them. An
+anonymous-Apex immutability check as that user therefore proves nothing at all — every edit
+succeeds. This is why `AMF_DecisionLogLockTest` runs its negative cases under
+`System.runAs(amfu1)`, and why one test asserts the bypass path deliberately.
+
+**This directly affects M3's manual QA.** Playbook step 6 is "Try to edit a decision log row →
+blocked by the immutability rule". Performed while holding `Approval_Matrix_Admin`, that step will
+show the edit **succeeding**, and will look like a broken validation rule. Do it as a user holding
+only `Approval_Matrix_User`, or temporarily remove the admin assignment.
+
+**(f) Tooling, unchanged from M0.** `sf data query` still fails under the Bash tool with
+`'C:\Program' is not recognized` (§0.5c), and the PowerShell tool still returns
+`EPERM: operation not permitted, uv_spawn 'powershell.exe'` for the whole session (§M0.5c). `node`
+is also absent from the Git Bash PATH. Verification ran entirely through anonymous Apex and
+`sf project deploy`, both of which work, and string-length checks through `tr`/`sed`. No new
+workaround was needed; the M0 escape hatch held.
+
+**(g) The full-package deploy reports `Purchase_Request__c` as `Changed` on every run** even when
+nothing about it was edited. Cosmetic, present in M0 too, and not worth chasing — the object's six
+fields all report `Unchanged`.
+
+### M1.7 Verification evidence
+
+**Staged deploys.** Deployed in four groups rather than one, per §1.4a's rule — objects + custom
+permission, then permission sets, then CMDT records, then classes. The failures in (a), (b) and (d)
+were all attributed to real components, so no `UNKNOWN_EXCEPTION` splitting was needed this time.
+
+```
+objects + customPermissions   Succeeded  24/24 created   Deploy ID 0Afaj00000h5VjyCAE (after fixes)
+permissionsets                Succeeded  2 changed       Deploy ID 0Afaj00000h5joXCAQ
+customMetadata                Succeeded  4 created
+classes                       Succeeded  6 created
+```
+
+**Full-package deploy** — `sf project deploy start -o amf-dev`
+
+```
+Status: Succeeded    numberComponentsTotal: 46    numberComponentErrors: 0
+```
+
+46 components, up from M0's 11.
+
+**Tests** — `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`
+
+```
+AMF_CmdtRuleProviderTest.longExpressionSurvivesSoqlLoad               Pass    <- PHASE GATE
+AMF_CmdtRuleProviderTest.getAllTruncatesWhereSoqlDoesNot              Pass
+AMF_CmdtRuleProviderTest.activeRulesExcludeTheInactivePin             Pass
+AMF_CmdtRuleProviderTest.cmdtProviderHonoursTheProviderContract       Pass
+AMF_CmdtRuleProviderTest.shippedMatrixComesBackInPriorityOrder        Pass
+AMF_CmdtRuleProviderTest.stubHonoursTheSameContractAsTheRealProvider  Pass
+AMF_CmdtRuleProviderTest.unknownObjectReturnsEmptyRatherThanNull      Pass
+AMF_RuleDefinitionTest  (6 methods: ordering, ties, stability, nulls, equality, builder)  Pass
+AMF_DecisionLogLockTest (6 methods: stamp once, re-stamp blocked, smuggled field blocked,
+                         unstamped frozen, frozen rule edit blocked, bypass works)        Pass
+AMF_PingTest.pingReturnsPong                                          Pass
+
+Outcome Passed · Tests Ran 20 · Pass Rate 100% · Fail Rate 0%
+Test Run Id 707aj000019YfBO
+```
+
+**M1 describe gate** — anonymous Apex, throws on any mismatch. Covers every §3.1 and §3.3 field's
+type, the lengths the doc specifies, the `Outcome__c` value set and its absence of a default,
+`Record_Id__c` as external-id-but-not-unique, the `Submitted_By__c` lookup target, per-user FLS on
+all 12 log fields, and — as scope discipline — that `Execution_Type__c` exists on **neither** object.
+
+```
+=== PHASE M1 GATE ===
+  Expression__c: TEXTAREA(2000)
+  Record_Id__c: externalId=true unique=false
+  Outcome__c values: {Blocked_No_Match, Failed, Submitted}
+  Execution_Type__c absent from both: true
+=== PHASE M1 GATE PASSED === 19 fields described
+```
+
+**Truncation probe** — anonymous Apex, the raw measurement behind M1.4:
+
+```
+=== TRUNCATION PROBE ===
+SOQL        length: 290
+getInstance length: 255
+getAll      length: 255
+SOQL   value: (Amount__c > 100000 && Region__c == 'APAC') || ... || (Risk_Level__c == 'Low' && Amount__c > 750000)
+getAll value: (Amount__c > 100000 && Region__c == 'APAC') || ... || (Risk_Level
+```
+
+Both scratchpad scripts are held outside the repo, not committed: the M1 prompt restricts source to
+`force-app` and `docs`, and `scripts/` is outside both — the same call §1.6 made.
+
+### M1.8 The shipped matrix
+
+What a reviewer sees in Setup → Custom Metadata Types → Approval Matrix Rule → Manage Records:
+
+| Priority | DeveloperName | Expression | Process | Active |
+|---|---|---|---|---|
+| 10 | `PR_High_Value_APAC` | `Amount__c > 100000 && Region__c == 'APAC'` | `PR_Three_Level_Finance` | yes |
+| 20 | `PR_High_Risk` | `Risk_Level__c == 'High'` | `PR_Three_Level_Finance` | yes |
+| 9998 | `PR_Long_Expression_Pin` | 290-character chain | `PR_Two_Level_Mgmt` | **no** |
+| 9999 | `PR_Catch_All` | `TRUE` | `PR_Two_Level_Mgmt` | yes |
+
+It reads as a routing matrix: high-value APAC spend and anything high-risk take the three-level
+finance chain, everything else takes two levels of management, and the catch-all is visibly last.
+Every expression is legal under the §13.3 reduced grammar and references only real
+`Purchase_Request__c` fields and real picklist values, so M2's compiler will accept all four —
+including the pin.
+
+The process names point at templates that do not exist until M3. `Process_API_Name__c` is Text with
+no referential check; §9's validator would catch a stale name, and it is out of MVP scope.
+
+**Set up for the M3 demo.** The playbook's rule-flip is scripted as `PR_Two_Level_Mgmt` to
+`PR_Three_Level_Finance`, so the record to submit is an ordinary one — low amount, non-APAC, low
+risk — which falls through to the catch-all. Flipping **`PR_Catch_All`'s** `Process_API_Name__c` is
+then the cleanest possible demonstration, because it changes the org's *default* routing by editing
+one field in one Custom Metadata row.
+
+### M1.9 Architecture deviations
+
+Three entries appended to `docs/decisions.md` (M1.2). No amendment to `docs/architecture.md` was
+needed: §3.3's "blocks edits after creation" remains true in substance — the row is immutable from
+every point of view except the engine's one-shot stamp — and that mechanism detail belongs in this
+log rather than in the design document.
+
+### M1.10 Carried into later phases
+
+| Item | Owed to |
+|---|---|
+| ~~Create `AMF_Bypass_Log_Lock` and grant it in `Approval_Matrix_Admin`~~ | **closed in M1** |
+| ~~Extend both permission sets to the CMDT and the log object with explicit FLS~~ | **closed in M1** |
+| ~~`AMF_CmdtRuleProvider` must sort by Priority then DeveloperName in Apex~~ | **closed in M1** — it is `AMF_RuleDefinition.compareTo` |
+| Delete `AMF_Ping` / `AMF_PingTest` once real engine classes exist | M2 |
+| Name the strategy interface `AMF_SubmissionStrategy`, per M1.2's naming decision | M3 |
+| The engine must not change any field other than `Execution_Ref_Id__c` during the step-11 stamp; a post-write failure must roll back rather than flip `Outcome__c` to `Failed` (M1.3) | M3 |
+| **M3 manual QA step 6 must be run as a non-admin** — `Approval_Matrix_Admin` grants the bypass and the log lock will appear broken (M1.6e) | M3 |
+| `Expression__c` cannot be `required` at the schema level (M1.6c), so a null expression is only catchable by §9's config validator | post-MVP |
+| `ISCHANGED` does not cover the three Long Text Area log fields, leaving a one-update residual hole in the lock (M1.3 point 4) | post-MVP |
+| `AMF_DecisionLogLockTest` depends on the seeded `amfu1` user; re-run `scripts/seed-data.apex` before running tests in a fresh org | any new org |
+| Manual QA: open the four CMDT records in Setup and confirm the matrix reads in priority order, catch-all last, pin visibly inactive | user, before commit |

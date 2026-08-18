@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Rule_Version__c</fullName>
+    <description>Version__c of the matched rule at the moment of submission. With Expression_Snapshot__c this is what lets a later reader reconstruct the rule as it was, not as it now is (arch doc 3.3).</description>
+    <externalId>false</externalId>
+    <label>Rule Version</label>
+    <precision>4</precision>
+    <required>false</required>
+    <scale>0</scale>
+    <trackTrending>false</trackTrending>
+    <type>Number</type>
+    <unique>false</unique>
+</CustomField>

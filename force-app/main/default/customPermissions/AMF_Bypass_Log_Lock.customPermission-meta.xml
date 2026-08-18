@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <isLicensed>false</isLicensed>
+    <label>AMF Bypass Log Lock</label>
+    <description>Exempts the holder from Lock_Decision_Log so an admin can correct a decision log row. A custom permission, not a named profile: a profile name hardcoded into a validation rule does not survive deployment to another org (arch doc 3.3).</description>
+</CustomPermission>

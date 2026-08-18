@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Selected_Process__c</fullName>
+    <description>Process the matched rule routed to. Snapshotted alongside the rule, so flipping a rule&apos;s Process_API_Name__c later cannot rewrite what happened here (arch doc 3.3).</description>
+    <externalId>false</externalId>
+    <label>Selected Process</label>
+    <length>80</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

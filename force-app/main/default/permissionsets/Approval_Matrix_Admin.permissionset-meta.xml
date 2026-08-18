@@ -1,8 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
     <label>Approval Matrix Admin</label>
-    <description>Framework administrators. Reduced to the pilot object during the architecture pivot; CMDT and decision-log grants, and the AMF_Bypass_Log_Lock custom permission, are rebuilt against the v3.0 data model in M1.</description>
+    <description>Framework administrators: manage the routing matrix, read every decision log row. Modify All is deliberately withheld on the log, because the platform makes it depend on Delete and audit rows must not be deletable (arch doc 3.3, 11).</description>
     <hasActivationRequired>false</hasActivationRequired>
+    <customPermissions>
+        <enabled>true</enabled>
+        <name>AMF_Bypass_Log_Lock</name>
+    </customPermissions>
+    <customMetadataTypeAccesses>
+        <enabled>true</enabled>
+        <name>Approval_Matrix_Rule__mdt</name>
+    </customMetadataTypeAccesses>
     <objectPermissions>
         <allowCreate>true</allowCreate>
         <allowDelete>true</allowDelete>
@@ -10,6 +18,15 @@
         <allowRead>true</allowRead>
         <modifyAllRecords>true</modifyAllRecords>
         <object>Purchase_Request__c</object>
+        <viewAllRecords>true</viewAllRecords>
+    </objectPermissions>
+    <objectPermissions>
+        <allowCreate>false</allowCreate>
+        <allowDelete>false</allowDelete>
+        <allowEdit>true</allowEdit>
+        <allowRead>true</allowRead>
+        <modifyAllRecords>false</modifyAllRecords>
+        <object>Approval_Decision_Log__c</object>
         <viewAllRecords>true</viewAllRecords>
     </objectPermissions>
     <fieldPermissions>
@@ -40,6 +57,66 @@
     <fieldPermissions>
         <editable>true</editable>
         <field>Purchase_Request__c.Vendor_Type__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Evaluated_Values__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Execution_Ref_Id__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Expression_Snapshot__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Failure_Detail__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Matched_Rule__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Object_API_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Outcome__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Record_Id__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Rule_Version__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Selected_Process__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Submitted_At__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>true</editable>
+        <field>Approval_Decision_Log__c.Submitted_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
 </PermissionSet>
