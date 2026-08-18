@@ -90,6 +90,22 @@
         <fields>TASK.LAST_UPDATE</fields>
         <relatedList>RelatedHistoryList</relatedList>
     </relatedLists>
+    <!--
+      EMPTY ON PURPOSE - this is arch doc 6.3's removal of the standard Submit for
+      Approval button, not an oversight. With no quickActionList at all, Lightning
+      falls back to a default action set that reinstates Submit for Approval the
+      moment an approval process exists for the object, which is exactly when the
+      guard starts to matter. Declaring the list is what suppresses that. Edit,
+      Delete and Clone are unaffected: they render as standard buttons and never
+      appear in a quickActionList (a stock Account layout has none of them either).
+
+      The framework's own AMF_Submit_For_Approval action is NOT listed here because
+      it cannot be: the Metadata API refuses a LightningWebComponent quick action in
+      a quickActionList ("You can't add QuickActionType LightningWebComponent to a
+      QuickActionList", confirmed at API 62.0 and 64.0). It is added through Setup,
+      and a layout retrieved after that step will not redeploy - so do not overwrite
+      this file from the org. See docs/decisions.md and technical log M3.4b.
+    -->
     <quickActionList/>
     <showEmailCheckbox>false</showEmailCheckbox>
     <showHighlightsPanel>false</showHighlightsPanel>
