@@ -97,7 +97,7 @@ session needs. Update the row when a phase completes.
 |---|---|---|---|
 | **M0** | Baseline & cleanup | **Complete** — all gates green, no v1.0 metadata left | `9a54e68`, `6ccc2ed` + M0.8 |
 | **M1** | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | **Complete** — >255 gate green, 20/20 tests | `26a157f` |
-| M2 | Expression evaluator, reduced grammar | Not started | |
+| **M2** | Expression evaluator, reduced grammar | **Complete** — 100% coverage on all eight evaluator classes, 108/108 tests | `PENDING` |
 | M3 | Engine, two Classic templates, submit action | Not started | |
 
 ### Superseded — the v1.0 plan
@@ -1173,3 +1173,267 @@ log rather than in the design document.
 | `ISCHANGED` does not cover the three Long Text Area log fields, leaving a one-update residual hole in the lock (M1.3 point 4) | post-MVP |
 | `AMF_DecisionLogLockTest` depends on the seeded `amfu1` user; re-run `scripts/seed-data.apex` before running tests in a fresh org | any new org |
 | Manual QA: open the four CMDT records in Setup and confirm the matrix reads in priority order, catch-all last, pin visibly inactive | user, before commit |
+
+---
+
+## Phase M2 — Expression evaluator
+
+**Date:** 2026-08-18 · **Commit:** `PENDING`
+**Status:** complete — 100% coverage on all eight evaluator classes, 108/108 tests pass
+**Playbook goal:** the hard part. The reduced grammar, compiled and evaluated, with zero
+dependence on org configuration.
+
+Third phase of the **v3.0 MVP** plan, and the one the framework is actually made of. Eight
+production classes (1,636 lines including ApexDoc) and seven test classes carrying **89 test
+methods**, of which 116 are `(expression, record, expected)` triples and 41 are malformed-input
+cases asserting a character position. Two classes deleted. No metadata outside
+`force-app/main/default/classes` was touched.
+
+### M2.1 File-level changes
+
+| File | Change | Detail |
+|---|---|---|
+| `classes/AMF_ExpressionException.cls` | **added** | The package's single error type. Carries a zero-based `position` and the source `expressionText` |
+| `classes/AMF_Ast.cls` | **added** | `ValueType` enum, `Node`, `BinaryNode`, `ComparisonNode`, `FieldNode`, `LiteralNode` (§4.2) |
+| `classes/AMF_Lexer.cls` | **added** | String → tokens, every token positioned (§4.2) |
+| `classes/AMF_Parser.cls` | **added** | Recursive descent → AST, precedence per §4.1 |
+| `classes/AMF_ExprCompiler.cls` | **added** | Parse + static analysis against describe (§4.2, §4.3, §4.4) |
+| `classes/AMF_ExprCache.cls` | **added** | Static map keyed by DeveloperName + `Version__c` (§4.5) |
+| `classes/AMF_Evaluator.cls` | **added** | AST + SObject → Boolean and the evaluated-values map (§4.3) |
+| `classes/AMF_FieldPathResolver.cls` | **added** | Union of paths → one dynamic SOQL per object (§4.4) |
+| `classes/AMF_LexerTest.cls` | **added** | 14 tests |
+| `classes/AMF_ParserTest.cls` | **added** | 15 tests, asserted on tree shape rather than on evaluation |
+| `classes/AMF_ExprCompilerTest.cls` | **added** | 12 tests |
+| `classes/AMF_ExprCacheTest.cls` | **added** | 7 tests, all on `AMF_RuleBuilder` fixtures |
+| `classes/AMF_EvaluatorTest.cls` | **added** | 22 tests / 116 table rows — the phase's headline suite |
+| `classes/AMF_FieldPathResolverTest.cls` | **added** | 9 tests |
+| `classes/AMF_ExpressionErrorTest.cls` | **added** | 10 tests / 41 positioned malformed-input cases |
+| `classes/AMF_Ping.cls` + `AMF_PingTest.cls` | **deleted** | From repo and org. Closes the M1.10 debt; the class's own header said to remove it once §4 landed |
+| `docs/decisions.md` | modified | Three entries — see M2.2 |
+| `docs/technical-log.md` | modified | Status board, this entry |
+
+### M2.2 Three doc conflicts, resolved before building
+
+Each was raised with the user before any code was written, per `CLAUDE.md`, and each is now a
+line in `docs/decisions.md`.
+
+| Conflict | Resolution |
+|---|---|
+| §4.1 accepts `AND`/`OR` word forms; §13.3 and `CLAUDE.md` list only `&&`/`||` | **Symbols only.** `CLAUDE.md` is the override document. `TRUE AND FALSE` fails at position 5 rather than routing on half an expression; the word forms are two entries in `AMF_Lexer.KEYWORDS` whenever they are wanted |
+| §4.1's `bool_atom` includes a bare Checkbox path; §13.3 names only "bare `TRUE`" | **Support `bool_atom` in full.** A boolean field path is absent from §13.3's deferred list, so it is part of the grammar, and it costs no special-casing — a primary with no comparison operator after it is a boolean atom, and the compiler rejects it if the path is not Boolean |
+| §4.3 says both "null == null is true" **and** "null anywhere in a relationship path makes the comparison false" | **The relationship rule wins on the collision.** A null *intermediate* makes the comparison false for every operator including `== NULL`; a *leaf* that resolves to null follows the ordinary null rules. An unresolvable path routes nothing rather than quietly passing a presence check |
+
+### M2.3 How the pipeline is split, and why it is split there
+
+The four stages are not decoration. Each boundary is load-bearing for something §4 asks for.
+
+1. **The lexer knows no grammar.** It knows `&&` is one token, not that it joins two
+   comparisons. That is what makes §13.3's deferred constructs additive: `IN`, `CONTAINS`,
+   `STARTS_WITH` and `NOT` become entries in a `KEYWORDS` map, and `TODAY(n)` reuses the
+   identifier and parenthesis tokens that already exist. **Nothing in the lexer is written
+   around their absence** — a word that is not in the table is simply an identifier, which is
+   the whole of the extension point.
+2. **The parser asks the schema nothing.** It will happily build a four-segment path or a bare
+   `Amount__c` used as a condition. Both are rejected by the compiler, because both need
+   describe information. Keeping the line exactly there means raising §13.3's two-segment cap
+   to §4.4's platform four is *one constant in the compiler* and no parser change at all.
+3. **The compiler is where §4.6 is won.** Every path is resolved through describe and every
+   operator checked against its operand type at compile time, so `Region__c > 'APAC'` is a
+   positioned error rather than a runtime false that silently falls through to the next rule.
+   §4.3's table is enforced literally: Boolean is identity-only, and text types carry equality
+   but **no ordering**.
+4. **The evaluator does no describe work at all.** The compiler annotates the tree with
+   `valueType` and `operandType`, so evaluation reads values and applies §4.3. That is what
+   makes compilation worth caching and evaluation not.
+
+Other choices worth recording:
+
+1. **Positions are zero-based character indexes**, so `expression.substring(position)` starts
+   at the character the message blames. Messages render as §4.2 specifies —
+   `<detail> at position <n>` — and the position is asserted **both** as a structured field on
+   the exception and as text in the message, because a caller may only ever read one of the two.
+2. **The evaluated-values map is built from the compiled path list, not from the nodes
+   evaluation reached.** `FALSE && Amount__c > 100` short-circuits, but `Evaluated_Values__c`
+   still records `Amount__c` — otherwise the audit record would change shape depending on which
+   branch ran, which is the opposite of what §3.3 is for.
+3. **Path keys are canonicalised to API-name spelling.** A rule written `amount__c` logs
+   `Amount__c`, and `account__r.name` logs `Account__r.Name`, so the audit JSON reads the same
+   however the admin typed the rule.
+4. **A broken relationship path records `null` in the map rather than being omitted**, so the
+   log shows which path could not be resolved rather than staying silent about it.
+5. **`AMF_FieldPathResolver` re-validates path *shape* even though the compiler already
+   resolved every path.** This class concatenates its input into a query string; refusing
+   anything that is not a plain dotted identifier is defence in depth, not distrust of the
+   compiler. `Amount__c FROM User WHERE Name != '' --` is refused rather than concatenated.
+6. **It is declared `inherited sharing`.** §11 makes the *service* the place that decides — it
+   runs `without sharing` and authorises the submitter explicitly — and a library class that
+   forced its own answer would take that decision away from the caller in M3 that is supposed
+   to be making it.
+7. **The cache does not remember failures.** A compile error throws every time it is asked
+   for. A negative cache is a second thing that can go stale, and §4.6 wants failures loud and
+   repeatable.
+8. **`AMF_ExprCache`'s key is a design statement, and `AMF_ExprCacheTest` pins its sharp
+   edge**: editing an expression *without* bumping `Version__c` is invisible to a transaction
+   that already compiled the old one. That is exactly why §3.3 stamps `Rule_Version__c` onto
+   every decision log row — the log records which version actually routed the record.
+9. **Types the pilot object does not carry are tested against standard objects**, per §10 —
+   Date on `Opportunity.CloseDate`, Integer and Double on `Account` — rather than adding fields
+   to `Purchase_Request__c` that only a test would ever read. M2's allowed paths were
+   `classes` and `docs` in any case, so a new field was not an option, and it should not have
+   been one.
+
+### M2.4 Issues encountered
+
+**(a) Six Apex reserved identifiers, found only by deploying.**
+
+`BOOLEAN`, `DATE`, `AND` and `OR` will not compile as enum constants, and `inner` and `number`
+will not compile as local variable names. `AMF_Ast.ValueType` therefore spells two of its four
+members `BOOLEAN_VALUE` and `DATE_VALUE`, and `AMF_Lexer.TokenType` uses `LOGICAL_AND` /
+`LOGICAL_OR`. That platform detail must not leak into an error message an admin reads, so
+`AMF_Ast.labelFor()` maps the enum to the word — `boolean`, `date` — and every message goes
+through it. *Lesson: a dry-run deploy after the first class compiles is worth more than
+re-reading the file.*
+
+**(b) An enum constant referenced from an inner class needs the outer class name.**
+
+`this.valueType = ValueType.BOOLEAN_VALUE;` inside `AMF_Ast.BinaryNode` fails with *"Static
+field cannot be referenced from a non static context"* — a misleading message for what is
+really a scoping rule. `AMF_Ast.ValueType.BOOLEAN_VALUE` compiles.
+
+**(c) `instanceof Decimal` is true for *every* boxed numeric in Apex — measured, and it
+deleted code.**
+
+`AMF_Evaluator.toDecimal` was written with the obvious four branches, one per Apex numeric
+type. Coverage then reported three of them **unreachable**. Probing `amf-dev` rather than
+guessing:
+
+```
+Integer field (NumberOfEmployees) -> Decimal=true Integer=true Long=true Double=true
+Currency field (AnnualRevenue)    -> Decimal=true Integer=false Long=false Double=true
+Double field (BillingLatitude)    -> Decimal=true Integer=false Long=false Double=true
+Apex (Long) 5000000000            -> Decimal=true Integer=false Long=true  Double=true
+```
+
+Every numeric answers `instanceof Decimal`, and the cast succeeds for all of them. The three
+per-type branches were dead code, and were deleted; one cast now covers every numeric field
+type. `AMF_EvaluatorTest.numbersCompareWhicheverApexTypeTheyArriveAs` still drives Decimal,
+Integer, Long and Double through the comparison, so it is the test that would notice if that
+platform behaviour ever changed. *The coverage hole was the signal; the probe was the
+diagnosis. Neither alone would have found it.*
+
+**(d) Two shell quoting traps writing Apex from the tooling, not from the platform.**
+
+A `<<'EOF'` heredoc terminated early because the Apex source contained a line whose content was
+`EOF` (an enum constant, since renamed `END_OF_INPUT`), and a later heredoc broke on Apex's
+`'\''` escape sequences. Both produced a shell parse error rather than a bad file, so nothing
+was silently corrupted, but Apex source with embedded quotes goes through the file-write tool
+from here on. *Recorded because it cost two failed writes and will otherwise cost them again.*
+
+### M2.5 Verification evidence
+
+**Deploy — green, all 15 classes:**
+
+```
+Status: Succeeded
+```
+
+**Tests and coverage — the phase gate is ≥90% on the evaluator package (§13.4):**
+
+```
+=== Apex Code Coverage by Class
+CLASSES                  PERCENT  UNCOVERED LINES
+AMF_Ast                  100%
+AMF_ExpressionException  100%
+AMF_Lexer                100%
+AMF_Parser               100%
+AMF_ExprCompiler         100%
+AMF_ExprCache            100%
+AMF_Evaluator            100%
+AMF_FieldPathResolver    100%
+AMF_CmdtRuleProvider     100%
+AMF_RuleDefinition       91%      68,77,80
+
+Outcome              Passed
+Tests Ran            108
+Pass Rate            100%
+Org Wide Coverage    99%
+```
+
+All eight evaluator classes are at **100%**, against a gate of 90%. The two guards that the
+grammar cannot reach — an ordering operator on a type that has no ordering, and a comparison
+whose operand type never resolved — are covered by tests that hand the evaluator a
+**hand-built AST the compiler would never produce**, which is the only way to prove they throw
+rather than falling through to false (§4.6). `AMF_RuleDefinition`'s three uncovered lines are
+M1's null-priority comparator branches and are untouched by this phase.
+
+**The whole pipeline over the real shipped matrix and a real record** (§6.1 steps 1–5, run as
+anonymous Apex — the playbook's "you verify" step):
+
+```
+--- step 1-2: active rules in priority order ---
+  10  PR_High_Value_APAC  ->  PR_Three_Level_Finance
+  20  PR_High_Risk  ->  PR_Three_Level_Finance
+  9999  PR_Catch_All  ->  PR_Two_Level_Mgmt
+--- step 3-4: one query for the union of paths ---
+  SELECT Id, Amount__c, Region__c, Risk_Level__c FROM Purchase_Request__c WHERE Id IN :recordIds
+--- step 5: first true expression wins ---
+  PR_High_Value_APAC  Amount__c > 100000 && Region__c == 'APAC'  ->  true
+  MATCHED PR_High_Value_APAC -> PR_Three_Level_Finance
+  Evaluated_Values__c would hold: {"Region__c":"APAC","Amount__c":150000.00}
+```
+
+Three rules, four field paths across them, **one** query for the union, first-true-wins on a
+record seeded at 150,000 / APAC / Low. The seeded record was deleted afterwards; the org
+carries no M2 data.
+
+**M1.8's open claim, now closed.** M1 asserted that the compiler would accept all four shipped
+CMDT records including the inactive 290-character pin. Compiling each of them:
+
+```
+PR_Catch_All           (active=true,  4 chars)   -> compiled, paths=()
+PR_High_Risk           (active=true,  23 chars)  -> compiled, paths=(Risk_Level__c)
+PR_High_Value_APAC     (active=true,  41 chars)  -> compiled, paths=(Amount__c, Region__c)
+PR_Long_Expression_Pin (active=false, 290 chars) -> compiled, paths=(Amount__c, Region__c, Risk_Level__c)
+```
+
+The catch-all reads **no** fields, which is what lets a matrix of catch-alls cost nothing at
+step 4.
+
+**The malformed-input suite** covers every category the M2 gate names, each asserting the
+character position: unbalanced parentheses (both directions, and nested), unknown field,
+unknown relationship, over-deep path, unterminated string, impossible date (`2026-13-01`,
+`2026-02-30`, `2025-02-29`), stray character, dangling operator, type mismatch, an ordering
+operator on text or Boolean, a non-Boolean standing alone as a condition, and an empty
+expression. **Every deferred §13.3 construct is also pinned** — `IN`, `CONTAINS`, `NOT`, `!`,
+`AND`, `OR` each fail with a position rather than silently, and each will start working the day
+it is added.
+
+### M2.6 Architecture deviations
+
+Three entries appended to `docs/decisions.md` (M2.2). No amendment to `docs/architecture.md`
+was needed: §4.1 and §4.3 remain true of the target design, and all three decisions are about
+which part of that design the **MVP** implements, which is §13's job and is already recorded
+there.
+
+One §4 statement is worth flagging as *not yet true*, by design rather than by omission. §4.6
+says "compile errors cannot reach runtime" on the strength of §9's config validator compiling
+every active expression at deploy time — and §9 is explicitly out of MVP scope (§13.2). In the
+MVP a compile error therefore surfaces at **submit** time, as a thrown, positioned exception.
+That is still fail-loud and still blocks, which is what §4.6 actually protects; it simply fails
+later than it eventually will.
+
+### M2.7 Carried into later phases
+
+| Item | Owed to |
+|---|---|
+| ~~Delete `AMF_Ping` / `AMF_PingTest` once real engine classes exist~~ | **closed in M2** |
+| ~~Prove the compiler accepts all four shipped CMDT rules, including the 290-character pin (M1.8)~~ | **closed in M2** |
+| Name the strategy interface `AMF_SubmissionStrategy`, per M1.2's naming decision | M3 |
+| The engine must not change any field other than `Execution_Ref_Id__c` during the step-11 stamp; a post-write failure must roll back rather than flip `Outcome__c` to `Failed` (M1.3) | M3 |
+| **M3 manual QA step 6 must be run as a non-admin** — `Approval_Matrix_Admin` grants the bypass and the log lock will appear broken (M1.6e) | M3 |
+| A runtime evaluation error must mark the row `Failed`, write the exception to `Failure_Detail__c` and **block** — the evaluator throws `AMF_ExpressionException` (positioned) or `System.SObjectException` (schema drift), and M3 must catch neither into a boolean | M3 |
+| `AMF_Evaluator` requires the record to carry every path in `compiled.fieldPaths`; M3 must load records through `AMF_FieldPathResolver.load` and not by its own query, or evaluation throws `SObjectException` on the first unqueried field | M3 |
+| Compilation resolves fields through describe, so it inherits M1.4d: a user with neither permission set gets "Unknown field" for a rule over `Purchase_Request__c`. The permission sets are a runtime prerequisite, not packaging | M3 / any new org |
+| §9's config validator would move compile errors from submit time to deploy time (M2.6) | post-MVP |
+| Word forms `AND`/`OR` are two entries in `AMF_Lexer.KEYWORDS`; `IN`, `CONTAINS`, `STARTS_WITH`, `NOT`, `TODAY(n)` and multipicklist each need one node type and one branch per stage | post-MVP |
+| Raising the path cap from 2 to §4.4's platform 4 is `AMF_ExprCompiler.MAX_PATH_SEGMENTS` plus the mirrored constant in `AMF_FieldPathResolver` | post-MVP |
