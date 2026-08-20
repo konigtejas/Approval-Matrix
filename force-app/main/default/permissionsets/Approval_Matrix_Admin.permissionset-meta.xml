@@ -124,6 +124,10 @@
         <readable>true</readable>
     </fieldPermissions>
     <tabSettings>
+        <tab>Purchase_Request__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
+    <tabSettings>
         <tab>Approval_Decision_Log__c</tab>
         <visibility>Visible</visibility>
     </tabSettings>
