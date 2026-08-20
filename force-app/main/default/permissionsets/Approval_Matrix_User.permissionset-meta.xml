@@ -115,4 +115,8 @@
         <field>Approval_Decision_Log__c.Submitted_By__c</field>
         <readable>true</readable>
     </fieldPermissions>
+    <tabSettings>
+        <tab>Approval_Decision_Log__c</tab>
+        <visibility>Visible</visibility>
+    </tabSettings>
 </PermissionSet>

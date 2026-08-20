@@ -1875,3 +1875,26 @@ Two notes for later:
    RecordId"). `AMF_ApprovalMatrixService.authorise` already has the supported shape —
    `SELECT RecordId ... WHERE ... HasReadAccess = TRUE` — so this cost a scratch script and
    nothing in the package.
+
+### M3.11 The audit artefact had no UI (2026-08-20)
+
+Third finding from manual QA, and the most embarrassing one: `Approval_Decision_Log__c` could
+not be reached in the org at all. No tab, no list view, and no related list from a governed
+record — the last of those is platform-forced, because `Record_Id__c` is Text rather than a
+lookup (§3.3: no relationship exists from a custom object to a custom metadata record, and
+the same constraint leaves the log unlinked to the record it explains).
+
+So the object that §8 calls the answer to the framework's deepest flaw, and which is the one
+thing this design does that native approvals cannot, was readable only through SOQL. M0–M3
+each verified it by query and never needed to look at it, which is exactly how a gap like this
+survives four phases.
+
+Added: a `CustomTab`, an `All Decisions` list view showing the columns a reviewer actually
+reads — outcome, matched rule, rule version, selected process, execution reference, submitter,
+timestamp — and `tabSettings` on both permission sets so it is visible to admins and
+submitters alike.
+
+Deliberately still absent: the §8 timeline LWC, which renders the decision row and the native
+approver history as one narrative. That is out of MVP scope (§13.2) and remains the right next
+piece of UI. A tab is the minimum that makes the artefact demonstrable; the timeline is what
+makes it persuasive.

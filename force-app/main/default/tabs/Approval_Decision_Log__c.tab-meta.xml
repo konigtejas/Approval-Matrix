@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomTab xmlns="http://soap.sforce.com/2006/04/metadata">
+    <customObject>true</customObject>
+    <description>Makes the audit artefact readable (arch doc 3.3, 8). Record_Id__c is Text rather than a lookup - platform-forced, since no relationship exists from a custom object to a custom metadata record - so there is no related list from a governed record to its decisions, and without a tab the object cannot be reached in the UI at all.</description>
+    <motif>Custom20: Cash</motif>
+</CustomTab>
