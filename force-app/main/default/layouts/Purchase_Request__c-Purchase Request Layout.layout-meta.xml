@@ -91,6 +91,15 @@
         <relatedList>RelatedHistoryList</relatedList>
     </relatedLists>
     <!--
+      The native half of the audit story (arch doc 8): who approved, when, and what
+      they said. The decision log answers WHY a record routed here; this answers what
+      happened next, and it is also the only surface from which an approver can act on
+      a work item from the record itself.
+    -->
+    <relatedLists>
+        <relatedList>RelatedProcessHistoryList</relatedList>
+    </relatedLists>
+    <!--
       EMPTY ON PURPOSE - this is arch doc 6.3's removal of the standard Submit for
       Approval button, not an oversight. With no quickActionList at all, Lightning
       falls back to a default action set that reinstates Submit for Approval the
