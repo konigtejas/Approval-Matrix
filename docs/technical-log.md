@@ -1766,6 +1766,7 @@ Then, in this order:
 | `AMF_ClassicProcessStrategy`'s blank-reference guard is unreachable through the platform; the same invariant is covered at the engine level | post-MVP |
 | §9's config validator would move compile errors from submit time to deploy time, and would catch a `Process_API_Name__c` naming a process that does not exist — currently a `Failed` row at submit | post-MVP |
 | Bulk: a `Blocked_No_Match` row written for record A is rolled back if record B's submission then fails, because `allOrNone = true` condemns the transaction. Harmless while the UI submits one record at a time; revisit with chunking | post-MVP |
+| **Approvers need read access to the records they approve, and the framework does not grant it** (M3.10). The architecture says nothing about this; every adopting org must answer it by role hierarchy, sharing rule or Apex sharing | docs / post-MVP |
 | `_v2` template cloning (§5.1) is untouched — both templates are v1 and editing one in place is currently possible | post-MVP |
 
 ### M3.9 Correction: the standard button was never removed (2026-08-20)
@@ -1822,3 +1823,55 @@ Two things this cost, both worth naming:
 
 `docs/decisions.md` carries the superseding entry; the 2026-08-18 line is struck through
 rather than deleted, because the reasoning is the useful part.
+
+### M3.10 Approvers cannot see what they are asked to approve (2026-08-20)
+
+Second finding from manual QA, and unlike M3.9 this one is not a mistake in the build — it
+is a gap between the framework and the org's sharing model that the MVP never had to face
+until a real approval was pending.
+
+`amfu2` and `amfu3` received the approval request for `PR-00000001` and could not open the
+record:
+
+```
+amfu3 -> PR-00000001 : HasReadAccess = false
+```
+
+**A Classic approval process does not grant an approver access to the record.** Assignment
+creates a `ProcessInstanceWorkitem`; it creates no share. The approver needs read access from
+the sharing model like anyone else. Here nothing supplied it: `Purchase_Request__c` is Private
+(§12 wants it that way, and it is what makes the object queue-assignable), the QA records are
+owned by `amfu1`, and this org has **no role hierarchy** — so the manager chain that
+`PR_Two_Level_Mgmt` walks for *approvers* has no counterpart granting those managers *sight*
+of the record.
+
+That last point is the real shape of it. In a production org the two usually coincide: an
+approver is the submitter's manager, sits above them in the role hierarchy, and therefore sees
+the record already. The seeded users have a `User.Manager` chain and no roles, so the halves
+came apart, and the framework has nothing to say about it — §6.5 is explicit that the engine
+does no access management, and it should not start.
+
+**Unblocked with manual shares** on the five QA records (`Purchase_Request__Share`,
+`RowCause = Manual`, Read) for `amfu2`–`amfu5`. Targeted, reversible by deleting the shares,
+and it leaves the object's sharing model exactly as the architecture chose it — as opposed to
+relaxing the OWD, which would have altered a design decision to make a test pass.
+
+```
+Shared 20 of 20 record/approver pairs.
+amfu2 can now read 5 of 5 QA records
+amfu3 can now read 5 of 5 QA records
+amfu4 can now read 5 of 5 QA records
+amfu5 can now read 5 of 5 QA records
+```
+
+Two notes for later:
+
+1. **This belongs in the framework's deployment guidance, not its code.** "Approvers must be
+   able to read the records they approve" is a sentence the architecture does not currently
+   contain, and every org adopting the matrix has to answer it — by role hierarchy, sharing
+   rule, or Apex sharing. Carried below.
+2. **`UserRecordAccess` rejects selecting a `Has*Access` field while filtering on one**
+   ("Cannot filter on a Has\*Access field when selecting a result field in addition to
+   RecordId"). `AMF_ApprovalMatrixService.authorise` already has the supported shape —
+   `SELECT RecordId ... WHERE ... HasReadAccess = TRUE` — so this cost a scratch script and
+   nothing in the package.
