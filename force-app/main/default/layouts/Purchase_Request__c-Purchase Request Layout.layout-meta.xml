@@ -71,6 +71,87 @@
         <layoutColumns/>
         <style>CustomLinks</style>
     </layoutSections>
+    <platformActionList>
+        <actionListContext>Record</actionListContext>
+        <platformActionListItems>
+            <actionName>ChangeRecordType</actionName>
+            <actionType>StandardButton</actionType>
+            <sortOrder>0</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>PrintableView</actionName>
+            <actionType>StandardButton</actionType>
+            <sortOrder>1</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>SendSurveyInvitation</actionName>
+            <actionType>StandardButton</actionType>
+            <sortOrder>2</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>RecordShareHierarchy</actionName>
+            <actionType>StandardButton</actionType>
+            <sortOrder>3</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>AssignRecordLabel</actionName>
+            <actionType>StandardButton</actionType>
+            <sortOrder>4</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>Edit</actionName>
+            <actionType>StandardButton</actionType>
+            <sortOrder>5</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>Share</actionName>
+            <actionType>StandardButton</actionType>
+            <sortOrder>6</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>OmniChannelRouteWork</actionName>
+            <actionType>StandardButton</actionType>
+            <sortOrder>7</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>Delete</actionName>
+            <actionType>StandardButton</actionType>
+            <sortOrder>8</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>Clone</actionName>
+            <actionType>StandardButton</actionType>
+            <sortOrder>9</sortOrder>
+        </platformActionListItems>
+        <platformActionListItems>
+            <actionName>ChangeOwnerOne</actionName>
+            <actionType>StandardButton</actionType>
+            <sortOrder>10</sortOrder>
+        </platformActionListItems>
+        <!--
+          Arch doc 6.3, and BOTH halves of it are this one list.
+
+          The standard Submit for Approval button is the entry `Submit` /
+          StandardButton, which would sit at sortOrder 11. Its ABSENCE here is the
+          removal 6.3 requires - the platform re-adds it to a record's action bar
+          the moment an approval process exists for the object, and this list is
+          the only thing that overrides that. An empty <quickActionList/> does NOT
+          suppress it; the two lists are unrelated, and Submit has never lived in
+          quickActionList.
+
+          The framework's own action replaces it, under the same label, and
+          platformActionList is where an LWC quick action CAN be deployed -
+          quickActionList refuses one outright ("You can't add QuickActionType
+          LightningWebComponent to a QuickActionList"). This file round-trips:
+          retrieve and redeploy both preserve it.
+        -->
+        <platformActionListItems>
+            <actionName>Purchase_Request__c.AMF_Submit_For_Approval</actionName>
+            <actionType>QuickAction</actionType>
+            <sortOrder>11</sortOrder>
+        </platformActionListItems>
+    </platformActionList>
+    <quickActionList/>
     <relatedLists>
         <fields>TASK.SUBJECT</fields>
         <fields>TASK.WHO_NAME</fields>
@@ -90,35 +171,23 @@
         <fields>TASK.LAST_UPDATE</fields>
         <relatedList>RelatedHistoryList</relatedList>
     </relatedLists>
-    <!--
-      The native half of the audit story (arch doc 8): who approved, when, and what
-      they said. The decision log answers WHY a record routed here; this answers what
-      happened next, and it is also the only surface from which an approver can act on
-      a work item from the record itself.
-    -->
     <relatedLists>
+        <fields>CreatedDate</fields>
+        <fields>StepStatus</fields>
+        <fields>OriginalActor</fields>
+        <fields>Actor</fields>
+        <fields>Comments</fields>
         <relatedList>RelatedProcessHistoryList</relatedList>
     </relatedLists>
-    <!--
-      EMPTY ON PURPOSE - this is arch doc 6.3's removal of the standard Submit for
-      Approval button, not an oversight. With no quickActionList at all, Lightning
-      falls back to a default action set that reinstates Submit for Approval the
-      moment an approval process exists for the object, which is exactly when the
-      guard starts to matter. Declaring the list is what suppresses that. Edit,
-      Delete and Clone are unaffected: they render as standard buttons and never
-      appear in a quickActionList (a stock Account layout has none of them either).
-
-      The framework's own AMF_Submit_For_Approval action is NOT listed here because
-      it cannot be: the Metadata API refuses a LightningWebComponent quick action in
-      a quickActionList ("You can't add QuickActionType LightningWebComponent to a
-      QuickActionList", confirmed at API 62.0 and 64.0). It is added through Setup,
-      and a layout retrieved after that step will not redeploy - so do not overwrite
-      this file from the org. See docs/decisions.md and technical log M3.4b.
-    -->
-    <quickActionList/>
     <showEmailCheckbox>false</showEmailCheckbox>
     <showHighlightsPanel>false</showHighlightsPanel>
     <showInteractionLogPanel>false</showInteractionLogPanel>
     <showRunAssignmentRulesCheckbox>false</showRunAssignmentRulesCheckbox>
     <showSubmitAndAttachButton>false</showSubmitAndAttachButton>
+    <summaryLayout>
+        <masterLabel>00haj00000dT0Nx</masterLabel>
+        <sizeX>4</sizeX>
+        <sizeY>0</sizeY>
+        <summaryLayoutStyle>Default</summaryLayoutStyle>
+    </summaryLayout>
 </Layout>

@@ -1756,10 +1756,10 @@ Then, in this order:
 |---|---|
 | ~~Name the strategy interface `AMF_SubmissionStrategy`~~ | **closed in M3** |
 | ~~The step-11 stamp must change no field but `Execution_Ref_Id__c`; a post-write failure must roll back (M1.3)~~ | **closed in M3** — fresh SObjects, and `allOrNone = true` |
-| ~~Remove the standard Submit for Approval button from the layout (§6.3)~~ | **closed in M3** — by declaring an empty `<quickActionList/>` |
+| ~~Remove the standard Submit for Approval button from the layout (§6.3)~~ | **closed in M3.9** — by omitting `Submit` from `platformActionList`; the empty `<quickActionList/>` claimed in M3.4b did nothing |
 | ~~A runtime evaluation error must mark the row `Failed`, write the exception and block~~ | **closed in M3** |
 | ~~M3 must load records through `AMF_FieldPathResolver.load`~~ | **closed in M3** |
-| **The framework's quick action is not on the layout, and cannot be put there by the Metadata API** (M3.4b). Adding it in Setup works but produces a layout that will not redeploy | user, before QA |
+| ~~The framework's quick action cannot be put on the layout by the Metadata API~~ | **corrected in M3.9** — it deploys in `platformActionList`, and that same omission is what removes the standard button |
 | **M3 manual QA steps 5 and 6 must be run as a non-admin** — `Approval_Matrix_Admin` grants the bypass (M1.6e) | user, during QA |
 | **`PR_Two_Level_Mgmt` needs the submitting user to have a Manager** (M3.7) | user, during QA |
 | Node.js is not installed on this workstation; Jest runs through the CLI's bundled runtime (M3.4e) | any new workstation |
@@ -1767,3 +1767,58 @@ Then, in this order:
 | §9's config validator would move compile errors from submit time to deploy time, and would catch a `Process_API_Name__c` naming a process that does not exist — currently a `Failed` row at submit | post-MVP |
 | Bulk: a `Blocked_No_Match` row written for record A is rolled back if record B's submission then fails, because `allOrNone = true` condemns the transaction. Harmless while the UI submits one record at a time; revisit with chunking | post-MVP |
 | `_v2` template cloning (§5.1) is untouched — both templates are v1 and editing one in place is currently possible | post-MVP |
+
+### M3.9 Correction: the standard button was never removed (2026-08-20)
+
+Found during the M3 manual QA, at the first click: the record page showed **two Submit for
+Approval buttons**, identically labelled — the platform's and the framework's.
+
+M3.4b concluded that declaring `<quickActionList/>`, even empty, suppressed the platform's
+default action set and therefore satisfied §6.3. That is wrong, and the reasoning behind it
+was wrong in an instructive way. Retrieving the layout after the action had been added through
+Setup showed where the standard button actually lives:
+
+```
+<platformActionList>
+    <actionListContext>Record</actionListContext>
+    ...
+    <platformActionListItems>
+        <actionName>ChangeOwnerOne</actionName>  <actionType>StandardButton</actionType>  <sortOrder>10</sortOrder>
+    <platformActionListItems>
+        <actionName>Submit</actionName>          <actionType>StandardButton</actionType>  <sortOrder>11</sortOrder>
+    <platformActionListItems>
+        <actionName>Purchase_Request__c.AMF_Submit_For_Approval</actionName>
+                                                 <actionType>QuickAction</actionType>     <sortOrder>12</sortOrder>
+</platformActionList>
+<quickActionList/>
+```
+
+`Submit` is the standard Submit for Approval button, and it lives in **`platformActionList`**,
+a list unrelated to `quickActionList`. It has never been in `quickActionList` — which is why
+the stock `Account` layout does not list it, and why M3.4b's inference from that layout ("the
+default set is what puts it there, so declaring the list removes it") reached a true-sounding
+conclusion from the wrong premise. The empty list removed nothing.
+
+**The fix is one deletion.** Omitting the `Submit` entry from `platformActionList` is §6.3's
+removal, and the same list is where an LWC quick action **can** be deployed —
+`<actionType>QuickAction</actionType>` is accepted there, while `quickActionList` refuses the
+type outright. Both halves of §6.3 are therefore one deployable element, and the earlier
+caveat that a layout carrying the framework's action could not be redeployed is void.
+Verified by round trip: deploy, retrieve, and the org returns eleven standard buttons with no
+`Submit` and the framework's action at sortOrder 11.
+
+Two things this cost, both worth naming:
+
+1. **A green deploy was read as a verified behaviour.** `Status: Succeeded` on the layout said
+   the metadata was accepted; it said nothing about what the action bar renders. Every claim
+   in M3.4b about *what a user sees* rested on an inference, and the phase shipped without
+   anyone opening the record page. The automated suite could not have caught it — no test
+   asserts a layout — which is exactly the case the playbook's "trust your manual QA over the
+   green run" is written for.
+2. **Two actions under one label is a trap of our own making.** The quick action was labelled
+   "Submit for Approval" deliberately, so the demo would look native. That is right once the
+   standard button is gone and actively confusing while it is still there, because nothing on
+   screen distinguishes them. It is left as-is now that only one exists.
+
+`docs/decisions.md` carries the superseding entry; the 2026-08-18 line is struck through
+rather than deleted, because the reasoning is the useful part.
