@@ -1880,9 +1880,20 @@ Two notes for later:
 
 Third finding from manual QA, and the most embarrassing one: `Approval_Decision_Log__c` could
 not be reached in the org at all. No tab, no list view, and no related list from a governed
-record — the last of those is platform-forced, because `Record_Id__c` is Text rather than a
-lookup (§3.3: no relationship exists from a custom object to a custom metadata record, and
-the same constraint leaves the log unlinked to the record it explains).
+record.
+
+**Correction, 2026-08-26.** This entry originally called the missing related list
+"platform-forced, because no relationship exists from a custom object to a custom metadata
+record". That is the reason `Matched_Rule__c` is Text (§3.3), and it does not apply here at
+all: `Record_Id__c` points at `Purchase_Request__c`, an ordinary custom object, and a lookup
+to it would be perfectly legal. Two different fields, two different rationales, conflated.
+
+The real reason `Record_Id__c` is Text(18) is **object-agnosticism**. §3.2 governs any object
+carrying the guard field, and Salesforce has no custom polymorphic lookup — a lookup binds to
+exactly one object, so pointing the log at `Purchase_Request__c` would either tie the audit
+artefact to the pilot object or require one nullable lookup per governed object thereafter.
+`Object_API_Name__c` + `Record_Id__c` is the standard polymorphic-reference pattern, and the
+lost related list is its known cost, paid deliberately rather than forced.
 
 So the object that §8 calls the answer to the framework's deepest flaw, and which is the one
 thing this design does that native approvals cannot, was readable only through SOQL. M0–M3
