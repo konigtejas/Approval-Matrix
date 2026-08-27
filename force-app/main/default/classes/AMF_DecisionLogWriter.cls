@@ -35,6 +35,12 @@ public without sharing class AMF_DecisionLogWriter {
     private static final Integer FAILURE_DETAIL_LIMIT = 4000;
 
     /**
+     * Governed object API name -> the lookup field on this object that points at
+     * it, or null when there is none. Resolved by describe, cached per transaction.
+     */
+    private static final Map<String, String> LOOKUP_BY_OBJECT = new Map<String, String>();
+
+    /**
      * A row for a record the matrix routed. Written BEFORE the submission
      * (6.1 step 8), so Execution_Ref_Id__c is still blank -- stamp() fills it
      * at step 11 and Lock_Decision_Log permits exactly that one update.
@@ -187,12 +193,77 @@ public without sharing class AMF_DecisionLogWriter {
      * the audit trail does not depend on a system field (3.3).
      */
     private static Approval_Decision_Log__c base(Id recordId, String objectApiName) {
-        return new Approval_Decision_Log__c(
+        Approval_Decision_Log__c row = new Approval_Decision_Log__c(
             Record_Id__c = String.valueOf(recordId),
             Object_API_Name__c = objectApiName,
             Submitted_By__c = UserInfo.getUserId(),
             Submitted_At__c = System.now()
         );
+
+        // The navigational half. Record_Id__c above is the provenance and is always
+        // written; this only fires when the log object happens to carry a lookup to
+        // the governed object, and its absence is a missing related list rather
+        // than a missing audit trail.
+        String lookup = lookupFieldFor(objectApiName);
+        if (lookup != null) {
+            row.put(lookup, recordId);
+        }
+        return row;
+    }
+
+    /**
+     * Finds the lookup on Approval_Decision_Log__c that points at the governed
+     * object, BY DESCRIBE rather than by a naming convention.
+     *
+     * That is the whole point of the method. Salesforce has no custom polymorphic
+     * lookup, so one lookup binds to one object and a framework governing several
+     * needs one field per object. Discovering them by reference type means
+     * governing a second object is a new lookup field on this object and NO code
+     * change here -- which is the same bargain 3.2 makes for the guard field.
+     *
+     * Only custom reference fields are considered, so Submitted_By__c and OwnerId
+     * can never be mistaken for the governed record. Where more than one lookup
+     * points at the same object the first by API name wins, deterministically,
+     * because an arbitrary-but-stable answer beats an order that varies between
+     * transactions.
+     *
+     * @param objectApiName The governed object.
+     * @return The lookup field's API name, or null when the log carries none.
+     */
+    private static String lookupFieldFor(String objectApiName) {
+        if (LOOKUP_BY_OBJECT.containsKey(objectApiName)) {
+            return LOOKUP_BY_OBJECT.get(objectApiName);
+        }
+
+        Schema.SObjectType governed = Schema.getGlobalDescribe().get(objectApiName);
+        List<String> candidates = new List<String>();
+
+        if (governed != null) {
+            Map<String, Schema.SObjectField> fields = Approval_Decision_Log__c.SObjectType.getDescribe()
+                .fields.getMap();
+
+            for (Schema.SObjectField field : fields.values()) {
+                Schema.DescribeFieldResult described = field.getDescribe();
+
+                if (!described.isCustom() || described.getType() != Schema.DisplayType.REFERENCE) {
+                    continue;
+                }
+                for (Schema.SObjectType referenced : described.getReferenceTo()) {
+                    if (referenced == governed) {
+                        candidates.add(described.getName());
+                    }
+                }
+            }
+        }
+
+        String resolved = null;
+        if (!candidates.isEmpty()) {
+            candidates.sort();
+            resolved = candidates[0];
+        }
+
+        LOOKUP_BY_OBJECT.put(objectApiName, resolved);
+        return resolved;
     }
 
     private static String truncate(String detail) {

@@ -1909,3 +1909,72 @@ Deliberately still absent: the §8 timeline LWC, which renders the decision row 
 approver history as one narrative. That is out of MVP scope (§13.2) and remains the right next
 piece of UI. A tab is the minimum that makes the artefact demonstrable; the timeline is what
 makes it persuasive.
+
+### M3.12 A related list from the governed record, without losing object-agnosticism (2026-08-27)
+
+`Approval_Decision_Log__c` gains `Purchase_Request__c`, a Lookup, and
+`Purchase_Request__c` gains an **Approval Decisions** related list. Standing on a request,
+you now see why it routed where it did, directly beneath the native who-and-when.
+
+**The constraint this navigates.** `Record_Id__c` is Text(18) because the log serves any
+governed object and Salesforce has no custom polymorphic lookup — one lookup binds to one
+object. M3.11 originally mis-stated that as platform-forced, which it is not: a lookup to
+`Purchase_Request__c` was always legal. The real trade is that a lookup costs one field per
+governed object, and text costs the related list. Taking both is the resolution here:
+
+- **`Record_Id__c` stays the provenance.** Object-agnostic, never null, written on every row
+  including outcomes for objects the log holds no lookup to. It is what the audit rests on.
+- **The lookup is navigation.** Nullable by definition, and its absence degrades a related
+  list rather than an audit trail.
+
+**The engine finds the lookup by describe, not by name.** `AMF_DecisionLogWriter` scans its
+own object for a *custom reference* field whose `referenceTo` is the governed type, caches the
+answer per transaction, and populates it when one exists. Governing a second object is
+therefore a new lookup field on the log and **no Apex change at all** — the same bargain §3.2
+already makes for the guard field. Restricting the scan to custom reference fields is what
+stops `Submitted_By__c` or `OwnerId` ever being mistaken for the governed record; where two
+lookups point at the same object the first by API name wins, deterministically.
+
+`deleteConstraint` is **SetNull**, never cascade. §3.3 requires the audit row to outlive what
+it explains, and a master-detail — or a `Restrict` — would either destroy audit history with
+the record or make governed records undeletable. Deleting a request nulls the convenience and
+leaves `Record_Id__c` holding the reference as text, which is the correct degradation.
+
+**Deliberately NOT added to `Lock_Decision_Log`.** Every other governed field is in that
+rule's `ISCHANGED` list; this one is not. A `SetNull` cascade from deleting a governed record
+is a legitimate system write, and if validation fires on it, adding the field would make
+deleting any Purchase Request fail with an immutability error — a genuinely horrible thing to
+diagnose. The provenance field it mirrors is already locked, so nothing auditable is left
+unguarded by the omission.
+
+**Issues encountered.**
+
+**(a) The related list name is neither the relationship name nor a label.** `Approval_Decisions`
+is rejected with *Cannot find related list*. The layout wants
+`<relatedList>Approval_Decision_Log__c.Purchase_Request__c</relatedList>` — child object API
+name, dot, lookup field API name. Same shape of error as `RelatedProcessHistoryList` in M3.9,
+and found the same way: by deploying and reading what the API said.
+
+**(b) M1.4d, for the third time in this project.** The field deployed, the tests passed, and
+anonymous Apex then refused to compile `SELECT Purchase_Request__c FROM
+Approval_Decision_Log__c` with *No such column* — because the FLS edit had landed in
+`Approval_Matrix_User` and silently missed `Approval_Matrix_Admin`, whose entries carry
+`editable=true` and so did not match the same anchor. **Apex tests run in system mode and do
+not see FLS**, so a fully green 144-test run said nothing about whether a human — or an
+administrator's own anonymous Apex — could read the field. That is the same blind spot Group E
+of the QA register exists for, showing up in a new place. *Grep both permission sets after any
+scripted FLS edit; a count of one is a failure, not a success.*
+
+**Verification.**
+
+```
+Tests            144 passed, 100%, run 707aj00001BGOqj   (141 before, +3)
+Backfill         2 row(s) linked, 0 orphaned
+Traversal        ADL-00000001 -> PR-00000001   PR_Catch_All -> PR_Two_Level_Mgmt
+                 ADL-00000002 -> PR-00000003   PR_High_Value_APAC -> PR_Three_Level_Finance
+```
+
+Three tests were added: the lookup is populated alongside the text reference and traverses;
+blocked and failed rows carry it too, since those belong in a record's related list at least as
+much as successful ones; and an object the log holds no lookup to still gets its `Record_Id__c`,
+which is the case that proves the field is optional rather than required.

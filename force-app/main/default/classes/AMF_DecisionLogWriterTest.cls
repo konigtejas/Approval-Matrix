@@ -94,6 +94,91 @@ private class AMF_DecisionLogWriterTest {
     }
 
     @IsTest
+    static void theGovernedRecordLookupIsPopulatedAlongsideTheTextReference() {
+        // Record_Id__c is the provenance and is object-agnostic; the lookup is the
+        // navigational convenience that gives Purchase_Request__c a related list.
+        // The engine finds it by describe, so a second governed object is a new
+        // lookup field and no change to this class.
+        Purchase_Request__c record = governedRecord();
+
+        Approval_Decision_Log__c row = AMF_DecisionLogWriter.forSubmission(
+            record.Id,
+            OBJECT_NAME,
+            rule(),
+            '{}'
+        );
+        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>{ row });
+
+        Approval_Decision_Log__c saved = [
+            SELECT Record_Id__c, Purchase_Request__c, Purchase_Request__r.Name
+            FROM Approval_Decision_Log__c
+            WHERE Id = :row.Id
+        ];
+
+        Assert.areEqual(record.Id, saved.Purchase_Request__c, 'The lookup points at the governed record');
+        Assert.areEqual(
+            String.valueOf(record.Id),
+            saved.Record_Id__c,
+            'And Record_Id__c still carries the same reference as text'
+        );
+        Assert.isNotNull(saved.Purchase_Request__r.Name, 'The relationship traverses');
+    }
+
+    @IsTest
+    static void everyOutcomeCarriesTheLookupNotJustSubmissions() {
+        // A blocked or failed row is about a record too, so it belongs in that
+        // record's related list -- arguably more than a successful one does.
+        Purchase_Request__c blocked = governedRecord();
+        Purchase_Request__c failed = governedRecord();
+
+        AMF_DecisionLogWriter.save(
+            new List<Approval_Decision_Log__c>{
+                AMF_DecisionLogWriter.forNoMatch(blocked.Id, OBJECT_NAME, '{}', 'nothing matched'),
+                AMF_DecisionLogWriter.forFailure(failed.Id, OBJECT_NAME, rule(), '{}', 'boom')
+            }
+        );
+
+        Map<Id, Approval_Decision_Log__c> byParent = new Map<Id, Approval_Decision_Log__c>();
+        for (Approval_Decision_Log__c row : [
+            SELECT Purchase_Request__c, Outcome__c
+            FROM Approval_Decision_Log__c
+            WHERE Purchase_Request__c IN :new List<Id>{ blocked.Id, failed.Id }
+        ]) {
+            byParent.put(row.Purchase_Request__c, row);
+        }
+
+        Assert.areEqual('Blocked_No_Match', byParent.get(blocked.Id).Outcome__c);
+        Assert.areEqual('Failed', byParent.get(failed.Id).Outcome__c);
+    }
+
+    @IsTest
+    static void anObjectWithNoLookupStillGetsItsTextReference() {
+        // The lookup is optional by design. An object the log carries no lookup to
+        // -- every object but Purchase_Request__c today -- must still be auditable,
+        // because Record_Id__c is what the audit trail actually rests on.
+        Account ungoverned = new Account(Name = 'No lookup exists for me');
+        insert ungoverned;
+
+        Approval_Decision_Log__c row = AMF_DecisionLogWriter.forNoMatch(
+            ungoverned.Id,
+            'Account',
+            '{}',
+            'not governed'
+        );
+        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>{ row });
+
+        Approval_Decision_Log__c saved = [
+            SELECT Record_Id__c, Object_API_Name__c, Purchase_Request__c
+            FROM Approval_Decision_Log__c
+            WHERE Id = :row.Id
+        ];
+
+        Assert.areEqual(String.valueOf(ungoverned.Id), saved.Record_Id__c, 'Provenance is unconditional');
+        Assert.areEqual('Account', saved.Object_API_Name__c);
+        Assert.isNull(saved.Purchase_Request__c, 'And no unrelated lookup was populated');
+    }
+
+    @IsTest
     static void aNoMatchRowNamesNoRuleAndNoProcess() {
         Purchase_Request__c record = governedRecord();
 

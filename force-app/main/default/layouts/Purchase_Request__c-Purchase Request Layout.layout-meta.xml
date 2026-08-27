@@ -179,6 +179,21 @@
         <fields>Comments</fields>
         <relatedList>RelatedProcessHistoryList</relatedList>
     </relatedLists>
+    <!--
+      Why this record routed where it did (arch doc 3.3, 8), alongside the native
+      who-and-when above it. Reachable only because Approval_Decision_Log__c carries
+      a lookup to this object; Record_Id__c alone cannot produce a related list,
+      being object-agnostic Text. The engine populates both.
+    -->
+    <relatedLists>
+        <fields>NAME</fields>
+        <fields>Submitted_At__c</fields>
+        <fields>Outcome__c</fields>
+        <fields>Matched_Rule__c</fields>
+        <fields>Rule_Version__c</fields>
+        <fields>Selected_Process__c</fields>
+        <relatedList>Approval_Decision_Log__c.Purchase_Request__c</relatedList>
+    </relatedLists>
     <showEmailCheckbox>false</showEmailCheckbox>
     <showHighlightsPanel>false</showHighlightsPanel>
     <showInteractionLogPanel>false</showInteractionLogPanel>

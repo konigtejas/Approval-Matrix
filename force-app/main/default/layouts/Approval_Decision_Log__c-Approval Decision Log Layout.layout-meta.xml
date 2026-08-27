@@ -70,6 +70,10 @@
         <layoutColumns>
             <layoutItems>
                 <behavior>Readonly</behavior>
+                <field>Purchase_Request__c</field>
+            </layoutItems>
+            <layoutItems>
+                <behavior>Readonly</behavior>
                 <field>Object_API_Name__c</field>
             </layoutItems>
         </layoutColumns>
