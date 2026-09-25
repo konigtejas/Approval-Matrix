@@ -8,7 +8,12 @@ name → decision log explains why.
 docs/architecture.md (v3.0) defines the full target design; its §13 is this MVP scope.
 WE ARE BUILDING THE MVP SUBSET ONLY (see MVP SCOPE). If the doc describes something
 not in MVP scope, do NOT build it. If a task seems to conflict with the doc, STOP and
-ask. docs/build-playbook.md carries the phase plan (M0–M3) and the gate for each.
+ask. docs/build-playbook.md carries the phase plan (M0—M3) and the gate for each.
+
+**Current authorised post-MVP work:** M0—M3 have passed their gates. M4 adds the
+configuration validator in architecture §9, its source-metadata companion gate, and the
+post-deploy script. This explicitly supersedes the MVP-only restriction for the config
+validator alone; all other items in the out-of-scope list remain deferred.
 
 ## MVP SCOPE — build ONLY these
 - One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)

@@ -27,6 +27,34 @@
 public with sharing class AMF_CmdtRuleProvider implements AMF_RuleProvider {
 
     /**
+     * Configuration-wide counterpart to getActiveRules(objectApiName). The
+     * validator uses this rather than querying CMDT itself, preserving the
+     * framework rule that Custom Metadata is accessed only through
+     * AMF_RuleProvider.
+     */
+    public List<AMF_RuleDefinition> getActiveRules() {
+        List<AMF_RuleDefinition> rules = new List<AMF_RuleDefinition>();
+
+        for (Approval_Matrix_Rule__mdt row : [
+            SELECT DeveloperName,
+                   Object_API_Name__c,
+                   Priority__c,
+                   Expression__c,
+                   Process_API_Name__c,
+                   Description__c,
+                   Version__c,
+                   Active__c
+            FROM Approval_Matrix_Rule__mdt
+            WHERE Active__c = TRUE
+        ]) {
+            rules.add(toDefinition(row));
+        }
+
+        rules.sort();
+        return rules;
+    }
+
+    /**
      * @param objectApiName API name of the governed object.
      * @return That object's active rules in priority order. Never null.
      */
@@ -66,19 +94,24 @@ public with sharing class AMF_CmdtRuleProvider implements AMF_RuleProvider {
             if (activeOnly && row.Active__c != true) {
                 continue;
             }
-            rules.add(new AMF_RuleDefinition(
-                row.DeveloperName,
-                row.Object_API_Name__c,
-                row.Priority__c == null ? null : row.Priority__c.intValue(),
-                row.Expression__c,
-                row.Process_API_Name__c,
-                row.Description__c,
-                row.Version__c == null ? null : row.Version__c.intValue(),
-                row.Active__c
-            ));
+            rules.add(toDefinition(row));
         }
 
         rules.sort();
         return rules;
+    }
+
+    /** Maps one SOQL-loaded row without ever touching getAll()/getInstance(). */
+    private static AMF_RuleDefinition toDefinition(Approval_Matrix_Rule__mdt row) {
+        return new AMF_RuleDefinition(
+            row.DeveloperName,
+            row.Object_API_Name__c,
+            row.Priority__c == null ? null : row.Priority__c.intValue(),
+            row.Expression__c,
+            row.Process_API_Name__c,
+            row.Description__c,
+            row.Version__c == null ? null : row.Version__c.intValue(),
+            row.Active__c
+        );
     }
 }

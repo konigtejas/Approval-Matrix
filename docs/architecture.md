@@ -332,7 +332,7 @@ A read-only timeline LWC renders both halves as one narrative: *"Matched **High-
 
 ## 9. Config Validator
 
-Runs at deploy time and is also exposed as an invocable for post-deploy pipeline checks. Deployment fails when:
+Runs as a required release gate and is also exposed as an invocable for post-deploy pipeline checks. The gate fails when:
 
 - Any active expression fails to compile (message includes character position)
 - A `Classic` rule's `Process_API_Name__c` has no **active** `ProcessDefinition` of type Approval for that object
@@ -340,6 +340,28 @@ Runs at deploy time and is also exposed as an invocable for post-deploy pipeline
 - Two active rules share the same object and priority
 - A governed object lacks `Matrix_Submission__c`
 - A Classic template's entry criteria omit the guard
+
+**M4 implementation (2026-09-18).** A Salesforce metadata deploy cannot invoke Apex, so
+"at deploy time" means a required two-part release gate rather than a hidden deploy hook:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1
+sf project deploy start -o amf-dev
+sf apex run --file scripts/validate-config.apex -o amf-dev
+```
+
+The source gate validates every active rule's referenced Classic template is present and active
+in the repository and that its only entry criterion is `Matrix_Submission__c = TRUE`.
+`AMF_ConfigValidator` validates the deployed org: all active expressions compile, priorities
+are unique per object, every governed object has a Checkbox guard, and every named Classic
+template is an active `ProcessDefinition` for the same object. It is also exposed as the
+**Validate Approval Matrix Configuration** invocable action for an admin-owned post-deploy
+Flow. The invocable returns all findings and can be configured to throw when any are present.
+
+`ProcessDefinition` does not expose entry criteria to Apex SOQL, which is why the guard check
+is deliberately source-based rather than an unreliable Apex inference. The current M4
+implementation is Classic-only; the Flow-template checks above join it when Flow execution and
+`Execution_Type__c` are introduced.
 
 ---
 
@@ -357,6 +379,10 @@ Runs at deploy time and is also exposed as an invocable for post-deploy pipeline
 - The service runs `without sharing` (it is infrastructure) but authorises explicitly: submission requires read access to the record.
 - Two permission sets: `Approval_Matrix_User` (submit, read own logs), `Approval_Matrix_Admin` (read all logs, manage config — Modify All deliberately withheld, §3.3).
 - Flow approvals additionally require access to `ApprovalSubmission` and `ApprovalWorkItem`, and edit on the submitted object; Run Flows may be required depending on context.
+- **Deployment requirement:** approvers must have read access to the governed record through
+  role hierarchy, a sharing rule, or Apex sharing. Assigning a Classic approval work item does
+  not create a record share; the framework intentionally does not alter an adopting org's
+  sharing model.
 
 ---
 
@@ -409,6 +435,7 @@ The lexer, parser and AST must be structured so these are **additive** — no sp
 | **M1** | Single CMDT, decision log, three sample rules, SOQL-based provider | Long-expression (>255 char) test passes |
 | **M2** | Evaluator, reduced grammar, table-driven + malformed-input suites | ≥90% coverage, zero org dependence |
 | **M3** | Engine, Classic strategy, two templates, log write, submit action | **Manual QA:** change a rule's process in CMDT, redeploy, watch routing change with no code touched |
+| **M4** | Post-MVP configuration validator and source guard gate | Source gate, deployed-org validator and all Apex tests green |
 
 ### 13.5 Repository state
 

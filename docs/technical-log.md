@@ -98,7 +98,8 @@ session needs. Update the row when a phase completes.
 | **M0** | Baseline & cleanup | **Complete** — all gates green, no v1.0 metadata left | `9a54e68`, `6ccc2ed` + M0.8 |
 | **M1** | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | **Complete** — >255 gate green, 20/20 tests | `26a157f` |
 | **M2** | Expression evaluator, reduced grammar | **Complete** — 100% coverage on all eight evaluator classes, 108/108 tests | `ce47137` |
-| **M3** | Engine, two Classic templates, submit action | **Code complete** — 141/141 Apex tests, 6/6 Jest, service and log writer at 100%; awaiting the manual QA gate | `d13241f` |
+| **M3** | Engine, two Classic templates, submit action | **Complete** — 141/141 Apex tests, 6/6 Jest, service and log writer at 100%; manual QA gate completed 2026-09-18 | `d13241f` |
+| **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 150/150 Apex tests | this commit |
 
 ### Superseded — the v1.0 plan
 
@@ -1443,9 +1444,9 @@ later than it eventually will.
 ## Phase M3 — Engine, templates, submit action
 
 **Date:** 2026-08-18 · **Commit:** `d13241f`
-**Status:** code complete — 141/141 Apex tests, 6/6 Jest tests, `AMF_ApprovalMatrixService`
-and `AMF_DecisionLogWriter` at 100%, org-wide 99%. **The phase gate is manual and has not
-been run yet** (see M3.7).
+**Status:** complete — 141/141 Apex tests, 6/6 Jest tests, `AMF_ApprovalMatrixService`
+and `AMF_DecisionLogWriter` at 100%, org-wide 99%. The manual phase gate was completed on
+2026-09-18 (see M3.7).
 **Playbook goal:** the demo. End to end, one rule change away from different routing.
 
 The last phase of the **v3.0 MVP** plan, and the one that turns three phases of parts into
@@ -1719,10 +1720,10 @@ MVP departs from its wording — how a block is signalled — is a platform cons
 implementation rather than a change to what the framework does. A blocked record still does
 not route, still logs, and still explains itself.
 
-### M3.7 The manual QA gate — NOT YET RUN
+### M3.7 The manual QA gate — COMPLETED (2026-09-18)
 
-This phase's gate is human. Nothing below has been executed; the code is complete and green,
-and the playbook budgets an hour for this.
+At code completion on 2026-08-18, this phase's gate was still human and had not been run. The
+following checklist was completed on 2026-09-18, closing the final MVP phase gate.
 
 **Prerequisite, and it will otherwise look like a bug.** `PR_Two_Level_Mgmt` resolves its
 approvers from the **submitter's** `User.Manager` chain. The admin user has no manager, so
@@ -1760,8 +1761,8 @@ Then, in this order:
 | ~~A runtime evaluation error must mark the row `Failed`, write the exception and block~~ | **closed in M3** |
 | ~~M3 must load records through `AMF_FieldPathResolver.load`~~ | **closed in M3** |
 | ~~The framework's quick action cannot be put on the layout by the Metadata API~~ | **corrected in M3.9** — it deploys in `platformActionList`, and that same omission is what removes the standard button |
-| **M3 manual QA steps 5 and 6 must be run as a non-admin** — `Approval_Matrix_Admin` grants the bypass (M1.6e) | user, during QA |
-| **`PR_Two_Level_Mgmt` needs the submitting user to have a Manager** (M3.7) | user, during QA |
+| ~~M3 manual QA steps 5 and 6 must be run as a non-admin~~ — `Approval_Matrix_Admin` grants the bypass (M1.6e) | **closed 2026-09-18** |
+| ~~`PR_Two_Level_Mgmt` needs the submitting user to have a Manager~~ (M3.7) | **closed 2026-09-18** |
 | Node.js is not installed on this workstation; Jest runs through the CLI's bundled runtime (M3.4e) | any new workstation |
 | `AMF_ClassicProcessStrategy`'s blank-reference guard is unreachable through the platform; the same invariant is covered at the engine level | post-MVP |
 | §9's config validator would move compile errors from submit time to deploy time, and would catch a `Process_API_Name__c` naming a process that does not exist — currently a `Failed` row at submit | post-MVP |
@@ -1978,3 +1979,39 @@ Three tests were added: the lookup is populated alongside the text reference and
 blocked and failed rows carry it too, since those belong in a record's related list at least as
 much as successful ones; and an object the log holds no lookup to still gets its `Record_Id__c`,
 which is the case that proves the field is optional rather than required.
+
+---
+
+## Phase M4 — Configuration validator
+
+**Date:** 2026-09-18 · **Status:** complete.
+
+The first post-MVP increment closes the gap between a matrix edit and a failed submission.
+`AMF_ConfigValidator` reads active rules only through `AMF_RuleProvider`, compiles each
+expression, rejects duplicate priorities, confirms the governed object carries the Checkbox
+guard, and confirms every referenced Classic process is active for that object. The
+`AMF_ApprovalProcessProvider` seam keeps both rule and process fixtures in memory in unit
+tests; the production provider queries `ProcessDefinition` by `DeveloperName`,
+`TableEnumOrId`, `Type = 'Approval'` and `State = 'Active'`.
+
+A Salesforce metadata deploy cannot call Apex. The release gate is therefore intentionally split:
+`scripts/validate-approval-matrix-source.ps1` confirms source approval-process files are active
+and use exactly `Matrix_Submission__c = TRUE`; after deploy,
+`scripts/validate-config.apex` calls `AMF_ConfigValidator.validateOrThrow()`. The latter is
+also available to Flow as **Validate Approval Matrix Configuration** and is granted only to
+`Approval_Matrix_Admin`.
+
+**Why two gates:** `ProcessDefinition` does not expose an entry-criteria field through Apex
+SOQL. Rather than incorrectly claiming the live validator can inspect it, the source gate owns
+that precise check and the Apex gate owns deployed-org state. Neither changes routing or writes
+data; the successful live run consumed two SOQL queries and zero DML.
+
+**Verification:**
+
+```
+Source guard gate       passed: 3 active rules
+Deploy                  succeeded: 41 components, 0 errors (0Afaj00000klbEXCAY)
+Focused tests           passed: 12/12 (707aj00001FlW6d)
+Live post-deploy gate   passed: 2 SOQL, 0 DML
+RunLocalTests           passed: 150/150 (707aj00001FlHXv)
+```

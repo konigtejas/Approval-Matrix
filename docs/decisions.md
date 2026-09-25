@@ -8,6 +8,15 @@ Format: `YYYY-MM-DD — <what changed> — <why>`
 
 ---
 
+2026-09-18 — §9's configuration validator is a **source gate plus a required
+post-deploy Apex gate**, not a literal metadata-deploy hook: Salesforce deploys cannot execute
+Apex. `scripts/validate-approval-matrix-source.ps1` checks the source template's active state
+and exact `Matrix_Submission__c = TRUE` entry criterion; `AMF_ConfigValidator` checks the
+deployed active rules, expression compilation, duplicate priorities, Checkbox guard and active
+Classic `ProcessDefinition` target. This split is necessary because `ProcessDefinition` exposes
+no entry-criteria field to Apex SOQL. The post-deploy script throws on findings, making CI fail
+before the new configuration is accepted.
+
 2026-08-18 — §6.1 step 6's "throw a clear error" is implemented as a **per-record blocked Outcome**, not an exception; `AMF_ApprovalMatrixService.submit` throws only for faults condemning the whole call — nothing to submit, a mixed-object batch, a record the caller cannot read, an object with no active rules or no guard field, a rule that will not compile, a failed `Approval.process()`. The two halves of step 6 are mutually exclusive in Apex: an exception escaping the top of a request rolls back every DML before it, so throwing would erase the `Blocked_No_Match` row §3.3 exists to create. Catching it in every caller would preserve the row but make the audit trail depend on caller discipline, and would abort a batch at its first blocked record. This is not §4.6's forbidden catch-and-return-false — the evaluator still swallows nothing, the record still does not route, and the trace now outlives the transaction. Pinned by `AMF_ApprovalMatrixServiceTest.noMatchBlocksAndLeavesARowThatSurvivesTheTransaction`.
 
 2026-08-18 — A rule that will **not compile blocks every record in the call**, rather than being skipped so lower-priority rules can still match — §4.6 at its sharpest, and the one place the MVP is stricter than a literal reading of §6.1. If the priority-10 rule cannot be evaluated, nobody can say a record would not have matched it, so letting the priority-20 rule pick it up is precisely the silent misrouting the framework exists to prevent. §9's config validator would move this to deploy time; §9 is out of MVP scope (§13.2), so it surfaces at submit. Pinned by `AMF_ApprovalMatrixServiceTest.aRuleThatWillNotCompileStopsEverythingRatherThanFallingThrough`.

@@ -252,6 +252,34 @@ Budget an hour for this phase's QA. It is the heart of the framework and the onl
 
 ---
 
+### M4 — Configuration validator (post-MVP)
+
+**Goal:** fail a release before an invalid active matrix rule can reach a submission.
+
+**Build:** `AMF_ConfigValidator` compiles every active rule; rejects duplicate priorities;
+requires the Checkbox `Matrix_Submission__c` guard; and verifies every referenced Classic
+process is active for the governed object. `AMF_ApprovalProcessProvider` isolates the
+`ProcessDefinition` query so unit tests use an in-memory process catalog. Expose the validator
+as an invocable action and add `scripts/validate-config.apex` as the post-deploy CI gate.
+
+Salesforce does not expose an approval process's entry criteria on `ProcessDefinition`, so the
+repository-side `scripts/validate-approval-matrix-source.ps1` validates each active rule's
+referenced template file, activation state, and exact `Matrix_Submission__c = TRUE` guard
+formula before the metadata deploy.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. Deploy the package.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
+4. Run `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`.
+
+Acceptance: both gates pass against the shipped matrix; unit tests cover a valid matrix, an
+invalid expression with its character position, duplicate priorities, an absent process, an
+absent guard field, and the throwing pipeline path.
+
+---
+
 ## Part 4 — When Things Go Wrong
 
 - **Claude Code invents schema** (a field not in §3): stop it, point at the doc, restate

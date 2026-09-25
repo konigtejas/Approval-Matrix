@@ -13,6 +13,13 @@
 public interface AMF_RuleProvider {
 
     /**
+     * @return Every active rule across every governed object, in deterministic
+     *         order. This lets configuration-wide tooling inspect the same CMDT
+     *         view as the engine without bypassing this interface.
+     */
+    List<AMF_RuleDefinition> getActiveRules();
+
+    /**
      * @param objectApiName API name of the governed object.
      * @return That object's active rules, ascending by Priority__c with ties
      *         broken on DeveloperName. Empty list when the object has no active

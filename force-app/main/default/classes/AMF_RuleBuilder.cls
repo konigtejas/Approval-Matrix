@@ -101,14 +101,24 @@ public class AMF_RuleBuilder {
             this.rules = rules == null ? new List<AMF_RuleDefinition>() : rules;
         }
 
+        public List<AMF_RuleDefinition> getActiveRules() {
+            List<AMF_RuleDefinition> active = new List<AMF_RuleDefinition>();
+            for (AMF_RuleDefinition rule : rules) {
+                if (rule != null && rule.isActive == true) {
+                    active.add(rule);
+                }
+            }
+            active.sort();
+            return active;
+        }
+
         public List<AMF_RuleDefinition> getActiveRules(String objectApiName) {
             List<AMF_RuleDefinition> matched = new List<AMF_RuleDefinition>();
-            for (AMF_RuleDefinition rule : rules) {
-                if (rule.isActive == true && rule.objectApiName == objectApiName) {
+            for (AMF_RuleDefinition rule : getActiveRules()) {
+                if (rule.objectApiName == objectApiName) {
                     matched.add(rule);
                 }
             }
-            matched.sort();
             return matched;
         }
     }
