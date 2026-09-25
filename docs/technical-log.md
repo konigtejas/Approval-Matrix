@@ -100,6 +100,7 @@ session needs. Update the row when a phase completes.
 | **M2** | Expression evaluator, reduced grammar | **Complete** — 100% coverage on all eight evaluator classes, 108/108 tests | `ce47137` |
 | **M3** | Engine, two Classic templates, submit action | **Complete** — 141/141 Apex tests, 6/6 Jest, service and log writer at 100%; manual QA gate completed 2026-09-18 | `d13241f` |
 | **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 166/166 Apex tests after M4.1, validator at 98% | `9893274` + M4.1 |
+| **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Code complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; modal and Cancel verified in the real UI; the manual gate's Submit click is pending (M5.5) | this commit |
 
 ### Superseded — the v1.0 plan
 
@@ -2071,3 +2072,204 @@ RunLocalTests           passed: 166/166, org-wide 98% (707aj00001HVtMw)   (150 b
 Source guard gate       passed: 3 active rules
 Live post-deploy gate   passed: 2 SOQL, 0 DML
 ```
+
+---
+
+## Phase M5 — Preview modal
+
+**Date:** 2026-09-25 · **Status:** code complete — every automated gate green and the modal
+verified in the real UI; the manual gate's Submit click is the one step not yet run (M5.5).
+**Playbook goal:** before anything is submitted, show the submitter where the record will go
+and why.
+
+The second post-MVP increment, and the first that changes what a user sees. §6.4 has specified
+`preview()` since v3.0 and §7 has always described the UI row as "headless LWC quick action →
+preview → confirm → submit"; §13.1 deferred both. CLAUDE.md's authorised-work paragraph now
+admits the preview modal alongside M4's validator; everything else on the out-of-scope list
+stays deferred.
+
+### M5.1 File-level changes
+
+| File | Change | Notes |
+|---|---|---|
+| `classes/AMF_ApprovalMatrixService.cls` | **modified** | `submit()` and new `preview()` share one private `run(recordIds, commitDecision)`; new `@AuraEnabled previewRecord`; `Outcome` gains `rulePriority`, `matchedExpression`, `evaluatedValuesJson` |
+| `classes/AMF_ApprovalMatrixServiceTest.cls` | **modified** | +9 preview tests |
+| `lwc/amfSubmitPreview/*` | **added** | `LightningModal` subclass, presentation only; 7 Jest tests |
+| `lwc/amfSubmitForApproval/*` | **modified** | preview → modal → submit; double-click guard; changed-route warning; 16 Jest tests (was 6) |
+| `jest-mocks/lightning/modal.{js,html}` | **added** | Jest stand-in for `lightning/modal` — see M5.3a |
+| `jest.config.js` | **modified** | `moduleNameMapper` for `lightning/modal` |
+| `CLAUDE.md`, `docs/architecture.md` (§6.4 note, §13.4 row), `docs/build-playbook.md` (M5) | **modified** | scope and plan |
+
+No objects, fields, layouts, quick actions or permission-set entries changed. `previewRecord`
+lives on `AMF_ApprovalMatrixService`, which both permission sets already grant, and the quick
+action metadata is untouched — only the bundle behind it changed.
+
+### M5.2 Design choices worth recording
+
+**(a) One path, stopped early — not a parallel preview.** The whole of `submit()`'s old body is
+now `run()`, with one early return between step 7 and step 8. Authorisation, the guard-field
+check, rule order, compilation, the single union query and the first-true walk are therefore
+*the same code* for both, and a preview cannot drift from the submission it predicts.
+`aPreviewShowsExactlyWhatTheSubmissionThenRecords` pins that byte for byte: the preview's
+expression and evaluated-values JSON equal the log row the submission then writes. §6.4 names
+the flag `commit`; Apex reserves that word, hence `commitDecision`. `match()` still builds the
+unsaved log row during a preview — cheap, and it is what keeps the path identical.
+
+**(b) The preview returns the "why", with nothing new disclosed.** §6.4 lists rule, description
+and template. The modal also shows priority, the rule's expression and the values it read — the
+same content `Expression_Snapshot__c` and `Evaluated_Values__c` record, and
+`Approval_Matrix_User` already grants read on both for the submitter's own rows. The preview is
+held to the same `UserRecordAccess` check as a submission
+(`aPreviewRequiresReadAccessToTheRecord`). Each JSON string is computed once and shared by the
+outcome and the row.
+
+**(c) `previewRecord` is not `cacheable`.** A cached answer would survive an edit to the record
+or the matrix and confirm a route the submission would not take.
+
+**(d) `LightningModal`, opened by the headless action itself.** M3.4a found the org refuses to
+change an existing LWC action's type to a screen action, and §7 asks for headless anyway. The
+modal is presentation only: it receives the preview and resolves `submit` or `cancel`; the
+action does the one submission. The header's X and Escape resolve `undefined` and submit nothing.
+
+**(e) Only a routable preview opens the modal.** A `Blocked_No_Match` or `Failed` preview has no
+route to confirm, and §6.1 step 6 wants the *attempt* on record — but a preview writes nothing
+(§6.4). So the action submits those directly, the submission writes the row and the sticky toast
+explains it, exactly as before M5. M3 QA step 5 ("blocked, with a `Blocked_No_Match` row")
+therefore still holds through the UI. The alternative, a modal with only Close, would have made
+the UI path silently stop producing blocked and failed rows — including the stack trace an
+admin needs when schema drift makes a rule fail at runtime.
+
+**(f) A changed route is reported, not papered over.** `submitRecord` re-runs the engine. If
+the record or the matrix changed after the preview and the submission matched a different rule,
+rule version or process, the toast is a sticky warning naming what actually happened. Version is
+compared too: a rule edited in place keeps its name.
+
+**(g) Double clicks.** An async headless `invoke()` can be called again while the first call is
+still awaiting Apex; an `isExecuting` guard drops the second, as the headless-action docs
+recommend.
+
+**(h) Rendering.** Numbers go through `lightning-formatted-number`, so they read in the viewer's
+locale (`250,000`); a null reads `(blank)`, because a blank that decided a route is worth seeing;
+booleans read `TRUE`/`FALSE`. A rule reading no fields says it "matches every record" — true,
+because a field-less expression is constant and this one matched. Everything is rendered as
+template text, never markup.
+
+No `docs/decisions.md` entry: nothing departs from the doc. §6.4 and §7 are built as written,
+and the one gap — what a blocked preview does — is resolved in §6.4's M5 note.
+
+### M5.3 Issues encountered
+
+**(a) `lightning/modal` has no Jest stub.** `@salesforce/sfdx-lwc-jest` 7.9.0 ships
+`modalHeader`, `modalBody` and `modalFooter` stubs but not `lightning/modal`, and its resolver
+returns nothing for a missing stub, so a `LightningModal` subclass cannot even be imported in a
+test. Fixed with `jest-mocks/lightning/modal.js`, mapped in `jest.config.js`. It sits **outside
+`force-app`** so no deploy can pick it up. The first version used `@api` decorators and failed
+ESLint (*Parsing error: Unexpected character '@'*): the project's `**/jest-mocks/**` lint block
+uses the plain parser. Nothing sets the modal's public properties in these tests, so the
+decorators were dropped rather than the lint config changed.
+
+**(b) The action is in the overflow menu.** The first real-UI run timed out looking for a
+**Submit for Approval** button: on this layout the header shows Printable View, Sharing
+Hierarchy and Edit Labels, and the framework's action sits under **▼**. Behaviour is unaffected;
+promoting it is a `platformActionList` sort-order change, not M5's.
+
+**(c) The org's matrix has drifted from the repo.** The real-org preview showed
+`PR_High_Value_APAC` routing to `PR_Two_Level_Mgmt`. The repo's record says
+`PR_Three_Level_Finance`; the org's row was edited in Setup on 2026-09-07 (the M3 rule-flip
+QA, by the look of it) with `Version__c` still 1. The modal makes the drift visible: the rule's
+description says "takes the three-level finance chain" beside a two-level route. M5 does not
+touch configuration, so the row was left as found; redeploying the repo's record restores it.
+
+**(d) Prettier.** The new files are not Prettier-formatted, and neither are the M3 files they
+sit beside — checked against `HEAD`. Husky's `prepare` fails under `cmd.exe` (M3.4e), so
+`core.hooksPath` was never set and lint-staged has never run on a commit here. The new code
+follows the surrounding style rather than reformatting M3's files.
+
+**(e) Two editor diagnostics, both pre-existing in kind.** The VS Code XML schema rejects
+`<actionType>` in the action's `js-meta.xml` (the org has accepted it since M3), and the LWC
+language server flags `createElement` in test files (LWC1702) because it lints them as
+components. Jest and the deploy are the authorities for both.
+
+### M5.4 Verification evidence
+
+**Deploy** — `0Afaj00000llXBxCAM`, Succeeded: `AMF_ApprovalMatrixService`,
+`AMF_ApprovalMatrixServiceTest`, `amfSubmitForApproval` (changed), `amfSubmitPreview` (created).
+The platform compiled the `lightning/modal` import server-side.
+
+**Apex — 175/175:**
+
+```
+Outcome              Passed
+Tests Ran            175        (166 before, +9)
+Org Wide Coverage    98%
+Test Run Id          707aj00001HW50S
+AMF_ApprovalMatrixService   204/204 lines, 100%
+```
+
+**Jest — 23/23** (was 6), and ESLint clean on `force-app/main/default/lwc`, `jest-mocks` and
+`jest.config.js`:
+
+```
+c-amf-submit-for-approval
+  √ renders nothing itself: it is headless, and the confirmation is a separate modal
+  √ previews the route and shows it in the modal before submitting anything
+  √ submits only after the user confirms, and reports the matched rule and process
+  √ submits nothing, says nothing and refreshes nothing when the user backs out with Cancel
+  √ submits nothing, says nothing and refreshes nothing when the user backs out with the X or Escape
+  √ skips the modal for a Blocked_No_Match preview and submits, so the attempt is logged and explained
+  √ skips the modal for a Failed preview and submits, so the attempt is logged and explained
+  √ says so when the submission took a different route than the preview showed
+  √ treats a new rule version as a changed route even when the process is the same
+  √ surfaces a submission blocked after a routable preview as an error
+  √ keeps the positioned Apex message when the preview throws, and submits nothing
+  √ keeps the positioned Apex message when the submission throws
+  √ falls back to a readable message when the error carries no body
+  √ submits nothing if the modal cannot open
+  √ refreshes the record however a submission ended
+  √ ignores a second click while the first is still in flight, then works again
+c-amf-submit-preview
+  √ names the process, the rule that chose it, and the rule's condition
+  √ shows each value the rule read, numbers formatted for the viewer's locale
+  √ shows a blank value that decided a route rather than hiding it, and booleans as TRUE/FALSE
+  √ says the catch-all reads no fields instead of showing an empty table
+  √ leaves out the description row when the rule has no description
+  √ resolves with submit only when the user confirms
+  √ resolves with cancel when the user backs out
+Tests: 23 passed, 23 total
+```
+
+**The real preview, against the org's deployed matrix and all six Purchase Requests** —
+anonymous Apex calling `new AMF_ApprovalMatrixService().preview(ids)`, measuring its own writes:
+
+```
+PR-00000001 [500.00 EMEA Low]     -> Submitted | PR_Catch_All p9999 v1     | PR_Two_Level_Mgmt | values={}
+PR-00000002 [250000.00 APAC Low]  -> Submitted | PR_High_Value_APAC p10 v1 | PR_Two_Level_Mgmt | values={"Region__c":"APAC","Amount__c":250000.00}
+PR-00000004 [700.00 EMEA Low]     -> Submitted | PR_Catch_All p9999 v1     | PR_Two_Level_Mgmt | values={}
+PR-00000006 [250000.00 APAC High] -> Submitted | PR_High_Value_APAC p10 v1 | PR_Two_Level_Mgmt | values={"Region__c":"APAC","Amount__c":250000.00}
+(PR-00000003 and -05 as -02; submitted=false and log=null on every row)
+PREVIEW WRITES: dml=0 logRowsBefore=6 logRowsAfter=6
+```
+
+**The real UI.** Headless Edge driven by `playwright-core` (installed in a scratch directory,
+not the project), logged in through `sf org open --url-only`. On PR-00000001 and PR-00000006:
+▼ → **Submit for Approval** → the modal opened from the headless action → text read → **Cancel**.
+
+```
+record 1: Confirm approval route | PR_Two_Level_Mgmt | PR_Catch_All | 9999 | 1 | TRUE
+          "This rule's condition reads no fields, so it matches every record."
+record 2: Confirm approval route | PR_Two_Level_Mgmt | PR_High_Value_APAC | 10 | 1
+          Amount__c > 100000 && Region__c == 'APAC' | Region__c APAC | Amount__c 250,000
+after Cancel (both): modal closed; toasts shown: 0
+console errors mentioning amf/modal/preview/submit: 0
+decision log rows before/after: 6 / 6
+```
+
+### M5.5 Carried into later phases
+
+| Item | Owner |
+|---|---|
+| **The modal's Submit button was not clicked in the org.** It writes a permanent, immutable log row and starts a real approval. The path behind it is M3's proven `submitRecord`, and the modal-to-submit wiring is covered by Jest; one dry run on a throwaway record before a demo closes the gap | user, before the demo |
+| **Org drift:** `PR_High_Value_APAC` routes to `PR_Two_Level_Mgmt` in `amf-dev` but `PR_Three_Level_Finance` in the repo (M5.3c) | user |
+| A preview does not know a record is already in an approval process: it shows the route, and the submission then fails with the platform's error, as before M5. A lock check in the preview would say so up front | post-M5 |
+| The action sits in the ▼ overflow menu (M5.3b) | post-M5, layout |
+| `AMF_ApprovalMatrixService`'s header still says §9 is out of MVP scope; stale since M4 | next change to that class |

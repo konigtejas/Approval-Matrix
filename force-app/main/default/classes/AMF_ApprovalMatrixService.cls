@@ -3,7 +3,11 @@
  * approval process its highest-priority matching rule names.
  *
  * Architecture section: 6.1 (submission flow, steps 1-11), 6.3 (the guard),
- * 4.6 (fail loudly), 11 (security), 7 (entry points).
+ * 6.4 (preview), 4.6 (fail loudly), 11 (security), 7 (entry points).
+ *
+ * PREVIEW (6.4, added in M5) is this same path stopped after step 7: it
+ * answers "where would this go, and why" with nothing written or submitted,
+ * and drives the quick action's confirmation modal.
  *
  * WHAT THIS CLASS EXISTS TO PROVE (13): an admin changes one Custom Metadata
  * row, the next submission routes to a different approval process, and a log
@@ -63,14 +67,20 @@ public without sharing class AMF_ApprovalMatrixService {
     @TestVisible
     private static final String GUARD_FIELD = 'Matrix_Submission__c';
 
-    /** One record's answer: what happened, and everything needed to explain it. */
+    /**
+     * One record's answer: what happened, and everything needed to explain it.
+     *
+     * preview() returns the same shape (6.4). There, outcome is the verdict a
+     * submission would record, and nothing has been submitted or written:
+     * submitted is false and decisionLogId and executionRefId are null.
+     */
     public class Outcome {
 
         /** The record this outcome is about. */
         @AuraEnabled
         public Id recordId;
 
-        /** True only when the record actually entered an approval process. */
+        /** True only when the record actually entered an approval process. Never true in a preview. */
         @AuraEnabled
         public Boolean submitted = false;
 
@@ -86,9 +96,26 @@ public without sharing class AMF_ApprovalMatrixService {
         @AuraEnabled
         public Integer ruleVersion;
 
+        /** Priority__c of the winning rule: the order 6.1 step 5 tried it in. */
+        @AuraEnabled
+        public Integer rulePriority;
+
         /** The winning rule's Description__c -- what a submitter is shown. */
         @AuraEnabled
         public String matchedRuleDescription;
+
+        /** The winning rule's expression, exactly as Expression_Snapshot__c records it. */
+        @AuraEnabled
+        public String matchedExpression;
+
+        /**
+         * The values the decision rested on, as the same JSON Evaluated_Values__c
+         * records: the winning rule's values on a match, everything read otherwise.
+         * The submitter can already read that field on their own log rows
+         * (Approval_Matrix_User), so returning it discloses nothing new.
+         */
+        @AuraEnabled
+        public String evaluatedValuesJson;
 
         /** The process the matrix selected. */
         @AuraEnabled
@@ -98,7 +125,7 @@ public without sharing class AMF_ApprovalMatrixService {
         @AuraEnabled
         public String executionRefId;
 
-        /** The Approval_Decision_Log__c row written for this record. Always set. */
+        /** The Approval_Decision_Log__c row written for this record. Always set by submit(); null from preview(). */
         @AuraEnabled
         public Id decisionLogId;
 
@@ -157,6 +184,30 @@ public without sharing class AMF_ApprovalMatrixService {
     }
 
     /**
+     * 7's UI row, first half: the preview that drives the quick action's
+     * confirmation modal (6.4). Nothing is written, so a fault here has no row
+     * to lose and is thrown, exactly as submitRecord throws its whole-call faults.
+     *
+     * Deliberately NOT cacheable=true. A cached answer would outlive an edit
+     * to the record or the matrix and confirm a route the submission would not
+     * take; the preview is only worth showing if it is the answer right now.
+     *
+     * @param recordId The record about to be submitted.
+     * @return The outcome a submission would have, with nothing written.
+     * @throws AuraHandledException On a fault that condemns the whole call.
+     */
+    @AuraEnabled
+    public static Outcome previewRecord(Id recordId) {
+        try {
+            return new AMF_ApprovalMatrixService().preview(new List<Id>{ recordId })[0];
+        } catch (Exception e) {
+            AuraHandledException handled = new AuraHandledException(e.getMessage());
+            handled.setMessage(e.getMessage());
+            throw handled;
+        }
+    }
+
+    /**
      * 6.1, steps 1-11.
      *
      * @param recordIds The governed records to submit. All must be the same
@@ -167,6 +218,38 @@ public without sharing class AMF_ApprovalMatrixService {
      * @throws AMF_ExpressionException If any active rule will not compile.
      */
     public List<Outcome> submit(List<Id> recordIds) {
+        return run(recordIds, true);
+    }
+
+    /**
+     * 6.4: steps 1-7 exactly as submit() runs them, then stop -- no decision
+     * log row, no guard, no Approval.process(). Same code path rather than a
+     * parallel one, so the answer a submitter confirms cannot drift from the
+     * answer the engine then acts on: the authorisation, the rule order, the
+     * compiled expressions and the first-match walk are all shared.
+     *
+     * Whole-call faults throw exactly as they do from submit(), and for the
+     * same reasons: a record the caller cannot read, an ungoverned object, a
+     * rule that will not compile.
+     *
+     * @param recordIds The governed records to preview. One object per call, as for submit().
+     * @return One Outcome per record, in the order supplied. Nothing is written.
+     * @throws AMF_SubmissionException On a fault condemning the whole call.
+     * @throws AMF_ExpressionException If any active rule will not compile.
+     */
+    public List<Outcome> preview(List<Id> recordIds) {
+        return run(recordIds, false);
+    }
+
+    /**
+     * The one engine path behind submit() and preview().
+     *
+     * @param recordIds      The governed records.
+     * @param commitDecision False for 6.4's preview: stop after step 7. 6.4 names
+     *                       this flag commit, which Apex reserves.
+     * @return One Outcome per record, in the order supplied.
+     */
+    private List<Outcome> run(List<Id> recordIds, Boolean commitDecision) {
         if (recordIds == null || recordIds.isEmpty()) {
             throw new AMF_SubmissionException('No records were supplied to submit');
         }
@@ -245,6 +328,13 @@ public without sharing class AMF_ApprovalMatrixService {
                 submitRequests.add(new AMF_SubmitRequest(recordId, result.selectedProcess));
                 outcomeByRequest.add(result);
             }
+        }
+
+        // 6.4. A preview ends here, with steps 1-7 run exactly as a submission
+        // runs them and nothing written: the rows built above are discarded
+        // unsaved, and the guard and the strategy are never reached.
+        if (!commitDecision) {
+            return outcomes;
         }
 
         // Step 8. Every record gets a row, whatever happened to it.
@@ -355,17 +445,24 @@ public without sharing class AMF_ApprovalMatrixService {
                     );
                 }
 
+                // One JSON string for both the outcome and the row, so what a
+                // preview shows is byte for byte what the log would record.
+                String evaluatedValuesJson = evaluation.toJson();
+
                 result.outcome = 'Submitted';
                 result.matchedRule = rule.developerName;
                 result.ruleVersion = rule.version;
+                result.rulePriority = rule.priority;
                 result.matchedRuleDescription = rule.description;
+                result.matchedExpression = rule.expression;
+                result.evaluatedValuesJson = evaluatedValuesJson;
                 result.selectedProcess = rule.processApiName;
 
                 return AMF_DecisionLogWriter.forSubmission(
                     recordId,
                     objectApiName,
                     rule,
-                    evaluation.toJson()
+                    evaluatedValuesJson
                 );
             }
         } catch (Exception e) {
@@ -377,12 +474,13 @@ public without sharing class AMF_ApprovalMatrixService {
                 (current == null ? '(none)' : current.developerName) +
                 ': ' +
                 e.getMessage();
+            result.evaluatedValuesJson = JSON.serialize(valuesRead);
 
             return AMF_DecisionLogWriter.forFailure(
                 recordId,
                 objectApiName,
                 current,
-                JSON.serialize(valuesRead),
+                result.evaluatedValuesJson,
                 result.message + '\n' + e.getStackTraceString()
             );
         }
@@ -400,11 +498,12 @@ public without sharing class AMF_ApprovalMatrixService {
             ' active rule(s) were evaluated and none was true. The matrix blocks ' +
             'rather than routing by default; add a catch-all rule (priority 9999, ' +
             'expression TRUE) if this object should have default routing.';
+        result.evaluatedValuesJson = JSON.serialize(valuesRead);
 
         return AMF_DecisionLogWriter.forNoMatch(
             recordId,
             objectApiName,
-            JSON.serialize(valuesRead),
+            result.evaluatedValuesJson,
             result.message
         );
     }

@@ -3,7 +3,7 @@
  * rules and a stub strategy, so nothing here depends on an org CMDT row or runs
  * a real approval.
  *
- * Architecture section: 6.1, 6.3, 4.6, 10, 11.
+ * Architecture section: 6.1, 6.3, 6.4, 4.6, 10, 11.
  *
  * The real Approval.process() path is covered separately and thinly by
  * AMF_SubmissionIntegrationTest, per 10.
@@ -646,6 +646,257 @@ private class AMF_ApprovalMatrixServiceTest {
             Assert.isTrue(
                 e.getMessage().contains('Matrix_Submission__c'),
                 'The LWC must receive the real message, not "Script-thrown exception". Got: ' +
+                e.getMessage()
+            );
+        }
+        Test.stopTest();
+    }
+
+    // ---------------------------------------------------------------------
+    // 6.4 -- preview. Steps 1-7 on the same path as submit(), nothing written.
+    // ---------------------------------------------------------------------
+
+    @IsTest
+    static void aPreviewNamesTheRouteAndTheReasonAndWritesNothing() {
+        // Matches both PR_High_Value_APAC (10) and PR_High_Risk (20): the preview
+        // must apply the same first-true-wins walk a submission does.
+        Purchase_Request__c record = request(250000, 'APAC', 'High');
+        insert record;
+
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+
+        Test.startTest();
+        Integer dmlBefore = Limits.getDmlStatements();
+        List<AMF_ApprovalMatrixService.Outcome> previews = serviceWith(shippedShape(), strategy)
+            .preview(new List<Id>{ record.Id });
+        Integer dmlUsed = Limits.getDmlStatements() - dmlBefore;
+        Test.stopTest();
+
+        Assert.areEqual(1, previews.size(), 'One record in, one preview out');
+
+        AMF_ApprovalMatrixService.Outcome preview = previews[0];
+        Assert.areEqual(record.Id, preview.recordId);
+        Assert.areEqual('Submitted', preview.outcome, 'The verdict a submission would record');
+        Assert.isFalse(preview.submitted, 'A preview never submits');
+        Assert.areEqual('PR_High_Value_APAC', preview.matchedRule, 'Priority 10 beats priority 20');
+        Assert.areEqual(10, preview.rulePriority);
+        Assert.areEqual(3, preview.ruleVersion);
+        Assert.areEqual('High-value APAC spend', preview.matchedRuleDescription);
+        Assert.areEqual(THREE_LEVEL, preview.selectedProcess);
+        Assert.areEqual('Amount__c > 100000 && Region__c == \'APAC\'', preview.matchedExpression);
+
+        Map<String, Object> evaluated = (Map<String, Object>) JSON.deserializeUntyped(
+            preview.evaluatedValuesJson
+        );
+        Assert.areEqual(250000, ((Decimal) evaluated.get('Amount__c')).intValue());
+        Assert.areEqual('APAC', (String) evaluated.get('Region__c'));
+
+        Assert.isNull(preview.decisionLogId, 'No row was written, so there is none to point at');
+        Assert.isNull(preview.executionRefId);
+        Assert.isNull(preview.message);
+
+        Assert.areEqual(0, dmlUsed, 'A preview performs no DML at all');
+        Assert.areEqual(0, strategy.calls, 'The strategy is never reached');
+        Assert.areEqual(0, logsFor(record.Id).size(), 'No decision log row');
+        Assert.isFalse(
+            [SELECT Matrix_Submission__c FROM Purchase_Request__c WHERE Id = :record.Id]
+            .Matrix_Submission__c,
+            'The guard is never staged by a preview'
+        );
+    }
+
+    @IsTest
+    static void aPreviewShowsExactlyWhatTheSubmissionThenRecords() {
+        // Same code path, so what the submitter confirms is what the engine does
+        // and what the audit row says -- byte for byte, not merely similar.
+        Purchase_Request__c record = request(250000, 'APAC', 'Low');
+        insert record;
+
+        AMF_ApprovalMatrixService service = serviceWith(shippedShape(), new AMF_StrategyStub());
+
+        Test.startTest();
+        AMF_ApprovalMatrixService.Outcome preview = service.preview(new List<Id>{ record.Id })[0];
+        AMF_ApprovalMatrixService.Outcome submitted = service.submit(new List<Id>{ record.Id })[0];
+        Test.stopTest();
+
+        Assert.isTrue(submitted.submitted);
+        Assert.areEqual(submitted.matchedRule, preview.matchedRule);
+        Assert.areEqual(submitted.ruleVersion, preview.ruleVersion);
+        Assert.areEqual(submitted.rulePriority, preview.rulePriority);
+        Assert.areEqual(submitted.selectedProcess, preview.selectedProcess);
+        Assert.areEqual(submitted.matchedExpression, preview.matchedExpression);
+        Assert.areEqual(submitted.evaluatedValuesJson, preview.evaluatedValuesJson);
+
+        Approval_Decision_Log__c row = logsFor(record.Id)[0];
+        Assert.areEqual(row.Expression_Snapshot__c, preview.matchedExpression);
+        Assert.areEqual(row.Evaluated_Values__c, preview.evaluatedValuesJson);
+        Assert.areEqual(row.Selected_Process__c, preview.selectedProcess);
+    }
+
+    @IsTest
+    static void aPreviewOfTheCatchAllReadsNoFields() {
+        // A TRUE expression reads nothing, and the modal says so rather than
+        // showing an empty table; the JSON must be an empty object, not null.
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+
+        Test.startTest();
+        AMF_ApprovalMatrixService.Outcome preview = serviceWith(shippedShape(), new AMF_StrategyStub())
+            .preview(new List<Id>{ record.Id })[0];
+        Test.stopTest();
+
+        Assert.areEqual('PR_Catch_All', preview.matchedRule);
+        Assert.areEqual(9999, preview.rulePriority);
+        Assert.areEqual('TRUE', preview.matchedExpression);
+        Assert.areEqual('{}', preview.evaluatedValuesJson);
+    }
+
+    @IsTest
+    static void aBlockedPreviewSaysWhyAndLeavesNoRow() {
+        // The preview itself writes nothing (6.4). The Blocked_No_Match row is
+        // the SUBMISSION's job, which is why the quick action goes on to submit
+        // a blocked record rather than asking the user to confirm nothing.
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+
+        List<AMF_RuleDefinition> noCatchAll = new List<AMF_RuleDefinition>{
+            new AMF_RuleBuilder()
+                .named('PR_High_Risk')
+                .withPriority(20)
+                .withExpression('Risk_Level__c == \'High\'')
+                .routingTo(THREE_LEVEL)
+                .build()
+        };
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+
+        Test.startTest();
+        AMF_ApprovalMatrixService.Outcome preview = serviceWith(noCatchAll, strategy)
+            .preview(new List<Id>{ record.Id })[0];
+        Test.stopTest();
+
+        Assert.areEqual('Blocked_No_Match', preview.outcome);
+        Assert.isFalse(preview.submitted);
+        Assert.isNull(preview.matchedRule);
+        Assert.isNull(preview.selectedProcess);
+        Assert.isTrue(preview.message.contains('catch-all'), 'Got: ' + preview.message);
+
+        Map<String, Object> evaluated = (Map<String, Object>) JSON.deserializeUntyped(
+            preview.evaluatedValuesJson
+        );
+        Assert.areEqual('Low', (String) evaluated.get('Risk_Level__c'), 'It still shows what was read');
+
+        Assert.areEqual(0, strategy.calls);
+        Assert.areEqual(0, logsFor(record.Id).size(), 'A preview never writes the blocked row');
+    }
+
+    @IsTest
+    static void aFailedPreviewSaysWhyAndLeavesNoRow() {
+        Purchase_Request__c record = request(500, 'EMEA', 'High');
+        insert record;
+
+        List<AMF_RuleDefinition> rules = new List<AMF_RuleDefinition>{
+            new AMF_RuleBuilder()
+                .named('PR_High_Risk')
+                .withPriority(20)
+                .withExpression('Risk_Level__c == \'High\'')
+                .routingTo(null)
+                .build()
+        };
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+
+        Test.startTest();
+        AMF_ApprovalMatrixService.Outcome preview = serviceWith(rules, strategy)
+            .preview(new List<Id>{ record.Id })[0];
+        Test.stopTest();
+
+        Assert.areEqual('Failed', preview.outcome);
+        Assert.isFalse(preview.submitted);
+        Assert.isTrue(
+            preview.message.contains('Process_API_Name__c'),
+            'The message names the field to go and fix, got: ' + preview.message
+        );
+        Assert.areEqual(0, strategy.calls);
+        Assert.areEqual(0, logsFor(record.Id).size(), 'A preview never writes the failed row');
+    }
+
+    @IsTest
+    static void aPreviewFailsLoudlyOnARuleThatWillNotCompile() {
+        // 4.6 holds for the preview too: it must not quietly show the catch-all's
+        // route when a higher-priority rule cannot be evaluated.
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+
+        List<AMF_RuleDefinition> withBrokenRule = new List<AMF_RuleDefinition>{
+            new AMF_RuleBuilder()
+                .named('PR_Broken')
+                .withPriority(10)
+                .withExpression('Nonexistent__c == \'x\'')
+                .routingTo(THREE_LEVEL)
+                .build(),
+            new AMF_RuleBuilder()
+                .named('PR_Catch_All')
+                .withPriority(9999)
+                .withExpression('TRUE')
+                .routingTo(TWO_LEVEL)
+                .build()
+        };
+
+        Test.startTest();
+        try {
+            serviceWith(withBrokenRule, new AMF_StrategyStub()).preview(new List<Id>{ record.Id });
+            Assert.fail('A rule that will not compile must block the preview');
+        } catch (AMF_ExpressionException e) {
+            Assert.isTrue(e.getMessage().contains('position'), 'Got: ' + e.getMessage());
+        }
+        Test.stopTest();
+    }
+
+    @IsTest
+    static void aPreviewRequiresReadAccessToTheRecord() {
+        // 11. The preview returns the values the rule read, so it is held to the
+        // same authorisation as a submission, on the same path.
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+
+        User stranger = strangerUser();
+
+        Test.startTest();
+        System.runAs(stranger) {
+            try {
+                serviceWith(shippedShape(), new AMF_StrategyStub()).preview(new List<Id>{ record.Id });
+                Assert.fail('A record the caller cannot read must not be previewed');
+            } catch (AMF_SubmissionException e) {
+                Assert.isTrue(e.getMessage().contains('read access'), 'Got: ' + e.getMessage());
+            }
+        }
+        Test.stopTest();
+    }
+
+    @IsTest
+    static void aPreviewRefusesWhatASubmissionRefuses() {
+        try {
+            serviceWith(shippedShape(), new AMF_StrategyStub()).preview(new List<Id>());
+            Assert.fail('An empty preview must be refused');
+        } catch (AMF_SubmissionException e) {
+            Assert.isTrue(e.getMessage().contains('No records'), 'Got: ' + e.getMessage());
+        }
+    }
+
+    @IsTest
+    static void thePreviewAuraEntryPointSurfacesTheRealMessage() {
+        // Production wiring, as far as the guard clause only -- an Account has
+        // no Matrix_Submission__c -- so no org CMDT row is ever evaluated.
+        Account account = new Account(Name = 'Not governed');
+        insert account;
+
+        Test.startTest();
+        try {
+            AMF_ApprovalMatrixService.previewRecord(account.Id);
+            Assert.fail('Expected the ungoverned object to be refused');
+        } catch (AuraHandledException e) {
+            Assert.isTrue(
+                e.getMessage().contains('Matrix_Submission__c'),
+                'The modal must receive the real message, not "Script-thrown exception". Got: ' +
                 e.getMessage()
             );
         }

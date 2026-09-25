@@ -289,6 +289,20 @@ Flow templates need no entry-criteria dance — an autolaunched orchestration ru
 
 `preview(List<Id>)` runs steps 1–7 and returns matched rule, description and template name **without** writing a log row or submitting. Same code path, `commit = false`. This drives the submit action's confirmation modal.
 
+**M5 implementation (2026-09-25).** `submit()` and `preview()` both call one private
+`run(recordIds, commitDecision)`; the flag is not named `commit` because Apex reserves the word.
+A preview returns the same `Outcome` a submission does, plus the rule's priority, its expression
+and the evaluated-values JSON — the fields `Expression_Snapshot__c` and `Evaluated_Values__c`
+would record, which the submitter can already read on their own log rows. `previewRecord` is
+deliberately not `cacheable`: a cached route could outlive an edit to the record or the matrix.
+
+The quick action stays headless and opens the modal itself as a `LightningModal`
+(`amfSubmitPreview`); the org refuses to change an existing LWC action's type to a screen action.
+Only a routable preview opens the modal. A `Blocked_No_Match` or `Failed` preview has nothing to
+confirm, so the action submits it directly — the submission, not the preview, writes the row
+§6.1 step 6 requires. Submit re-runs the engine, and if the route it takes differs from the one
+previewed, the user is told so rather than shown the preview's answer.
+
 ### 6.5 What the engine does not do
 
 No approver resolution. No chain advancement. No lock management. No mid-flight state. Recall, reassignment, delegation and escalation are the template's and the platform's concern. The engine's runtime responsibility ends at step 11.
@@ -436,6 +450,7 @@ The lexer, parser and AST must be structured so these are **additive** — no sp
 | **M2** | Evaluator, reduced grammar, table-driven + malformed-input suites | ≥90% coverage, zero org dependence |
 | **M3** | Engine, Classic strategy, two templates, log write, submit action | **Manual QA:** change a rule's process in CMDT, redeploy, watch routing change with no code touched |
 | **M4** | Post-MVP configuration validator and source guard gate | Source gate, deployed-org validator and all Apex tests green |
+| **M5** | Post-MVP §6.4 preview and the submit action's confirmation modal | Preview writes nothing (proved in tests and against the org), all Apex and Jest tests green, modal opens from the real action |
 
 ### 13.5 Repository state
 

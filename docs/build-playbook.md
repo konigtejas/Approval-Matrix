@@ -280,6 +280,34 @@ absent guard field, and the throwing pipeline path.
 
 ---
 
+### M5 — Preview modal (post-MVP)
+
+**Goal:** before anything is submitted, show the submitter where the record will go and why.
+
+**Build:** `AMF_ApprovalMatrixService.preview(List<Id>)` per §6.4 — the same path as `submit()`,
+stopped after step 7, writing nothing — plus a non-cacheable `previewRecord` entry point. The
+`amfSubmitForApproval` headless action previews, opens `amfSubmitPreview` (a `LightningModal`)
+for a routable result, and submits only on confirm. A blocked or failed preview skips the modal
+and submits, so its decision log row is still written. No new objects, fields, layouts or
+permission-set entries: the preview lives on a class both permission sets already grant.
+
+**Gate, in order:**
+
+1. Deploy the package.
+2. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green, service at 100%.
+3. Jest: `$env:PATH = "C:\Program Files\sf\client\bin;$env:PATH"; node node_modules\jest\bin\jest.js --ci`.
+4. **Manual:** on a Purchase Request not already in approval, choose **Submit for Approval**
+   (the ▼ overflow menu on the record header). The modal names the process, the rule, its
+   priority, version, condition and the values it read. **Cancel** submits nothing and writes no
+   log row; **Submit for Approval** submits and toasts the rule and process. With the catch-all
+   deactivated, a non-matching record skips the modal and still gets its `Blocked_No_Match` row.
+
+Acceptance: preview tests prove zero DML, no log row, no guard, strategy never called, and
+byte-for-byte agreement with the row a submission then writes; Jest covers confirm, cancel,
+dismiss, the blocked/failed bypass, a changed route, errors and double clicks.
+
+---
+
 ## Part 4 — When Things Go Wrong
 
 - **Claude Code invents schema** (a field not in §3): stop it, point at the doc, restate
