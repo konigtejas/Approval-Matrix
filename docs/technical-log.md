@@ -99,7 +99,7 @@ session needs. Update the row when a phase completes.
 | **M1** | Data model — `Approval_Matrix_Rule__mdt`, `Approval_Decision_Log__c`, SOQL provider | **Complete** — >255 gate green, 20/20 tests | `26a157f` |
 | **M2** | Expression evaluator, reduced grammar | **Complete** — 100% coverage on all eight evaluator classes, 108/108 tests | `ce47137` |
 | **M3** | Engine, two Classic templates, submit action | **Complete** — 141/141 Apex tests, 6/6 Jest, service and log writer at 100%; manual QA gate completed 2026-09-18 | `d13241f` |
-| **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 150/150 Apex tests | this commit |
+| **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 166/166 Apex tests after M4.1, validator at 98% | `9893274` + M4.1 |
 
 ### Superseded — the v1.0 plan
 
@@ -1984,7 +1984,7 @@ which is the case that proves the field is optional rather than required.
 
 ## Phase M4 — Configuration validator
 
-**Date:** 2026-09-18 · **Status:** complete.
+**Date:** 2026-09-18 · **Commit:** `9893274` (committed 2026-09-25) · **Status:** complete.
 
 The first post-MVP increment closes the gap between a matrix edit and a failed submission.
 `AMF_ConfigValidator` reads active rules only through `AMF_RuleProvider`, compiles each
@@ -2014,4 +2014,60 @@ Deploy                  succeeded: 41 components, 0 errors (0Afaj00000klbEXCAY)
 Focused tests           passed: 12/12 (707aj00001FlW6d)
 Live post-deploy gate   passed: 2 SOQL, 0 DML
 RunLocalTests           passed: 150/150 (707aj00001FlHXv)
+```
+
+### M4.1 Follow-up: the new read path was unpinned, the entry points untested (2026-09-25)
+
+`9893274` was written in a Cursor session. A review before pushing found its tests green but
+its coverage thin, and one CLAUDE.md non-negotiable no longer held:
+
+| Class | Before | After |
+|---|---|---|
+| `AMF_ClassicApprovalProcessProvider` | 0% | 100% |
+| `AMF_ConfigValidator` | 71% | 98% |
+| `AMF_CmdtRuleProvider` | 76% | 100% |
+
+**(a) A second CMDT query the >255 pin did not reach.** M4 added the configuration-wide
+`AMF_CmdtRuleProvider.getActiveRules()` with its own SOQL, filtering `WHERE Active__c = TRUE`.
+The M1 pin proves truncation-safety only for `load()`, and the pin fixture
+`PR_Long_Expression_Pin` is inactive by design (M1.8), so that active-only query could never
+return it: a regression to `getAll()` there would have passed every test. The method now
+delegates to a `@TestVisible loadAll(Boolean activeOnly)` shaped exactly like `load()` — active
+filter applied in Apex — and `longExpressionSurvivesTheConfigurationWideLoad` pins the same
+290-character round trip through it. The M1 `load()` path is untouched.
+
+**(b) The no-argument provider contract had no contract test.** `assertConfigurationWideContract`
+now holds both the CMDT provider and `AMF_RuleBuilder.Stub` to the same rule — never null, no
+null entries, active only, strictly ordered — as M1 did for the per-object method.
+
+**(c) The static entry points were unreachable without the org's matrix.** `validateOrThrow()`
+and the invocable construct their own validator with production wiring, so testing them would
+have meant depending on deployed CMDT rows. A `@TestVisible` static `entryPointOverride` (null
+in production) lets tests drive both with in-memory fixtures. Now pinned: the CI gate throws
+with the complete report and passes a valid matrix; the Flow action returns one result per
+request, reports by default, throws only when `failOnError = true`, and ignores an empty call.
+
+**(d) Defensive branches.** A local `RawRuleProvider` returns its list verbatim, proving the
+`RULE_PROVIDER_RETURNED_NULL`, `NULL_RULE`, `INACTIVE_RULE_RETURNED` and
+`OBJECT_API_NAME_MISSING` findings (`AMF_RuleBuilder.Stub` honours the contract and cannot
+reach them). An unknown object yields `OBJECT_NOT_FOUND` and no follow-on process finding.
+Checked on the way: `AMF_ExprCompiler` raises `AMF_ExpressionException` for an unknown object,
+so the validator reports it rather than crashing.
+
+**(e) `AMF_ClassicApprovalProcessProviderTest` reads deployed metadata, deliberately** — a
+`ProcessDefinition` cannot be created in a test. It asserts both shipped templates are active
+for `Purchase_Request__c`, an unknown name is not, the same names on `Account` do not count, and
+blank input costs no query.
+
+**Still uncovered, deliberately:** the three lines of `GUARD_FIELD_WRONG_TYPE`. Reaching them
+needs an object carrying a non-Checkbox `Matrix_Submission__c`, and scope discipline forbids
+creating metadata to serve a test.
+
+**Verification:**
+
+```
+Deploy                  succeeded: 5 classes (0Afaj00000llSXFCA2)
+RunLocalTests           passed: 166/166, org-wide 98% (707aj00001HVtMw)   (150 before, +16)
+Source guard gate       passed: 3 active rules
+Live post-deploy gate   passed: 2 SOQL, 0 DML
 ```

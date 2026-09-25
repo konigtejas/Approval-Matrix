@@ -104,9 +104,62 @@ private class AMF_CmdtRuleProviderTest {
         );
     }
 
+    /**
+     * The same gate on the configuration-wide path the M4 validator reads. A
+     * second query is a second place truncation could creep back in.
+     */
+    @IsTest
+    static void longExpressionSurvivesTheConfigurationWideLoad() {
+        AMF_RuleDefinition pin = ruleNamed(AMF_CmdtRuleProvider.loadAll(false), PIN_RULE);
+
+        Assert.isNotNull(
+            pin,
+            'PR_Long_Expression_Pin must be deployed; it ships in force-app/main/default/customMetadata'
+        );
+        Assert.areEqual(
+            PIN_EXPRESSION,
+            pin.expression,
+            'Expression__c must round trip through the configuration-wide load byte for byte'
+        );
+    }
+
     @IsTest
     static void cmdtProviderHonoursTheProviderContract() {
         assertProviderContract(new AMF_CmdtRuleProvider(), GOVERNED_OBJECT);
+    }
+
+    @IsTest
+    static void cmdtProviderHonoursTheConfigurationWideContract() {
+        List<AMF_RuleDefinition> active = new AMF_CmdtRuleProvider().getActiveRules();
+
+        assertConfigurationWideContract(active);
+        Assert.isNull(
+            ruleNamed(active, PIN_RULE),
+            'PR_Long_Expression_Pin is Active__c = false, so the validator must never see it'
+        );
+        Assert.isNotNull(
+            ruleNamed(active, 'PR_Catch_All'),
+            'The configuration-wide read must include the shipped active rules'
+        );
+    }
+
+    @IsTest
+    static void stubHonoursTheSameConfigurationWideContract() {
+        AMF_RuleProvider stub = new AMF_RuleBuilder.Stub(new List<AMF_RuleDefinition>{
+            new AMF_RuleBuilder().named('Catch_All').withPriority(9999).build(),
+            new AMF_RuleBuilder().named('Switched_Off').withPriority(1).inactive().build(),
+            new AMF_RuleBuilder().named('Other_Object').withPriority(5).forObject('Account').build(),
+            null
+        });
+
+        List<AMF_RuleDefinition> active = stub.getActiveRules();
+
+        assertConfigurationWideContract(active);
+        Assert.areEqual(
+            new List<String>{ 'Other_Object', 'Catch_All' },
+            namesOf(active),
+            'The stub must keep every object\'s active rules and drop the inactive and null entries'
+        );
     }
 
     @IsTest
@@ -194,6 +247,32 @@ private class AMF_CmdtRuleProviderTest {
                     'Rules must be strictly ordered, but ' + previous.developerName
                         + ' (priority ' + previous.priority + ') did not sort before '
                         + rule.developerName + ' (priority ' + rule.priority + ')'
+                );
+            }
+            previous = rule;
+        }
+    }
+
+    /**
+     * Every AMF_RuleProvider's no-argument getActiveRules must satisfy this:
+     * never null, no null entries, only active rules, strictly ordered.
+     */
+    private static void assertConfigurationWideContract(List<AMF_RuleDefinition> rules) {
+        Assert.isNotNull(rules, 'getActiveRules() must never return null');
+
+        AMF_RuleDefinition previous = null;
+        for (AMF_RuleDefinition rule : rules) {
+            Assert.isNotNull(rule, 'getActiveRules() must not return a null entry');
+            Assert.areEqual(
+                true,
+                rule.isActive,
+                'getActiveRules() returned an inactive rule: ' + rule.developerName
+            );
+            if (previous != null) {
+                Assert.isTrue(
+                    previous.compareTo(rule) < 0,
+                    'Rules must be strictly ordered, but ' + previous.developerName
+                        + ' did not sort before ' + rule.developerName
                 );
             }
             previous = rule;

@@ -31,27 +31,11 @@ public with sharing class AMF_CmdtRuleProvider implements AMF_RuleProvider {
      * validator uses this rather than querying CMDT itself, preserving the
      * framework rule that Custom Metadata is accessed only through
      * AMF_RuleProvider.
+     *
+     * @return Every object's active rules in priority order. Never null.
      */
     public List<AMF_RuleDefinition> getActiveRules() {
-        List<AMF_RuleDefinition> rules = new List<AMF_RuleDefinition>();
-
-        for (Approval_Matrix_Rule__mdt row : [
-            SELECT DeveloperName,
-                   Object_API_Name__c,
-                   Priority__c,
-                   Expression__c,
-                   Process_API_Name__c,
-                   Description__c,
-                   Version__c,
-                   Active__c
-            FROM Approval_Matrix_Rule__mdt
-            WHERE Active__c = TRUE
-        ]) {
-            rules.add(toDefinition(row));
-        }
-
-        rules.sort();
-        return rules;
+        return loadAll(true);
     }
 
     /**
@@ -90,6 +74,40 @@ public with sharing class AMF_CmdtRuleProvider implements AMF_RuleProvider {
                    Active__c
             FROM Approval_Matrix_Rule__mdt
             WHERE Object_API_Name__c = :objectApiName
+        ]) {
+            if (activeOnly && row.Active__c != true) {
+                continue;
+            }
+            rules.add(toDefinition(row));
+        }
+
+        rules.sort();
+        return rules;
+    }
+
+    /**
+     * Configuration-wide load path, shaped like load() for the same reason:
+     * the active filter is applied in Apex so AMF_CmdtRuleProviderTest can
+     * reach the inactive PR_Long_Expression_Pin fixture through this query too,
+     * and prove it is not truncated either.
+     *
+     * @param activeOnly False to include inactive rules.
+     * @return Every object's matching rules in priority order. Never null.
+     */
+    @TestVisible
+    private static List<AMF_RuleDefinition> loadAll(Boolean activeOnly) {
+        List<AMF_RuleDefinition> rules = new List<AMF_RuleDefinition>();
+
+        for (Approval_Matrix_Rule__mdt row : [
+            SELECT DeveloperName,
+                   Object_API_Name__c,
+                   Priority__c,
+                   Expression__c,
+                   Process_API_Name__c,
+                   Description__c,
+                   Version__c,
+                   Active__c
+            FROM Approval_Matrix_Rule__mdt
         ]) {
             if (activeOnly && row.Active__c != true) {
                 continue;

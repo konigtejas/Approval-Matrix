@@ -62,6 +62,15 @@ public without sharing class AMF_ConfigValidator {
         }
     }
 
+    /**
+     * Test seam for the static entry points, which construct their own
+     * validator: tests set this so validateOrThrow() and the invocable run
+     * against in-memory fixtures instead of the org's deployed matrix. Always
+     * null in production.
+     */
+    @TestVisible
+    private static AMF_ConfigValidator entryPointOverride;
+
     private final AMF_RuleProvider ruleProvider;
     private final AMF_ApprovalProcessProvider approvalProcessProvider;
 
@@ -158,7 +167,7 @@ public without sharing class AMF_ConfigValidator {
 
     /** Convenience entry point for scripts/validate-config.apex. */
     public static void validateOrThrow() {
-        new AMF_ConfigValidator().assertValid();
+        forEntryPoint().assertValid();
     }
 
     /**
@@ -175,7 +184,7 @@ public without sharing class AMF_ConfigValidator {
             return results;
         }
 
-        List<Finding> findings = new AMF_ConfigValidator().validate();
+        List<Finding> findings = forEntryPoint().validate();
         Boolean isValid = findings.isEmpty();
 
         for (InvocationRequest request : requests) {
@@ -185,6 +194,10 @@ public without sharing class AMF_ConfigValidator {
             results.add(new InvocationResult(findings));
         }
         return results;
+    }
+
+    private static AMF_ConfigValidator forEntryPoint() {
+        return entryPointOverride == null ? new AMF_ConfigValidator() : entryPointOverride;
     }
 
     /** @return True only when the governed type exists; guard defects are reported in either case. */
