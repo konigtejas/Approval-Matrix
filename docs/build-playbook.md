@@ -297,7 +297,7 @@ permission-set entries: the preview lives on a class both permission sets alread
 2. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green, service at 100%.
 3. Jest: `$env:PATH = "C:\Program Files\sf\client\bin;$env:PATH"; node node_modules\jest\bin\jest.js --ci`.
 4. **Manual:** on a Purchase Request not already in approval, choose **Submit for Approval**
-   (the ▼ overflow menu on the record header). The modal names the process, the rule, its
+   (the first button on the record header). The modal names the process, the rule, its
    priority, version, condition and the values it read. **Cancel** submits nothing and writes no
    log row; **Submit for Approval** submits and toasts the rule and process. With the catch-all
    deactivated, a non-matching record skips the modal and still gets its `Blocked_No_Match` row.

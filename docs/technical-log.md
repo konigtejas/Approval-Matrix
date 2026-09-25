@@ -2269,7 +2269,59 @@ decision log rows before/after: 6 / 6
 | Item | Owner |
 |---|---|
 | **The modal's Submit button was not clicked in the org.** It writes a permanent, immutable log row and starts a real approval. The path behind it is M3's proven `submitRecord`, and the modal-to-submit wiring is covered by Jest; one dry run on a throwaway record before a demo closes the gap | user, before the demo |
-| **Org drift:** `PR_High_Value_APAC` routes to `PR_Two_Level_Mgmt` in `amf-dev` but `PR_Three_Level_Finance` in the repo (M5.3c) | user |
+| ~~**Org drift:** `PR_High_Value_APAC` routes to `PR_Two_Level_Mgmt` in `amf-dev` but `PR_Three_Level_Finance` in the repo (M5.3c)~~ | **closed in M5.6** — the repo's record redeployed |
 | A preview does not know a record is already in an approval process: it shows the route, and the submission then fails with the platform's error, as before M5. A lock check in the preview would say so up front | post-M5 |
-| The action sits in the ▼ overflow menu (M5.3b) | post-M5, layout |
+| ~~The action sits in the ▼ overflow menu (M5.3b)~~ | **closed in M5.6** — first in `platformActionList`, now a header button |
 | `AMF_ApprovalMatrixService`'s header still says §9 is out of MVP scope; stale since M4 | next change to that class |
+
+### M5.6 Follow-up: demo preparation — drift restored, action promoted (2026-09-25)
+
+Two M5.5 items, closed at the user's request before the demo.
+
+**(a) `PR_High_Value_APAC` restored from the repo.** Every field of the org row was compared
+with `customMetadata/Approval_Matrix_Rule.PR_High_Value_APAC.md-meta.xml` first: label,
+expression, description, priority, version and active flag were identical, and only
+`Process_API_Name__c` differed (`PR_Two_Level_Mgmt` in the org, `PR_Three_Level_Finance` in the
+repo). Deploying the repo's record therefore changed exactly that field. It went through M4's
+release gate in order: source gate, deploy, post-deploy gate.
+
+The decision log shows where the drift came from. It is the M3 rule-flip QA, left flipped:
+
+```
+ADL-00000006  2026-09-07 10:46  PR-00000002  PR_High_Value_APAC  v1  PR_Three_Level_Finance
+              2026-09-07 10:49  rule edited in Setup: Process_API_Name__c -> PR_Two_Level_Mgmt
+ADL-00000010  2026-09-16 07:45  PR-00000005  PR_High_Value_APAC  v1  PR_Two_Level_Mgmt
+```
+
+Both rows read **v1**. §3.1 says `Version__c` is "incremented on any change", and the Setup edit
+did not bump it. Nothing is lost — each row snapshots its own `Selected_Process__c` and
+`Expression_Snapshot__c`, which is precisely §8's point — but the version column cannot tell the
+two apart. The restore deliberately keeps the repo's v1 rather than inventing a number the repo
+does not hold; **a live rule flip should bump `Version__c` with the process**, so the log reads
+v1 → one process, v2 → the other.
+
+**(b) Submit for Approval is now a header button.** The record header shows only the first few
+applicable actions (three, at desktop width) and puts the rest under ▼. The framework's action
+was last in `platformActionList` (`sortOrder` 11). It is now first (`sortOrder` 0), with the
+other eleven entries renumbered in their existing order; standard `Submit` stays absent (§6.3).
+Before deploying, the org's layout was retrieved into a scratch directory — not the project —
+and compared with the repo's, comments ignored: identical, so the deploy changed only the order.
+Edit Labels moves from the header into ▼. A browser that already has a Purchase Request open may
+need a reload to show the new order.
+
+**Verification:**
+
+```
+Source guard gate       passed: 3 active rules
+Deploy                  0Afaj00000llabFCAQ Succeeded: Approval_Matrix_Rule.PR_High_Value_APAC,
+                        Purchase_Request__c-Purchase Request Layout
+Post-deploy gate        Approval Matrix configuration is valid (2 SOQL, 0 DML)
+Active rules            10 PR_High_Value_APAC v1 -> PR_Three_Level_Finance
+                        20 PR_High_Risk       v1 -> PR_Three_Level_Finance
+                        9999 PR_Catch_All     v1 -> PR_Two_Level_Mgmt
+Real preview            PR-00000002/3/5/6 -> PR_High_Value_APAC -> PR_Three_Level_Finance;
+                        PR-00000001/4 -> PR_Catch_All -> PR_Two_Level_Mgmt; dml=0, log rows 6/6
+Real UI (PR-00000006)   header: Submit for Approval | Printable View | Sharing Hierarchy | ▼
+                        the button opened the modal directly: PR_Three_Level_Finance, rule
+                        description now consistent with the route; Cancel -> no toast; log rows 6/6
+```
