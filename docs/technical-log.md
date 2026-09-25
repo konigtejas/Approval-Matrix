@@ -100,7 +100,7 @@ session needs. Update the row when a phase completes.
 | **M2** | Expression evaluator, reduced grammar | **Complete** — 100% coverage on all eight evaluator classes, 108/108 tests | `ce47137` |
 | **M3** | Engine, two Classic templates, submit action | **Complete** — 141/141 Apex tests, 6/6 Jest, service and log writer at 100%; manual QA gate completed 2026-09-18 | `d13241f` |
 | **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 166/166 Apex tests after M4.1, validator at 98% | `9893274` + M4.1 |
-| **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Code complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; modal and Cancel verified in the real UI; the manual gate's Submit click is pending (M5.5) | `5b99045` |
+| **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; manual gate run in the real UI on 2026-09-25 (M5.7) except its blocked-path check, which needs the catch-all deactivated | `5b99045` + M5.6, M5.7 |
 
 ### Superseded — the v1.0 plan
 
@@ -2077,8 +2077,9 @@ Live post-deploy gate   passed: 2 SOQL, 0 DML
 
 ## Phase M5 — Preview modal
 
-**Date:** 2026-09-25 · **Commit:** `5b99045` · **Status:** code complete — every automated gate green and the modal
-verified in the real UI; the manual gate's Submit click is the one step not yet run (M5.5).
+**Date:** 2026-09-25 · **Commit:** `5b99045` · **Status:** complete — every automated gate green, and the
+manual gate run in the real UI (M5.7) except its blocked-path check, which needs the catch-all
+deactivated (M5.5).
 **Playbook goal:** before anything is submitted, show the submitter where the record will go
 and why.
 
@@ -2268,7 +2269,8 @@ decision log rows before/after: 6 / 6
 
 | Item | Owner |
 |---|---|
-| **The modal's Submit button was not clicked in the org.** It writes a permanent, immutable log row and starts a real approval. The path behind it is M3's proven `submitRecord`, and the modal-to-submit wiring is covered by Jest; one dry run on a throwaway record before a demo closes the gap | user, before the demo |
+| ~~**The modal's Submit button was not clicked in the org.**~~ | **closed in M5.7** — rehearsed on a throwaway record at the user's request |
+| The gate's blocked-path check in the real UI: with the catch-all deactivated, a non-matching record skips the modal and still gets its `Blocked_No_Match` row. Covered by Jest and the Apex suite; running it in the org means deactivating a live rule | user, optional |
 | ~~**Org drift:** `PR_High_Value_APAC` routes to `PR_Two_Level_Mgmt` in `amf-dev` but `PR_Three_Level_Finance` in the repo (M5.3c)~~ | **closed in M5.6** — the repo's record redeployed |
 | A preview does not know a record is already in an approval process: it shows the route, and the submission then fails with the platform's error, as before M5. A lock check in the preview would say so up front | post-M5 |
 | ~~The action sits in the ▼ overflow menu (M5.3b)~~ | **closed in M5.6** — first in `platformActionList`, now a header button |
@@ -2325,3 +2327,37 @@ Real UI (PR-00000006)   header: Submit for Approval | Printable View | Sharing H
                         the button opened the modal directly: PR_Three_Level_Finance, rule
                         description now consistent with the route; Cancel -> no toast; log rows 6/6
 ```
+
+### M5.7 Rehearsal and demo records (2026-09-25)
+
+At the user's request, for a business-audience demo.
+
+**Demo records, created unsubmitted.** Their routes were confirmed read-only through the real
+preview before anything was clicked (`dml=0`, log rows 6/6):
+
+```
+PR-00000007  250,000  APAC  Low   -> PR_High_Value_APAC (p10)  -> PR_Three_Level_Finance
+PR-00000008    5,000  EMEA  High  -> PR_High_Risk       (p20)  -> PR_Three_Level_Finance
+PR-00000009      500  EMEA  Low   -> PR_Catch_All     (p9999)  -> PR_Two_Level_Mgmt
+```
+
+**The rehearsal — the one real submission, on a throwaway record.** PR-00000010, a copy of
+PR-00000007's data, driven through the real UI by headless Edge: the header button → the modal
+showed `PR_High_Value_APAC -> PR_Three_Level_Finance` → **Submit for Approval** → the modal
+closed → the toast read *"Submitted for approval — Matched PR_High_Value_APAC (v1) and routed to
+PR_Three_Level_Finance."* Four seconds later the page had refreshed itself and **Matrix
+Submission** read ticked, which is `notifyRecordUpdateAvailable` working. No console errors.
+
+That toast was M5's one unverified runtime question: whether a headless action is still alive to
+dispatch a toast after the `LightningModal` it opened has closed. It is. The data behind it:
+
+```
+ProcessInstance       04gaj000001sZoDAAU  Pending  PR_Three_Level_Finance
+Work item             AMF Approver Three (amfu3) - step 1 of the named-user chain
+Decision log          ADL-00000011  Submitted  PR_High_Value_APAC v1  PR_Three_Level_Finance
+                      expression and values snapshotted; Execution_Ref_Id__c = 04gaj000001sZoDAAU
+Guard                 Matrix_Submission__c = true
+```
+
+PR-00000010 stays pending with `amfu3`, and ADL-00000011 is permanent. Both are the rehearsal,
+not demo data.
