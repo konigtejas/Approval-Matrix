@@ -100,7 +100,7 @@ session needs. Update the row when a phase completes.
 | **M2** | Expression evaluator, reduced grammar | **Complete** — 100% coverage on all eight evaluator classes, 108/108 tests | `ce47137` |
 | **M3** | Engine, two Classic templates, submit action | **Complete** — 141/141 Apex tests, 6/6 Jest, service and log writer at 100%; manual QA gate completed 2026-09-18 | `d13241f` |
 | **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 166/166 Apex tests after M4.1, validator at 98% | `9893274` + M4.1 |
-| **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Code complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; modal and Cancel verified in the real UI; the manual gate's Submit click is pending (M5.5) | this commit |
+| **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Code complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; modal and Cancel verified in the real UI; the manual gate's Submit click is pending (M5.5) | `5b99045` |
 
 ### Superseded — the v1.0 plan
 
@@ -2077,7 +2077,7 @@ Live post-deploy gate   passed: 2 SOQL, 0 DML
 
 ## Phase M5 — Preview modal
 
-**Date:** 2026-09-25 · **Status:** code complete — every automated gate green and the modal
+**Date:** 2026-09-25 · **Commit:** `5b99045` · **Status:** code complete — every automated gate green and the modal
 verified in the real UI; the manual gate's Submit click is the one step not yet run (M5.5).
 **Playbook goal:** before anything is submitted, show the submitter where the record will go
 and why.
