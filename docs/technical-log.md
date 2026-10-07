@@ -101,7 +101,7 @@ session needs. Update the row when a phase completes.
 | **M3** | Engine, two Classic templates, submit action | **Complete** — 141/141 Apex tests, 6/6 Jest, service and log writer at 100%; manual QA gate completed 2026-09-18 | `d13241f` |
 | **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 166/166 Apex tests after M4.1, validator at 98% | `9893274` + M4.1 |
 | **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; manual gate run in the real UI on 2026-09-25 (M5.7) except its blocked-path check, which needs the catch-all deactivated | `5b99045` + M5.6, M5.7 |
-| **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `6a37c65` |
+| **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `972352a` (mislabelled, see M6.6) |
 
 ### Superseded — the v1.0 plan
 
@@ -2367,7 +2367,7 @@ not demo data.
 
 ## Phase M6 — Flow approvals technical spike (research only)
 
-**Date:** 2026-10-07 · **Commit:** `6a37c65` · **Status:** complete, with one item that needs a person (M6.5).
+**Date:** 2026-10-07 · **Commit:** `972352a` (mislabelled — see M6.6) · **Status:** complete, with one item that needs a person (M6.5).
 **Playbook goal:** answer Round 1's open questions and find every trap in moving from Classic
 approval processes to Flow approvals, before any `FlowApprovalStrategy` is designed.
 
@@ -2491,3 +2491,21 @@ Requests, so the unanimous check below can be done against them. Removal is
 | A reset path for cancelled Flow submissions (cancel leaves the guard set), or an operational rule to recall rather than cancel | Flow design phase |
 | M5's "preview does not know a record is already in approval": use SOQL on `ApprovalSubmission` / `ProcessInstance` — `Approval.isLocked()` needs an org preference | next preview change |
 | A convention for API versions: Flow templates need a newer `sourceApiVersion`, while engine classes stay at ≤ 66 (§12 item 6) | Flow design phase |
+
+### M6.6 Correction: the M6 commit carries the wrong message
+
+The phase commit, `Phase M6: Flow approvals technical spike`, **never happened**. Its message
+contained double quotes, and Windows PowerShell 5.1 strips embedded double quotes when it passes
+arguments to a native program, so git received fragments of the message as pathspecs and refused.
+The command had redirected git's error output away, so the failure went unseen. The next command
+then committed **everything still staged** as `972352a` under the follow-up's message, *Record the
+Phase M6 commit SHA in the technical log*, and wrote the previous commit's id, `6a37c65` (the M5
+rehearsal record), into this log as M6's.
+
+`972352a` is the complete M6 change (27 files) and is already pushed. Rewriting `develop` would
+take a force push, so it stands, and this note is the correction: **M6 is `972352a`**. The log now
+says so.
+
+Two rules come out of it, both for this workstation's PowerShell: never discard git's error output
+on a commit, and confirm the new commit id before writing it anywhere. Keep commit messages free
+of double quotes, or pass them with `git commit -F <file>`.
