@@ -308,6 +308,31 @@ dismiss, the blocked/failed bypass, a changed route, errors and double clicks.
 
 ---
 
+### M6 — Flow approvals technical spike (post-MVP, research only)
+
+**Goal:** answer Round 1's open questions (Appendix A) and find every trap in moving from Classic
+approval processes to Flow approvals, before any `FlowApprovalStrategy` is designed.
+
+**Build:** nothing in `force-app`. Throwaway flows, one discovery test class and anonymous-Apex
+scripts under `spikes/flow-approvals/`, deployed in MDAPI format at the org's API version with
+`scripts/deploy-flows.ps1`. Experiments run on dedicated spike records and spike groups, never on
+demo data or seeded groups. Every claim is labelled CONFIRMED / INFERRED / OPEN in
+`docs/spike-results.md`.
+
+**Gate, in order:**
+
+1. Each Round 1 question is CONFIRMED by execution or stated as still OPEN, with the reason.
+2. The discovery test class is deleted from the org (`scripts/teardown.ps1 -DeleteTestClass`), so it
+   can never join RunLocalTests.
+3. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — unchanged and green.
+4. When the spike's flows are no longer needed: `scripts/teardown.ps1 -DeleteFlows -DeleteGroups
+   -DeleteRecords`.
+
+Acceptance: the migration checklist in `docs/spike-results.md` exists, and §5.3, §12 and
+Appendix A of the architecture match what the org did.
+
+---
+
 ## Part 4 — When Things Go Wrong
 
 - **Claude Code invents schema** (a field not in §3): stop it, point at the doc, restate

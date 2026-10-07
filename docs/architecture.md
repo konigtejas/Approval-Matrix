@@ -222,14 +222,19 @@ Native Approval Processes as metadata XML.
 
 ### 5.3 Flow templates
 
-A Flow Approval Process is a `Flow` with `processType` **`ApprovalWorkflow`**. Confirmed contract (Appendix A, Q1):
+A Flow Approval Process is a `Flow` with `processType` **`ApprovalWorkflow`**. Confirmed contract at Summer '26 / API 67.0 (Appendix A; detail and evidence in `docs/spike-results.md`, Round 2):
 
-- Requires exactly three input variables, all String, all `isInput=true`: **`recordId`**, **`submitter`**, **`submissionComments`**. The third is not `comments` — that spelling is rejected.
-- Approval steps use `actionType` **`stepApproval`**. `stepInteractive` is rejected for this process type.
-- **Each approval step delegates to a companion screen flow** that the approver runs. A Flow template is therefore an orchestration *plus* at least one screen flow per approval step. Budget accordingly.
-- **A structurally invalid orchestration deploys cleanly as `Draft`** and only fails on activation. Existence checks must verify *active*, not merely present (§9).
+- Requires **four** input variables, all String, all `isInput=true`: **`recordId`**, **`submitter`**, **`submissionComments`**, **`firstApprover`**. The third is not `comments` — that spelling is rejected. (Round 1's Draft deploy at API 62.0 asked for only the first three.)
+- Must declare `runInMode` **`SystemModeWithoutSharing`**: approval orchestrations run without sharing.
+- Approval steps use `actionType` **`stepApproval`**; `stepInteractive` is rejected. Background steps use **`stepBackground`**; `flow` is rejected.
+- **Each approval step delegates to a companion screen flow** that outputs `approvalDecision` (`Approve` / `Reject`, exact spelling) and `approvalComments`. A Flow template is therefore an orchestration *plus* at least one screen flow per approval step. Budget accordingly.
+- **A structurally invalid orchestration deploys cleanly as `Draft`** and only fails on activation. Existence checks must verify *active*, not merely present (§9). Some invalid values are worse: `requiresMultiMemberApproval` is dropped **silently** even from an active deploy.
+- **Approvers are usernames**, literal or through a `Resource` variable; a User Id fails activation (literal) or launch (variable). Literal `User`/`Group`/`Queue` assignees block packaging, so a portable template resolves approvers through variables.
+- **Rejection does not stop the orchestration.** Later stages still run. Every level after the first is gated by a Decision on `<PreviousStep>.Outputs.approvalDecision` — never on an `outputParameters` mapping, which stays null.
+- **Locking is per step** (`shouldLock`), applied synchronously at launch and released on completion. Classic's lock-on-submit is not the default.
+- **Final actions are background stages**; the recall path is a start-element scheduled path of type `ApprovalRecall`. Recall runs it; **cancel does not**.
 
-Launch is via `AMF_FlowApprovalStrategy`; the exact Apex call is unconfirmed (Appendix A, Q1) — no standard invocable action starts an orchestration, so the likely mechanism is `Flow.Interview.createInterview` with the three inputs. The strategy interface isolates whichever lands.
+Launch is via `AMF_FlowApprovalStrategy`, and the Apex call is now **confirmed**: `Flow.Interview.createInterview(<ApiName>, inputs).start()`. The `ApprovalSubmission` and first `ApprovalWorkItem` exist synchronously, in the caller's transaction, so step 11 stamps `ApprovalSubmission.Id` exactly as it stamps `ProcessInstance.Id` for Classic. No standard invocable action starts an orchestration. A launch fault throws `System.FlowException` synchronously and rolls the transaction back.
 
 ### 5.4 Choosing Classic or Flow per rule
 
@@ -239,7 +244,7 @@ Launch is via `AMF_FlowApprovalStrategy`; the exact Apex call is unconfirmed (Ap
 | Existing org standards require it | Multi-stage flows, background steps, conditional stages, sub-flow reuse |
 | Fewer moving parts (no companion screen flows) | Platform direction; no automation-credit consumption |
 
-**Open risk:** the case for routing every group step to Flow rests on native any-member/unanimous semantics that are **not yet verified** (Appendix A, Q3). Do not commit the template library to that assumption until it is tested.
+**Open risk:** the case for routing every group step to Flow rests on native group semantics. **Any-member is now confirmed** for groups and queues (Appendix A, Q3); **unanimous is not**, because the metadata value for "Require unanimous approval" is unknown. Do not commit committee templates to Flow until it is tested.
 
 ### 5.5 The shape-count trade
 
@@ -402,11 +407,14 @@ implementation is Classic-only; the Flow-template checks above join it when Flow
 
 ## 12. Known Constraints and Open Questions
 
-1. **Group any-member / unanimous semantics on Flow steps are unverified** (Appendix A, Q3). §5.4's guidance depends on them. Highest-priority open item.
-2. **The Flow launch call is inferred, not executed** (Appendix A, Q1).
+1. **Unanimous group approval on Flow steps is unresolved** (Appendix A, Q3). Any-member is **confirmed** for groups and queues: one shared work item, and the first decision completes the step. Summer '26's "Require unanimous approval" exists, but the value its metadata field `requiresMultiMemberApproval` takes is unknown, and every value tried was silently dropped. §5.4's committee guidance depends on it. Highest-priority open item; it needs one change made in Flow Builder.
+2. ~~**The Flow launch call is inferred, not executed**~~ — **confirmed** in Round 2: `Flow.Interview…start()`, with the submission created synchronously (§5.3).
 3. **Flow templates cost more than one flow each** — orchestration plus a companion screen flow per approval step.
 4. **Retiring a shape** means editing every rule that references it; there is no template registry. The validator makes stale references a deployment failure. If an org ever has dozens of rules sharing shapes, a registry reintroduces additively with no engine change.
 5. **Classic remains fully supported** and Flow Approval Processes consume no automation credits. The dual-strategy design is the hedge: rules migrate `Classic` → `Flow` one row at a time with zero engine change.
+6. **Apex API 67.0 runs database operations in user mode by default** (Summer '26). The engine's system-mode operations — guard staging, decision-log writes, field reads beyond the submitter's access (§11) — depend on its classes staying at API ≤ 66, or on stating system mode explicitly. Flow templates need a newer *Metadata* API version (`sourceApiVersion`) to deploy; raising it must not raise class versions.
+7. **A Flow approval does not stop on rejection** and **cancel does not run the recall path** (§5.3). Templates gate every later level; the guard needs a reset path for cancelled submissions, or cancel is withheld operationally.
+8. **Flow approvals are invisible to Classic surfaces:** no `ProcessInstance`, so the Approval History related list and `ProcessInstance` reports show nothing. Approval Trace or the timeline (§8) replaces them.
 
 ---
 
@@ -451,6 +459,7 @@ The lexer, parser and AST must be structured so these are **additive** — no sp
 | **M3** | Engine, Classic strategy, two templates, log write, submit action | **Manual QA:** change a rule's process in CMDT, redeploy, watch routing change with no code touched |
 | **M4** | Post-MVP configuration validator and source guard gate | Source gate, deployed-org validator and all Apex tests green |
 | **M5** | Post-MVP §6.4 preview and the submit action's confirmation modal | Preview writes nothing (proved in tests and against the org), all Apex and Jest tests green, modal opens from the real action |
+| **M6** | Post-MVP Flow approvals technical spike — research only, artefacts under `spikes/` | Round 1's open questions answered or explicitly still open, every claim labelled, product untouched (all Apex tests green) |
 
 ### 13.5 Repository state
 
@@ -463,21 +472,23 @@ Commit `a69e3c9` contains Phase 0 and Phase 1 built to the **v1.0** design: four
 
 ---
 
-## Appendix A — Spike Findings (2026-08-14, `amf-dev`, API 62.0)
+## Appendix A — Spike Findings (Round 1 2026-08-14, API 62.0 · Round 2 2026-10-07, API 67.0 · `amf-dev`)
 
-Full detail in `docs/spike-results.md`. Confidence labels are load-bearing.
+Full detail, evidence and the Classic → Flow migration checklist in `docs/spike-results.md`. Confidence labels are load-bearing.
 
 | # | Question | Status |
 |---|---|---|
-| Q1 | Flow template contract: `processType ApprovalWorkflow`, three String inputs (`recordId`, `submitter`, `submissionComments`), `actionType stepApproval`, companion screen flow per step, Draft deploys unvalidated | **CONFIRMED** |
-| Q1 | Apex launch call for an orchestration | **INFERRED** — no standard invocable exists; `Flow.Interview.createInterview` is the likely mechanism; blocked on completing a companion screen flow |
-| Q2 | Timeline join: `ApprovalSubmission` / `ApprovalWorkItem` field shapes; `ReviewedById` supplies the true approver natively | **CONFIRMED** |
-| Q3 | Group step any-member / unanimous semantics | **OPEN** — highest-risk gap; `ParentWorkItemId` is the structure to examine |
-| Q4 | `recallApprovalSubmission`, `cancelApprovalSubmission`, `reassignApprovalWorkItem`, `reviewApprovalWorkItem` exist as standard invocable actions with REST endpoints | **CONFIRMED as available**, execution untested |
+| Q1 | Flow template contract | **CONFIRMED, changed at API 67:** `processType ApprovalWorkflow`; **four** String inputs (`recordId`, `submitter`, `submissionComments`, `firstApprover`); `runInMode SystemModeWithoutSharing`; `stepApproval` / `stepBackground`; companion screen flow per approval step; Draft deploys unvalidated |
+| Q1 | Apex launch call for an orchestration | **CONFIRMED** — `Flow.Interview.createInterview(...).start()`; `ApprovalSubmission` and first `ApprovalWorkItem` created synchronously; works for a non-admin submitter and inside Apex tests |
+| Q2 | Timeline join: `ApprovalSubmission` / `ApprovalWorkItem`; `ReviewedById` is the true approver | **CONFIRMED** — plus: `ApprovalConditionName` is the step label; Flow approvals create no `ProcessInstance` |
+| Q3 | Group / queue step semantics | **Any-member CONFIRMED** (one shared item, first decision completes) · **Unanimous OPEN** — `requiresMultiMemberApproval` value unknown; wrong values dropped silently |
+| Q4 | Recall / cancel / reassign / review from Apex | **CONFIRMED executed** — recall runs the `ApprovalRecall` path; cancel does not |
+| new | Does rejection stop later stages? | **CONFIRMED: no** — gate on `<Step>.Outputs.approvalDecision`; an `outputParameters` mapping stays null |
+| new | Record locking | **CONFIRMED** — opt-in per step (`shouldLock`), synchronous, released on completion |
+| new | Approver format | **CONFIRMED** — usernames, literal or via `Resource`; literal assignees block packaging |
+| new | Apex API 67.0 user mode by default | **CONFIRMED** — §12 item 6 |
 
-Q4 contradicts the earlier assumption that recall was unavailable to autolaunched flows and must be a screen flow. Neither design should be built until an action has been executed against a live submission.
-
-Artefact: `AMF_Spike_Approval` is deployed to `amf-dev` as Draft. Not project source — delete it or complete it into the first real Flow template.
+Round 1's artefact `AMF_Spike_Approval` was deleted in M0. Round 2's artefacts are source under `spikes/flow-approvals/` (outside `force-app`); the flows and groups stay in `amf-dev` until the unanimous check, and `spikes/flow-approvals/scripts/teardown.ps1` removes them.
 
 ---
 
@@ -491,7 +502,7 @@ The v1.0 design resolved approver chains rather than selecting templates. Everyt
 | `Approval.unlock()` re-submit cycling | One submission per record |
 | `Approver_1..N__c` / `Current_Approver__c` staging fields | No field-based approver injection |
 | `AMF_ApproverResolver` (user/queue/group/manager expansion) | Approvers are configured inside the template |
-| Group Work Item pattern, service user, Approval Inbox LWC | Native group work items on Flow templates (pending Q3) |
+| Group Work Item pattern, service user, Approval Inbox LWC | Native group work items on Flow templates (any-member confirmed; unanimous pending, Q3) |
 | `Approval_Chain__c` / `Approval_Chain_Step__c` state machine | Native `ProcessInstance` / `ApprovalSubmission` + decision log |
 | Four CMDT types incl. numbered conditions and route steps | One CMDT type with a single expression string |
 | SLA escalation batch | Template-level time-dependent actions |

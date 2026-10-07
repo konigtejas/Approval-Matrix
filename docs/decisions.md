@@ -8,6 +8,8 @@ Format: `YYYY-MM-DD — <what changed> — <why>`
 
 ---
 
+2026-10-07 — §5.3, §5.4, §12 and Appendix A **corrected to the M6 Flow spike's findings** (`docs/spike-results.md`, Round 2): the Flow template contract at API 67 (four inputs, `runInMode`, `stepBackground`, username approvers), the launch call confirmed as `Flow.Interview…start()` with a synchronous `ApprovalSubmission`, rejection not stopping later stages, recall running the recall path while cancel does not, and Apex API 67's user-mode default — because the platform moved between Round 1 (API 62) and Round 2, and §5.3 stated facts that no longer hold. No design decision changes: the Flow strategy remains unbuilt and out of scope, and unanimous group semantics remain open.
+
 2026-09-18 — §9's configuration validator is a **source gate plus a required
 post-deploy Apex gate**, not a literal metadata-deploy hook: Salesforce deploys cannot execute
 Apex. `scripts/validate-approval-matrix-source.ps1` checks the source template's active state

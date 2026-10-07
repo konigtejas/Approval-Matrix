@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Flow xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>67.0</apiVersion>
+    <description>Flow approvals spike (M6), Q3b: approval step assigned to a public group requiring unanimous approval (requiresMultiMemberApproval).</description>
+    <environments>Default</environments>
+    <interviewLabel>AMF Spike Group All {!$Flow.CurrentDateTime}</interviewLabel>
+    <label>AMF Spike Group All</label>
+    <orchestratedStages>
+        <name>Stage_Approve</name>
+        <label>Approve</label>
+        <locationX>176</locationX>
+        <locationY>134</locationY>
+        <exitConditionLogic>and</exitConditionLogic>
+        <stageSteps>
+            <name>Unanimous_Approval</name>
+            <actionName>AMF_Spike_Approval_Screen</actionName>
+            <actionType>stepApproval</actionType>
+            <assignees>
+                <assignee>
+                    <stringValue>AMF_Spike_All</stringValue>
+                </assignee>
+                <assigneeType>Group</assigneeType>
+            </assignees>
+            <entryConditionLogic>and</entryConditionLogic>
+            <exitConditionLogic>and</exitConditionLogic>
+            <inputParameters>
+                <name>ActionInput__RecordId</name>
+                <value>
+                    <elementReference>recordId</elementReference>
+                </value>
+            </inputParameters>
+            <inputParameters>
+                <name>recordId</name>
+                <value>
+                    <elementReference>recordId</elementReference>
+                </value>
+            </inputParameters>
+            <label>Unanimous Approval</label>
+            <requiresAsyncProcessing>false</requiresAsyncProcessing>
+            <!-- OPEN: the value Flow Builder writes for "Require unanimous approval" is unknown. true,
+                 TRUE, True, Unanimous, Yes, AllMembers and All were each SILENTLY DROPPED by the
+                 Metadata API and the Tooling API: the deploy succeeds and the step is any-member. -->
+            <requiresMultiMemberApproval>true</requiresMultiMemberApproval>
+            <shouldLock>false</shouldLock>
+            <stepSubtype>ApprovalStep</stepSubtype>
+        </stageSteps>
+    </orchestratedStages>
+    <processType>ApprovalWorkflow</processType>
+    <runInMode>SystemModeWithoutSharing</runInMode>
+    <start>
+        <locationX>50</locationX>
+        <locationY>0</locationY>
+        <connector>
+            <targetReference>Stage_Approve</targetReference>
+        </connector>
+    </start>
+    <status>Active</status>
+    <variables>
+        <name>firstApprover</name>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>true</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+    <variables>
+        <name>recordId</name>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>true</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+    <variables>
+        <name>submissionComments</name>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>true</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+    <variables>
+        <name>submitter</name>
+        <dataType>String</dataType>
+        <isCollection>false</isCollection>
+        <isInput>true</isInput>
+        <isOutput>false</isOutput>
+    </variables>
+</Flow>

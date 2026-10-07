@@ -101,6 +101,7 @@ session needs. Update the row when a phase completes.
 | **M3** | Engine, two Classic templates, submit action | **Complete** — 141/141 Apex tests, 6/6 Jest, service and log writer at 100%; manual QA gate completed 2026-09-18 | `d13241f` |
 | **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 166/166 Apex tests after M4.1, validator at 98% | `9893274` + M4.1 |
 | **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; manual gate run in the real UI on 2026-09-25 (M5.7) except its blocked-path check, which needs the catch-all deactivated | `5b99045` + M5.6, M5.7 |
+| **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `6a37c65` |
 
 ### Superseded — the v1.0 plan
 
@@ -2361,3 +2362,132 @@ Guard                 Matrix_Submission__c = true
 
 PR-00000010 stays pending with `amfu3`, and ADL-00000011 is permanent. Both are the rehearsal,
 not demo data.
+
+---
+
+## Phase M6 — Flow approvals technical spike (research only)
+
+**Date:** 2026-10-07 · **Commit:** `6a37c65` · **Status:** complete, with one item that needs a person (M6.5).
+**Playbook goal:** answer Round 1's open questions and find every trap in moving from Classic
+approval processes to Flow approvals, before any `FlowApprovalStrategy` is designed.
+
+The findings themselves — every claim labelled, with its experiment id — are in
+`docs/spike-results.md`, Round 2, together with an 18-point Classic → Flow migration checklist.
+This entry records how the spike was run, what went wrong on the way, and what it left behind.
+
+### M6.1 File-level changes
+
+| File | Change |
+|---|---|
+| `spikes/flow-approvals/mdapi/flows/*.flow` | **added** — 11 spike flows (screen flow, guard-reset background flow, 9 orchestrations; `AMF_Spike_User_Id` is a negative test that must fail activation) |
+| `spikes/flow-approvals/mdapi/classes/AMF_FlowApprovalSpikeTest.cls` | **added** — discovery test (reports through `Assert.fail`); deployed for the run, then **deleted from the org** |
+| `spikes/flow-approvals/scripts/*` | **added** — group setup, MDAPI deploy, anonymous-Apex runner, inspect/launch/action scripts, teardown |
+| `docs/spike-results.md` | Round 2 added above Round 1 (kept verbatim, headings demoted) |
+| `docs/architecture.md` | §5.3 contract corrected; §5.4 open risk, §12 (items 1, 2, 6–8), §13.4 M6 row, Appendix A and B updated |
+| `docs/decisions.md`, `docs/build-playbook.md` (M6), `CLAUDE.md` | doc-fix line; phase entry; M6 authorised as research only, plus the API ≤ 66 rule |
+
+Nothing under `force-app` changed. `spikes/` is not a package directory, so `sf project deploy
+start` cannot ship it.
+
+### M6.2 Method
+
+**Research before touching the org.** Salesforce Help and developer.salesforce.com refuse
+automated fetches (client-rendered / HTTP 403), so desk research used release-note summaries and
+practitioner write-ups, every claim treated as a hypothesis. The schema authority was the org's
+own Metadata API WSDL (Summer '26, 1.97 MB), downloaded with the CLI session as a `sid` cookie
+because `/services/wsdl/metadata` rejects a bearer token. It settled field names and enums the
+web could not: `shouldLock`, `requiresMultiMemberApproval`, assignee types
+`User`/`Group`/`Queue`/`Resource`, `pathType ApprovalRecall`, and `stepBackground`.
+
+**Hands-on, isolated.** One small orchestration per question; spike records PR-00000011 onward;
+the spike's own groups (`AMF_Spike_Any`, `AMF_Spike_All`, `AMF_Spike_Queue`, each holding the
+admin plus `amfu1`), so the seeded `Q_Credit_Risk` and `G_Finance_Approvers` were never touched.
+The admin's membership let a member decide from anonymous Apex; `System.runAs` in the test class
+covered decisions by a non-admin.
+
+### M6.3 Issues encountered
+
+**(a) The platform corrected the template, one deploy at a time.** Background steps typed `flow`
+were refused for this process type (`stepBackground` is right); then a fourth input,
+`firstApprover`, was demanded (absent from Round 1's API 62 contract); then
+`runInMode SystemModeWithoutSharing`. Each refusal is now a line in §5.3.
+
+**(b) The first launch rolled itself back.** E1 created its submission, then died on
+`Approval.isLocked()`: *"Apex approval lock/unlock api preference not enabled."* Even reading a
+lock needs the org preference "Enable record locking and unlocking in Apex". It was left off, and
+locking was proved instead by a non-admin owner's refused edit (T2).
+
+**(c) The documented action values are wrong.** `reviewApprovalWorkItem` describes its valid
+decisions as "approve, reject"; `approve` returns `INVALID_INPUT`, and only `Approve` works. In the
+test class, an `Id` passed where the action declares a String returned `INVALID_ARGUMENT_TYPE`.
+
+**(d) The gated two-level template was wrong, and its first test made it look right.** The gate
+read a variable filled by the approval step's `outputParameters` mapping. Rejection at level 1
+ended the run, which looked correct (E10). Approval at level 1 *also* ended the run — the submission
+read **Approved after level 1 alone** (E11). A probe flow (E12) showed the mapped variable is
+null for both outcomes, while the direct reference `Approve_L1.Outputs.approvalDecision` holds
+`Approve` / `Reject`. Fixed and re-run on both paths (E10b, E11b). This is why checklist item 3 says
+to test the approve path of every gate, not only the reject path.
+
+**(e) The unanimous setting is silently dropped.** `requiresMultiMemberApproval` = `true` deployed,
+activated and ran any-member (E7). Retrieval showed the element gone. Six more values (`TRUE`,
+`True`, `Unanimous`, `Yes`, `AllMembers`, `All`) were dropped the same way through the Metadata
+API, and the Tooling API dropped it too. That probing cost seven versions of `AMF_Spike_Group_All`
+(the limit is 50). The Tooling attempt was useful anyway: its `infos` carried two warnings the
+Metadata API deploy never shows — the Automated Process User has no email, so steps cannot send
+emails; and literal `User`/`Group`/`Queue` assignees block packaging.
+
+**(f) API 67.0 is user mode.** The first locking test failed on its own setup: a plain `insert` as an
+`Approval_Matrix_User` was refused for the read-only guard field. The class was at API 67.0, where
+Summer '26 makes database operations run in user mode by default. The setup now says `insert as
+system`. The finding outranks the spike: the engine's classes stay at API 62 for exactly this
+reason, and §12 item 6 and `CLAUDE.md` now say so.
+
+**(g) Browser automation stopped working.** The same Playwright checks that verified M5 on
+2026-09-25 now end with the whole browser closing as soon as the Salesforce sign-in page loads —
+Edge 154 and Chrome 153, with an old and the current `playwright-core` alike, while `about:blank`
+loads fine. That pattern fits a workstation security policy. It was not worked around, so the
+Flow Builder and record-page checks are left to a person (M6.5).
+
+**(h) `sf apex run test -s` is `--suite-names`** in this CLI version; synchronous is `--synchronous`.
+And the tool's command guard blocked an `Env:` cleanup it misread as deleting `"C:\Program"`, so
+nothing in that command ran — harmless, since an environment variable lives for one command anyway.
+
+### M6.4 Verification evidence
+
+The submission, work-item, orchestration and stage states for every experiment are in
+`docs/spike-results.md`. The two test-context reports, verbatim:
+
+```
+T1  start=ok | inTest submissions=1 status=InProgress items=1 | approverReadAccess=false |
+    reviewAsAssignee success=true | afterStopTest submissions=1 status=Approved itemStatus=Approved | guard=false
+T2  startAsNonAdminSubmitter=ok | ownerEditWhilePending refused ENTITY_IS_LOCKED: This record is locked.
+    If you need to edit it, contact your admin. | ownerEditUnsubmittedControl ok |
+    reviewByNonAssignee success=false errors=(UNKNOWN_EXCEPTION: Orchestrator Event: Event payload
+    value is invalid: StepInstanceId) | reviewByAssignee success=true | ownerEditAfterApproval ok |
+    finalStatus=Approved
+```
+
+```
+Flow submissions after the experiments   15  (Approved 6, Rejected 5, Recalled 3, Canceled 1)
+ProcessInstance rows for those records    0
+Dry-run deploy of the 10 committed flows  Succeeded (after XML normalisation)
+Spike test class in the org               deleted; AMF_Spike_Probe draft deleted
+RunLocalTests                             175/175 passed (707aj00001JswIb) - product untouched
+```
+
+### M6.5 Left behind, and carried forward
+
+**In `amf-dev`, on purpose:** the spike flows, the three spike groups and the spike Purchase
+Requests, so the unanimous check below can be done against them. Removal is
+`spikes/flow-approvals/scripts/teardown.ps1 -DeleteFlows -DeleteGroups -DeleteRecords`.
+
+| Item | Owner |
+|---|---|
+| **The `requiresMultiMemberApproval` value.** In Flow Builder open *AMF Spike Group All*, select *Unanimous Approval*, tick **Require unanimous approval**, save as a new version; the stored value is then readable through the Tooling API and E7 can be re-run | user (Flow Builder), then a session |
+| The UI half: the lock icon, the Approval Trace component, and a decision made through the approval screen flow (to confirm it fills `<Step>.Outputs.approvalDecision` as the action path does) | user |
+| Groups and queues through a `Resource` assignee — value format untested | next Flow session |
+| Set the Automated Process User's email before any real Flow approval, or approvers are not notified | user / org admin |
+| A reset path for cancelled Flow submissions (cancel leaves the guard set), or an operational rule to recall rather than cancel | Flow design phase |
+| M5's "preview does not know a record is already in approval": use SOQL on `ApprovalSubmission` / `ProcessInstance` — `Approval.isLocked()` needs an org preference | next preview change |
+| A convention for API versions: Flow templates need a newer `sourceApiVersion`, while engine classes stay at ≤ 66 (§12 item 6) | Flow design phase |
