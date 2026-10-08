@@ -103,7 +103,7 @@ session needs. Update the row when a phase completes.
 | **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; manual gate run in the real UI on 2026-09-25 (M5.7) except its blocked-path check, which needs the catch-all deactivated | `5b99045` + M5.6, M5.7 |
 | **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `972352a` (mislabelled, see M6.6) |
 | **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Complete** — org gate passed 2026-10-08 (M7.7): deploy, post-deploy check, RunLocalTests and every manual timeline check; 57/57 Jest. The gate's recall check confirmed that a Classic recall leaves the guard set (M7.8), owed to M8 | `25e0b2d` + M7.7 |
-| **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Built; org gate owed** — source gate tested on 7 cases (PowerShell 7.4), apex-ls clean, 57/57 Jest; 3 new integration tests not yet run in `amf-dev` (expect 197); the gate in M8.5 includes a one-time repair of PR-00000010 | `caeafb3` |
+| **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Org gate steps 1–5 passed** 2026-10-08 (M8.7): first deploy refused on a 329-character description, fixed; 197/197 Apex; PR-00000010 repaired. **Step 6, the manual UI check, is owed** | `caeafb3` + M8.7 |
 
 ### Superseded — the v1.0 plan
 
@@ -2898,11 +2898,55 @@ XML                                           both templates and the workflow we
 
 | Item | Owner |
 |---|---|
-| **The org gate in M8.5**, including the PR-00000010 repair | user |
+| ~~**The org gate in M8.5**, including the PR-00000010 repair~~ — steps 1–5 **closed in M8.7**; step 6, the manual UI check, is still owed | user |
 | The engine's query cap in the unit suite is now spent exactly, 4 of 4 (M8.2e) | next engine change |
 | `PR_Two_Level_Mgmt`'s recall action has no automated test: its approvers come from the submitter's manager chain, which a test user may lack (as for M3's integration test). The source gate covers it statically and the manual gate in the UI | — |
 | A pending record refuses the whole call; per-record handling belongs with bulk entry points | if they are built |
 | The Flow equivalent: a cancelled Flow submission keeps its guard (M6.5) | Flow phase |
+
+### M8.7 The org gate — steps 1–5 PASSED (2026-10-08)
+
+Run by Claude Code against `amf-dev`, in M8.5's order, after the M7 provider-test fix below.
+
+**(a) The first deploy was refused, on one component.** `Purchase_Request__c.AMF_Clear_Matrix_Submission`
+(`WorkflowFieldUpdate`): *Value too long for field: Description maximum length is:255*. M8 had
+extended the field update's description to name all three exits, and it reached 329 characters.
+Neither apex-ls nor the XML check M8.4 ran knows the metadata field's length, and M8 had no org.
+The description was shortened to 232 characters with the same content; nothing else changed. The
+deploy is all-or-nothing, so nothing from M8 had reached the org until the retry.
+
+**(b) Evidence.**
+
+```
+1  source gate     Approval Matrix source guard validation passed for 3 active rule(s) and
+                   2 approval process(es): entry criteria, and the guard cleared on every way out.
+2  deploy          0Afaj00000n5jRiCAI  Succeeded  101 components, 0 errors
+3  validate-config Approval Matrix configuration is valid.
+4  RunLocalTests   707aj00001K671l  Passed  197/197  (194 + M8's 3)
+5  repair          PR-00000010  Matrix_Submission__c -> false  (a02aj00000hp2wgAAA)
+```
+
+**(c) M7.8's query found eleven records, not one.** Besides PR-00000010 it returned PR-00000014 to
+PR-00000025 (ten of them). Every one of those has **no** `ProcessInstance` at all, and all were
+created on 2026-10-07: they are M6's Flow spike records (spike-results, "dedicated spike records,
+PR-00000011 onward"). Flow approvals create no `ProcessInstance`, so the query reads them as
+"guard set, nothing pending"; M6.5 already recorded that a Flow cancellation keeps the guard. They
+were left alone: they belong to `spikes/flow-approvals/scripts/teardown.ps1 -DeleteRecords`, which
+M6 defers until the unanimous check. M7.8's query is therefore only meaningful for Classic records.
+Restricted to records that have ever entered a Classic process, it returns no rows after the repair:
+
+```
+SELECT Name FROM Purchase_Request__c
+WHERE Matrix_Submission__c = true
+  AND Id NOT IN (SELECT TargetObjectId FROM ProcessInstance WHERE Status = 'Pending')
+  AND Id IN (SELECT TargetObjectId FROM ProcessInstance)
+-> Total number of records retrieved: 0.
+```
+
+**(d) Still owed: step 6**, the manual check in the real UI on a throwaway record (submit; a second
+submit is refused by name with no modal and no log row; recall unticks *Matrix Submission*; a
+resubmission routes). The integration tests prove the same behaviour in Apex; only a person can
+prove it through the header button.
 
 
 ## Fix — AMF_ClassicApprovalHistoryProviderTest actor-name assertions
