@@ -8,7 +8,8 @@ name → decision log explains why.
 docs/architecture.md (v3.0) defines the full target design; its §13 is this MVP scope.
 WE ARE BUILDING THE MVP SUBSET ONLY (see MVP SCOPE). If the doc describes something
 not in MVP scope, do NOT build it. If a task seems to conflict with the doc, STOP and
-ask. docs/build-playbook.md carries the phase plan (M0–M9) and the gate for each.
+ask. docs/build-playbook.md carries the phase plan (M0–M9) and the gate for each. Its Part 5
+is a PROPOSED roadmap only: a phase there is not authorised until the paragraph below names it.
 
 **Current authorised post-MVP work:** M0–M3 have passed their gates. M4 added the
 configuration validator in architecture §9, its source-metadata companion gate, and the

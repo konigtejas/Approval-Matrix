@@ -120,6 +120,10 @@ Retained only as a record of what was built. Phases 2–8 of that plan were neve
 carried-forward table), then the phase prompt in `docs/build-playbook.md`. Do not rely on
 conversation history — there is none by design.
 
+**Choosing the next phase:** `docs/build-playbook.md` Part 5 holds the proposed roadmap after M9
+(M10 entry points and bulk, M11 second object, M12 template lifecycle, validator hardening, Flow
+approvals), with the decisions each needs first. It authorises nothing; `CLAUDE.md` does.
+
 ---
 
 ## Environment baseline

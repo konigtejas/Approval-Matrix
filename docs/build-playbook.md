@@ -482,3 +482,112 @@ mutation-checked that the three-valued logic and set membership are what the tes
 - **Context feels degraded** (repeating itself, forgetting conventions): `/clear` costs
   nothing. `CLAUDE.md`, the architecture doc and the technical log carry the state — the
   conversation does not.
+
+---
+
+## Part 5 — Proposed roadmap (not authorised)
+
+> **A proposal, not a permission.** Recorded on 2026-10-08, after M9, so the plan survives the
+> session boundary. Nothing in this part may be built until `CLAUDE.md`'s *Current authorised
+> post-MVP work* names the phase and the phase has its own entry in Part 3 with a gate. The order
+> is a recommendation; revisit it whenever a phase completes. Each phase's leftovers live in the
+> technical log's *Carried into later phases* tables, which this part draws on.
+
+### Owed before any new phase
+
+| Item | Where |
+|---|---|
+| M8's manual UI check: submit, submit again (refused by name, no modal, no log row), recall (*Matrix Submission* unticked), resubmit | technical log M8.7d |
+| Optional: M9's manual check, a throwaway rule using the new grammar previewed in the UI | technical log M9.4 |
+
+### M10 — Entry points and bulk submission *(recommended next)*
+
+**Goal:** submit through the matrix from Flow, Apex and integrations, not only the header button.
+
+**Sketch:** §7's remaining rows: the `AMF_SubmitForMatrixApproval` invocable action and an
+`@RestResource` wrapper over the same service. §6.1 step 10's chunking, at most 100 records per
+`Approval.process()` call, which is "bulk chunking" on the out-of-scope list.
+
+**Why next:** the header button is the only entry point today, and M9's grammar makes automated
+routing worth having. §7 already designs it, and none of it needs the Flow strategy.
+
+**Decide first:**
+1. **Per-record refusal.** The engine refuses the *whole call* for a pending record (M8) or one the
+   caller cannot read (M3). That is right for one button and wrong for a 200-record Flow.
+   Per-record outcomes change the service's contract (`docs/decisions.md` 2026-08-18,
+   2026-10-08; technical log M8.6).
+2. **Whose date `TODAY` is** when an integration user submits on someone's behalf (M9.5).
+3. **What the invocable returns per record:** outcome, message, decision log row Id.
+
+**Watch:** the engine's query budget in the unit suite is spent exactly, 4 of 4 (M8.2e). Governor
+limits for a full 200-record Flow transaction need a test at that size.
+
+### M11 — A second governed object
+
+**Goal:** prove §3.2's claim that governing an object is configuration plus conventions, with no
+engine change: a guard field, templates with the entry criterion and three clearing actions, the
+standard button removed (§6.3), rules, permission-set entries, and the timeline on its record page.
+
+**Why here:** after M10, because per-record handling is part of what a second object exercises.
+Before M12, because lifecycle rules should be written against more than one object's templates.
+
+**Decide first:** which object, a standard one such as Opportunity or a second custom object.
+**Expect** object-specific assumptions to surface in the source gate, the validator, the timeline
+page or the tests; finding them is the point of the phase.
+
+### M12 — Template lifecycle, and queue and committee templates
+
+**Goal:** make §5.1's versioning convention enforceable, and add the template shapes the MVP did
+not build.
+
+**Sketch:** the source gate checks the `_v2` convention: a rule points at an active template,
+the previous version is inactive, and a template is never changed in place. That last check is the
+hard one, because it needs a baseline to compare against. Then Classic templates with queue and
+committee steps.
+
+**Decide first:** how "never edited in place" is detected. Also whether committee steps are built
+on Classic now or wait for Flow: §5.4 prefers Flow for group steps, and Flow's unanimous mode is
+still unresolved (§12 item 1).
+
+### Grammar and validator hardening *(small; can join M10 or M11)*
+
+- **The 55-relationship limit.** SOQL allows 55 child-to-parent relationships per query, across
+  the union of an object's rules. With three-hop paths that is reachable, and today it would fail
+  at submit. `AMF_ConfigValidator` should check the union at deploy time (M9.5).
+- **Field types still refused:** DateTime (it needs a time-zone decision), Email, Phone, URL, Text
+  Area. Each is a type-map entry plus tests.
+
+### Flow approvals *(largest; partly blocked)*
+
+**Goal:** the second execution strategy §5.3 and §6.2 design, so rules can move from Classic to
+Flow one row at a time.
+
+**Sketch:**
+- `Execution_Type__c` on the rule and the log (§3.1, §3.3).
+- `AMF_FlowApprovalStrategy` (§5.3, §6.2).
+- A Flow history provider behind `AMF_ApprovalHistoryProvider` for the timeline (§8, M7.6).
+- Active-`ApprovalWorkflow` checks in the validator (§9).
+- A guard reset for cancelled submissions (§12 item 7, M6.5).
+- At least one Flow template with its companion screen flows.
+
+**Blocked on:** the unanimous-approval metadata value (§12 item 1), if committee templates are
+wanted on Flow. **Bound by** `docs/spike-results.md` Round 2's migration checklist, and by engine
+classes staying at API ≤ 66 (§12 item 6). **Cleanup it owns:** the M6 teardown, which also removes
+PR-00000014 to PR-00000025 and the guards they still carry (technical log M8.7c).
+
+### Smaller items, not phases
+
+| Item | Source |
+|---|---|
+| Phones keep the default record page; the sidebar Activity panel is not on the new page | M7.6 |
+| UI strings are English literals; Custom Labels when translation is needed | M7.6 |
+| `messageOf` is duplicated in two LWCs; `.prettierrc` (2 spaces) disagrees with the code (4) | M7.6 |
+| Rule descriptions are not snapshotted, so the timeline shows DeveloperNames; it would need a log field | `docs/decisions.md` |
+| Approvers cannot read the routing reason for others' submissions; a sharing decision on the log | `docs/decisions.md` |
+| Field-to-field multipicklist comparisons are refused | M9.5 |
+
+### Not on the roadmap
+
+Appendix B's superseded designs stay out: approver resolution, chain objects, the Group Work
+Item pattern and the SLA batch. So does the template registry, unless §12 item 4's threshold is
+reached (dozens of rules sharing shapes).
