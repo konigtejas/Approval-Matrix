@@ -104,7 +104,7 @@ session needs. Update the row when a phase completes.
 | **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `972352a` (mislabelled, see M6.6) |
 | **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Complete** — org gate passed 2026-10-08 (M7.7): deploy, post-deploy check, RunLocalTests and every manual timeline check; 57/57 Jest. The gate's recall check confirmed that a Classic recall leaves the guard set (M7.8), owed to M8 | `25e0b2d` + M7.7 |
 | **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Org gate steps 1–5 passed** 2026-10-08 (M8.7): first deploy refused on a 329-character description, fixed; 197/197 Apex; PR-00000010 repaired. **Step 6, the manual UI check, is owed** | `caeafb3` + M8.7 |
-| **M9** | Full expression grammar — `NOT`, word forms, `IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, three-hop paths | **Complete** — gate run in `amf-dev` 2026-10-08: 232/232 Apex, evaluator classes all 100%, mutation-checked, 57/57 Jest, matrix valid; optional manual UI check not run | M9 commit |
+| **M9** | Full expression grammar — `NOT`, word forms, `IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, three-hop paths | **Complete** — gate run in `amf-dev` 2026-10-08: 232/232 Apex, evaluator classes all 100%, mutation-checked, 57/57 Jest, matrix valid; optional manual UI check not run | `a79c880` |
 
 ### Superseded — the v1.0 plan
 
@@ -2972,7 +2972,7 @@ ID, status, step-name and pending assertions stand; name mapping remains covered
 
 ## Phase M9 — Full expression grammar
 
-**Date:** 2026-10-08 · **Commit:** recorded in the follow-up commit · **Status:** complete. Built,
+**Date:** 2026-10-08 · **Commit:** `a79c880` · **Status:** complete. Built,
 deployed and gated against `amf-dev` in one session: 232/232 Apex, all eight evaluator classes at
 100%, 57/57 Jest, the shipped matrix still valid.
 **Playbook goal:** let an admin write every condition §4.1 describes.
