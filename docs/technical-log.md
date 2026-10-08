@@ -102,7 +102,7 @@ session needs. Update the row when a phase completes.
 | **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 166/166 Apex tests after M4.1, validator at 98% | `9893274` + M4.1 |
 | **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; manual gate run in the real UI on 2026-09-25 (M5.7) except its blocked-path check, which needs the catch-all deactivated | `5b99045` + M5.6, M5.7 |
 | **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `972352a` (mislabelled, see M6.6) |
-| **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Built; org gates owed** — 57/57 Jest, ESLint clean, Apex semantically checked with apex-ls but not yet compiled or run in `amf-dev`; deploy, RunLocalTests (expect 194) and the manual UI gate are in M7.5 | `25e0b2d` |
+| **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Complete** — org gate passed 2026-10-08 (M7.7): deploy, post-deploy check, RunLocalTests and every manual timeline check; 57/57 Jest. The gate's recall check confirmed that a Classic recall leaves the guard set (M7.8), owed to M8 | `25e0b2d` + M7.7 |
 
 ### Superseded — the v1.0 plan
 
@@ -2514,9 +2514,9 @@ of double quotes, or pass them with `git commit -F <file>`.
 
 ## Phase M7 — Decision timeline
 
-**Date:** 2026-10-08 · **Commit:** `25e0b2d` · **Status:** built and verified locally. The org gates
-(deploy, RunLocalTests, the manual UI check) are still owed, because this session had no access to
-`amf-dev` (M7.3a).
+**Date:** 2026-10-08 · **Commit:** `25e0b2d` · **Status:** complete. Built and verified locally without
+org access (M7.3a); the org gate then passed the same day (M7.7), and its recall check confirmed a
+guard gap that predates M7 (M7.8).
 **Playbook goal:** on the governed record, tell the whole story of each submission in one place:
 why the matrix routed it where it did, and what has happened to it since.
 
@@ -2707,7 +2707,7 @@ Stability                            57/57 on six consecutive runs, three with a
 
 | Item | Owner |
 |---|---|
-| **The org gate in M7.5**, including the first compile of the seven new classes | user |
+| ~~**The org gate in M7.5**, including the first compile of the seven new classes~~ | **closed in M7.7** |
 | Phones keep the default record page: only the `Large` form factor is overridden | post-M7 |
 | The default page's sidebar Activity panel is not on the new page | post-M7, if activities are used |
 | Approvers see an approval but not the routing reason for other people's submissions (`docs/decisions.md`); widening that is a sharing decision on the log | product decision |
@@ -2717,3 +2717,49 @@ Stability                            57/57 on six consecutive runs, three with a
 | `messageOf` exists in both `amfSubmitForApproval` and `amfDecisionTimeline`; sharing it would refactor M5 | next change to either |
 | `.prettierrc` (2 spaces) disagrees with every file in the repo (4 spaces) | project |
 | Still open from M5.5: `AMF_ApprovalMatrixService`'s header says §9 is out of MVP scope | next change to that class |
+
+### M7.7 The org gate — PASSED (2026-10-08)
+
+Run by the user against `amf-dev`, in M7.5's order: the source gate, the deploy, the post-deploy
+configuration check, RunLocalTests, then the manual checks. Those were PR-00000010; M3's approved,
+rejected and blocked records; a never-submitted record; a throwaway submission appearing without a
+page reload; and `amfu3`'s view of a shared record, with the routing reason labelled as not
+visible. All were reported as passing. The command output was not pasted back, so this entry
+records the result as reported rather than quoting it.
+
+Because the deploy and the full test run passed, both risks M7.5 named held: the FlexiPage and its
+`View` override deployed as written, and `ProcessNode.Name` carries the approval step's label
+(`Finance Analyst`), as `AMF_ClassicApprovalHistoryProviderTest` asserts. The throwaway record's
+decision log row is permanent, as M5.7's was.
+
+### M7.8 Finding: a Classic recall leaves the guard set (confirmed 2026-10-08)
+
+The optional check in M7.5's list: PR-00000010, the M5.7 rehearsal that was pending with AMF
+Approver Three, was recalled from its Approval History related list. The timeline showed it as
+recalled. **`Matrix_Submission__c` stayed ticked.**
+
+**Cause.** Both templates set `allowRecall` to true, and only their final approval and final
+rejection actions run `AMF_Clear_Matrix_Submission`. Neither declares recall actions, so a recall
+unlocks the record and leaves the guard exactly as the engine set it. §5.2 names final approval and
+rejection as the points that re-arm the guard and says nothing about recall. M6 found the Flow
+equivalent (a cancelled submission keeps its guard, M6.5), but the Classic case had never been
+exercised: M3's QA approved and rejected, and never recalled.
+
+**Consequence.** On a recalled record, §6.3's guard is disarmed. A submission that bypasses the
+engine — through the API, a Flow's Submit for Approval action, or Apex naming a template — now
+passes the template's entry criteria and routes with no decision log row, which is the silent route
+§6.3 exists to make impossible. The engine itself is unaffected, because it sets the guard on every
+submission it makes.
+
+**Not fixed in M7.** The fix changes the templates, which M7 did not authorise. Owed to M8: a recall
+action on both templates that runs `AMF_Clear_Matrix_Submission`, the source gate requiring it on
+every template, and §5.2 amended. A recall action only fires on recalls made after it is deployed,
+so records already recalled keep a stuck guard and need clearing once. PR-00000010 is the only one
+known; this query finds any others:
+
+```
+SELECT Name FROM Purchase_Request__c
+WHERE Matrix_Submission__c = true
+  AND Id NOT IN (SELECT TargetObjectId FROM ProcessInstance WHERE Status = 'Pending')
+```
+
