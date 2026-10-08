@@ -103,7 +103,7 @@ session needs. Update the row when a phase completes.
 | **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; manual gate run in the real UI on 2026-09-25 (M5.7) except its blocked-path check, which needs the catch-all deactivated | `5b99045` + M5.6, M5.7 |
 | **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `972352a` (mislabelled, see M6.6) |
 | **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Complete** — org gate passed 2026-10-08 (M7.7): deploy, post-deploy check, RunLocalTests and every manual timeline check; 57/57 Jest. The gate's recall check confirmed that a Classic recall leaves the guard set (M7.8), owed to M8 | `25e0b2d` + M7.7 |
-| **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Built; org gate owed** — source gate tested on 7 cases (PowerShell 7.4), apex-ls clean, 57/57 Jest; 3 new integration tests not yet run in `amf-dev` (expect 197); the gate in M8.5 includes a one-time repair of PR-00000010 | pending |
+| **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Built; org gate owed** — source gate tested on 7 cases (PowerShell 7.4), apex-ls clean, 57/57 Jest; 3 new integration tests not yet run in `amf-dev` (expect 197); the gate in M8.5 includes a one-time repair of PR-00000010 | `caeafb3` |
 
 ### Superseded — the v1.0 plan
 
@@ -2768,7 +2768,7 @@ WHERE Matrix_Submission__c = true
 
 ## Phase M8 — Guard integrity
 
-**Date:** 2026-10-08 · **Commit:** pending · **Status:** built and verified locally. The org gate is
+**Date:** 2026-10-08 · **Commit:** `caeafb3` · **Status:** built and verified locally. The org gate is
 owed (M8.5).
 **Playbook goal:** close the two ways a record and its guard could disagree with the engine.
 
