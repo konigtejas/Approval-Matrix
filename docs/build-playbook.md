@@ -379,6 +379,51 @@ error, refresh, the stale-response guard, every outcome and step status, and exp
 
 ---
 
+### M8 — Guard integrity (post-MVP)
+
+**Goal:** close the two ways a record and its guard could disagree with the engine. A recalled
+request left `Matrix_Submission__c` set (technical log M7.8). And a record already in an approval
+process was shown a route that the platform then refused.
+
+**Build:**
+- **Recall clears the guard.** Both templates get a recall action running
+  `AMF_Clear_Matrix_Submission` (§5.2).
+- **The source gate enforces it.** `scripts/validate-approval-matrix-source.ps1` fails any active
+  template that does not clear the guard in its final approval actions, its final rejection
+  actions and, when recall is allowed, its recall actions. It judges each action by what the named
+  field update does, not by its name.
+- **A pending record is refused.** After authorisation and before step 1,
+  `AMF_ApprovalMatrixService` refuses any record with a pending `ProcessInstance`: the whole call,
+  with a message naming the process, and no log row (§6.1's M8 note). The preview refuses too, so
+  the modal never opens on a route the platform would reject.
+- **Housekeeping.** The service's two stale "§9 is out of MVP scope" comments go.
+
+No new objects, fields, classes or permissions.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. Deploy the package.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green.
+5. **One-time repair.** PR-00000010 was recalled before the fix and still carries the guard:
+   `sf data update record --sobject Purchase_Request__c --where "Name='PR-00000010'" --values "Matrix_Submission__c=false" -o amf-dev`.
+   Afterwards, M7.8's query returns no rows.
+6. **Manual, on a throwaway Purchase Request:**
+   - Submit it.
+   - Choose Submit for Approval again. An error toast names the process it is already in; no
+     modal opens and no decision log row is added.
+   - Recall it. *Matrix Submission* is unticked, and the timeline shows *Recalled*.
+   - Submit it again. It routes normally.
+
+Acceptance: the source gate fails a template that is missing any of the three clearing actions,
+and passes one that does not allow recall. An integration test recalls a real submission and
+proves the guard is cleared and that a bypass submission is then refused. Another proves a
+pending record is refused in preview and submit with nothing logged, and that a caller who cannot
+read the record is told about access, not about the approval.
+
+---
+
 ## Part 4 — When Things Go Wrong
 
 - **Claude Code invents schema** (a field not in §3): stop it, point at the doc, restate

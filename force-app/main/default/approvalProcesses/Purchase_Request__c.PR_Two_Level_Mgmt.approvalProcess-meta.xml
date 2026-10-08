@@ -64,6 +64,12 @@
         <userHierarchyField>Manager</userHierarchyField>
     </nextAutomatedApprover>
     <processOrder>1</processOrder>
+    <recallActions>
+        <action>
+            <name>AMF_Clear_Matrix_Submission</name>
+            <type>FieldUpdate</type>
+        </action>
+    </recallActions>
     <recordEditability>AdminOnly</recordEditability>
     <showApprovalHistory>true</showApprovalHistory>
 </ApprovalProcess>

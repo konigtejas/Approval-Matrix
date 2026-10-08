@@ -103,6 +103,7 @@ session needs. Update the row when a phase completes.
 | **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; manual gate run in the real UI on 2026-09-25 (M5.7) except its blocked-path check, which needs the catch-all deactivated | `5b99045` + M5.6, M5.7 |
 | **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `972352a` (mislabelled, see M6.6) |
 | **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Complete** — org gate passed 2026-10-08 (M7.7): deploy, post-deploy check, RunLocalTests and every manual timeline check; 57/57 Jest. The gate's recall check confirmed that a Classic recall leaves the guard set (M7.8), owed to M8 | `25e0b2d` + M7.7 |
+| **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Built; org gate owed** — source gate tested on 7 cases (PowerShell 7.4), apex-ls clean, 57/57 Jest; 3 new integration tests not yet run in `amf-dev` (expect 197); the gate in M8.5 includes a one-time repair of PR-00000010 | pending |
 
 ### Superseded — the v1.0 plan
 
@@ -2274,9 +2275,9 @@ decision log rows before/after: 6 / 6
 | ~~**The modal's Submit button was not clicked in the org.**~~ | **closed in M5.7** — rehearsed on a throwaway record at the user's request |
 | The gate's blocked-path check in the real UI: with the catch-all deactivated, a non-matching record skips the modal and still gets its `Blocked_No_Match` row. Covered by Jest and the Apex suite; running it in the org means deactivating a live rule | user, optional |
 | ~~**Org drift:** `PR_High_Value_APAC` routes to `PR_Two_Level_Mgmt` in `amf-dev` but `PR_Three_Level_Finance` in the repo (M5.3c)~~ | **closed in M5.6** — the repo's record redeployed |
-| A preview does not know a record is already in an approval process: it shows the route, and the submission then fails with the platform's error, as before M5. A lock check in the preview would say so up front | post-M5 |
+| ~~A preview does not know a record is already in an approval process: it shows the route, and the submission then fails with the platform's error, as before M5. A lock check in the preview would say so up front~~ | **closed in M8** — a pending `ProcessInstance` refuses preview and submit |
 | ~~The action sits in the ▼ overflow menu (M5.3b)~~ | **closed in M5.6** — first in `platformActionList`, now a header button |
-| `AMF_ApprovalMatrixService`'s header still says §9 is out of MVP scope; stale since M4 | next change to that class |
+| ~~`AMF_ApprovalMatrixService`'s header still says §9 is out of MVP scope; stale since M4~~ | **closed in M8** |
 
 ### M5.6 Follow-up: demo preparation — drift restored, action promoted (2026-09-25)
 
@@ -2490,7 +2491,7 @@ Requests, so the unanimous check below can be done against them. Removal is
 | Groups and queues through a `Resource` assignee — value format untested | next Flow session |
 | Set the Automated Process User's email before any real Flow approval, or approvers are not notified | user / org admin |
 | A reset path for cancelled Flow submissions (cancel leaves the guard set), or an operational rule to recall rather than cancel | Flow design phase |
-| M5's "preview does not know a record is already in approval": use SOQL on `ApprovalSubmission` / `ProcessInstance` — `Approval.isLocked()` needs an org preference | next preview change |
+| ~~M5's "preview does not know a record is already in approval": use SOQL on `ApprovalSubmission` / `ProcessInstance` — `Approval.isLocked()` needs an org preference~~ | **closed in M8**, Classic half: SOQL on `ProcessInstance` |
 | A convention for API versions: Flow templates need a newer `sourceApiVersion`, while engine classes stay at ≤ 66 (§12 item 6) | Flow design phase |
 
 ### M6.6 Correction: the M6 commit carries the wrong message
@@ -2716,7 +2717,7 @@ Stability                            57/57 on six consecutive runs, three with a
 | UI strings are English literals, as in M3 and M5; Custom Labels when the framework needs translation | post-M7 |
 | `messageOf` exists in both `amfSubmitForApproval` and `amfDecisionTimeline`; sharing it would refactor M5 | next change to either |
 | `.prettierrc` (2 spaces) disagrees with every file in the repo (4 spaces) | project |
-| Still open from M5.5: `AMF_ApprovalMatrixService`'s header says §9 is out of MVP scope | next change to that class |
+| ~~Still open from M5.5: `AMF_ApprovalMatrixService`'s header says §9 is out of MVP scope~~ | **closed in M8** |
 
 ### M7.7 The org gate — PASSED (2026-10-08)
 
@@ -2762,4 +2763,144 @@ SELECT Name FROM Purchase_Request__c
 WHERE Matrix_Submission__c = true
   AND Id NOT IN (SELECT TargetObjectId FROM ProcessInstance WHERE Status = 'Pending')
 ```
+
+---
+
+## Phase M8 — Guard integrity
+
+**Date:** 2026-10-08 · **Commit:** pending · **Status:** built and verified locally. The org gate is
+owed (M8.5).
+**Playbook goal:** close the two ways a record and its guard could disagree with the engine.
+
+M7's gate confirmed the first one in the org (M7.8): a recall left `Matrix_Submission__c` set. The
+second had been carried since M5.5: the preview offered a route for a record that was already in
+an approval process, and the submission then failed with the platform's `ALREADY_IN_PROCESS`. The
+user authorised M8 on 2026-10-08 and chose to refuse a pending record outright, with no log row,
+over a new `Outcome__c` value (`docs/decisions.md`).
+
+### M8.1 File-level changes
+
+| File | Change | Notes |
+|---|---|---|
+| `approvalProcesses/Purchase_Request__c.PR_Three_Level_Finance.approvalProcess-meta.xml` | **modified** | `recallActions` running `AMF_Clear_Matrix_Submission` |
+| `approvalProcesses/Purchase_Request__c.PR_Two_Level_Mgmt.approvalProcess-meta.xml` | **modified** | the same |
+| `workflows/Purchase_Request__c.workflow-meta.xml` | **modified** | the field update's description names all three ways out |
+| `scripts/validate-approval-matrix-source.ps1` | **modified** | requires a guard-clearing field update in final approval, final rejection and (when allowed) recall actions; each template checked once |
+| `classes/AMF_ApprovalMatrixService.cls` | **modified** | `refuseRecordsAlreadyInApproval()` after `authorise()`; the header and step-7 comments no longer call §9 out of scope |
+| `classes/AMF_SubmissionIntegrationTest.cls` | **modified** | +3 tests (M8.2 f); header updated |
+| `classes/AMF_ApprovalMatrixServiceTest.cls` | **modified** | the query-budget message names the new check; one stale §9 comment |
+| `CLAUDE.md`, `docs/architecture.md` (§5.2, §6.1 M8 note, §13.4 row), `docs/build-playbook.md` (M8), `docs/decisions.md` | **modified** | authorisation, design, gate, two decisions |
+
+No new objects, fields, classes, components or permissions.
+
+### M8.2 Design choices worth recording
+
+**(a) One way to re-arm the guard, used on every way out.** The recall action reuses
+`AMF_Clear_Matrix_Submission`, the field update that final approval and final rejection already
+run, so all three exits from a process re-arm the guard identically. The element sits between
+`processOrder` and `recordEditability`, where the Metadata API schema expects it.
+
+**(b) The source gate judges an action by what it does.** For every template an active rule
+names, it reads the object's workflow file and collects the field updates that set
+`Matrix_Submission__c` to false (`Literal`, `0` or `false`). It then requires one of those among
+the final approval actions, the final rejection actions and, when `allowRecall` is true, the recall
+actions. A renamed clearing update passes; a field update called `AMF_Clear_Matrix_Submission` that
+sets the guard to true fails. A template referenced by several rules is checked once, so the gate
+no longer repeats findings, the existing entry-criteria check included. A template that does not
+allow recall needs no recall action.
+
+**(c) A pending record is refused before step 1, after authorisation.** One SOQL on
+`ProcessInstance` (`Status = 'Pending'`) for the call's records, after `authorise()` and the guard-field
+check. A hit refuses the whole call with an `AMF_SubmissionException` naming each pending record and
+its process. Because `previewRecord` runs the same path, the action's existing error branch shows
+the sentence in a sticky toast and submits nothing; no LWC changed, and M5's Jest test for a
+preview that throws already covers that branch. Running after `authorise()` means a caller who
+cannot read a record learns nothing about its approval.
+
+**(d) No log row for a refusal.** This was the user's choice, recorded in `docs/decisions.md`.
+Nothing was decided: the matrix never ran. It mirrors the read-access refusal and leaves the
+restricted `Outcome__c` picklist, which the lock rule and every report rely on, unchanged.
+
+**(e) The query budget is now spent exactly.** `everyRuleIsCompiledOnceHoweverManyRecordsAreSubmitted`
+caps an engine call at 4 queries. In its shape the engine used 3: authorisation, the union query
+and the stub's read. The pending check makes it 4. The cap is unchanged, its message now names the
+check, and the next query added to the engine will have to argue for a higher cap.
+
+**(f) The integration tests that only a live approval can run.** Three tests join
+`AMF_SubmissionIntegrationTest`, each routing through the engine and the real Classic strategy:
+- **A recall re-arms the guard.** A real submission is recalled as its submitter. The test
+  asserts the guard is cleared and that a submission bypassing the engine is then refused by
+  entry criteria. That pins M7.8 as a regression.
+- **A pending record is refused in both preview and submit.** The refusal names the process,
+  exactly one decision log row exists (the first submission's), and exactly one
+  `ProcessInstance`.
+- **A caller who cannot read the record is told about access only.** The message never names
+  the approval.
+
+The recall calls `Approval.process()` directly: it simulates a person pressing Recall, as the
+existing bypass test simulates a bypass. CLAUDE.md's rule that `Approval.process()` goes through
+the strategy governs the product's own submissions.
+
+### M8.3 Issues encountered
+
+**(a) No org again, and no PowerShell either.** The Apex substitutes are M7.3a's. The source gate
+is a PowerShell script and the container has none, so PowerShell 7.4.6 (the official Linux build
+from the PowerShell GitHub releases, kept in the scratch directory and not added to the project)
+ran it. The gate's documented runtime is Windows PowerShell 5.1, and the script uses nothing newer
+than 5.1 supports: `[ordered]`, generic `HashSet`, namespaced XPath.
+
+**(b) A test that would have broken, found by reading.** The 4-query cap in (e) was spotted in the
+suite before anything ran. The new check uses the last query the cap allows, so the test passes,
+but only just; hence the message.
+
+**(c) PowerShell 7 prints a thrown multi-line message on one line.** Counting findings by line
+reported zero for two failing cases. They were counted by message instead (6 each). This was a
+harness artefact, not a gate defect: the exit code was 1 throughout.
+
+**(d) The checker's reach, confirmed rather than assumed.** A probe class calling invented methods
+on `Approval.ProcessWorkitemRequest` and `Approval.ProcessResult` was flagged, so the recall test's
+`setAction`, `setWorkitemId`, `isSuccess` and `getErrors` calls are checked. As in M7.3c, field
+names that appear only inside SOQL are not.
+
+### M8.4 Verification evidence (this session)
+
+```
+Source gate, PowerShell 7.4.6, seven cases
+  1 the repo with M8                          passed: 3 active rules, 2 approval processes
+  2 both templates as they were before M8     failed: recall, on both     <- would have caught M7.8
+  3 one template without a recall action      failed once, though two rules route to it
+  4 recall not allowed and no recall action   passed
+  5 the field update sets the guard to 1      failed: 6 findings (3 exits x 2 templates)
+  6 no workflow file                          failed: 6 findings
+  7 a differently named clearing update       passed (judged by effect, not by name)
+apex-ls, whole project                        no errors; the one pre-existing warning
+Apex parser                                   the 3 changed classes parse
+Jest / ESLint                                 57/57 / clean (no LWC change in M8)
+XML                                           both templates and the workflow well-formed
+```
+
+### M8.5 The gate still owed, in this order
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. `sf project deploy start -o amf-dev`. This redeploys two **active** approval processes with
+   their steps unchanged; only the recall actions are new, which the platform allows on an active
+   process. If it refuses, the error names the element: report it.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`. Expect 197/197 (194 + 3).
+5. One-time repair, because a recall action only fires on recalls made after it is deployed:
+   `sf data update record --sobject Purchase_Request__c --where "Name='PR-00000010'" --values "Matrix_Submission__c=false" -o amf-dev`,
+   then M7.8's query should return no rows.
+6. The manual checks in the playbook's M8 gate, on a throwaway record: submit; a second submit is
+   refused by name with no modal and no new log row; recall unticks *Matrix Submission*; a
+   resubmission routes.
+
+### M8.6 Carried into later phases
+
+| Item | Owner |
+|---|---|
+| **The org gate in M8.5**, including the PR-00000010 repair | user |
+| The engine's query cap in the unit suite is now spent exactly, 4 of 4 (M8.2e) | next engine change |
+| `PR_Two_Level_Mgmt`'s recall action has no automated test: its approvers come from the submitter's manager chain, which a test user may lack (as for M3's integration test). The source gate covers it statically and the manual gate in the UI | — |
+| A pending record refuses the whole call; per-record handling belongs with bulk entry points | if they are built |
+| The Flow equivalent: a cancelled Flow submission keeps its guard (M6.5) | Flow phase |
 

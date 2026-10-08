@@ -1,9 +1,9 @@
 /**
- * The one test that lets a real Approval.process() run.
+ * The engine against real approvals: the tests that let Approval.process() run.
  *
  * Architecture section: 10 ("one thin integration test per template exercises
- * the real path"), 6.1 steps 9-11, 6.3 (the guard), 5.2 (Classic templates),
- * 8 (the join).
+ * the real path"), 6.1 steps 9-11 and its M8 note, 6.3 (the guard), 5.2
+ * (Classic templates), 8 (the join).
  *
  * Thin on purpose. Everything the engine decides is proved in
  * AMF_ApprovalMatrixServiceTest against AMF_StrategyStub, which is fast,
@@ -11,7 +11,9 @@
  * the seam between them: that the process name the matrix produced is one the
  * platform accepts, that entry criteria pass BECAUSE the engine staged the
  * guard first, and that Execution_Ref_Id__c really does join to a
- * ProcessInstance the way 8 promises.
+ * ProcessInstance the way 8 promises. Since M8, also the two things only a live
+ * approval can show: that a recall re-arms the guard, and that a record already
+ * in an approval process is refused before anything is decided.
  *
  * ORG DEPENDENCE IS DELIBERATE AND LOCAL. This class needs
  * PR_Three_Level_Finance active in the org -- it is repo metadata, deployed
@@ -148,6 +150,187 @@ private class AMF_SubmissionIntegrationTest {
             [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :record.Id],
             'And nothing routed'
         );
+    }
+
+    @IsTest
+    static void aRecallClearsTheGuardSoABypassIsRefusedAgain() {
+        // M8, and technical log M7.8. A recall unlocks the record. Before M8 it
+        // left Matrix_Submission__c true, so a submission that bypassed the
+        // engine passed entry criteria and routed with no decision log row. The
+        // template's recall action now clears the guard (5.2), and the bypass
+        // fails exactly as it does on a record that was never submitted.
+        requireActiveProcess(THREE_LEVEL);
+        Purchase_Request__c record = highValueApac();
+        insert record;
+
+        Test.startTest();
+        AMF_ApprovalMatrixService.Outcome outcome = engineRoutingTo(THREE_LEVEL)
+            .submit(new List<Id>{ record.Id })[0];
+        Assert.isTrue(outcome.submitted, 'Precondition: the record entered the process. ' + outcome.message);
+
+        // The submitter recalls it, as the Recall button on Approval History does.
+        // A person's action, simulated; the engine itself never recalls (6.5).
+        Approval.ProcessWorkitemRequest recall = new Approval.ProcessWorkitemRequest();
+        recall.setAction('Removed');
+        recall.setWorkitemId(
+            [SELECT Id FROM ProcessInstanceWorkitem WHERE ProcessInstanceId = :outcome.executionRefId LIMIT 1]
+            .Id
+        );
+        Approval.ProcessResult recalled = Approval.process(recall);
+        Test.stopTest();
+
+        Assert.isTrue(recalled.isSuccess(), 'The recall itself must succeed: ' + recalled.getErrors());
+        Assert.areEqual(
+            'Removed',
+            [SELECT Status FROM ProcessInstance WHERE Id = :outcome.executionRefId].Status,
+            'Recalled'
+        );
+        Assert.isFalse(
+            [SELECT Matrix_Submission__c FROM Purchase_Request__c WHERE Id = :record.Id].Matrix_Submission__c,
+            'A recall must re-arm the guard (5.2). If this fails, the template lost its recall action.'
+        );
+
+        Approval.ProcessSubmitRequest bypass = new Approval.ProcessSubmitRequest();
+        bypass.setObjectId(record.Id);
+        bypass.setProcessDefinitionNameOrId(THREE_LEVEL);
+        Boolean refused = false;
+        try {
+            Approval.process(bypass, true);
+        } catch (Exception e) {
+            refused = true;
+        }
+        Assert.isTrue(
+            refused,
+            'With the guard re-armed, a submission that bypasses the engine fails entry criteria again (6.3)'
+        );
+    }
+
+    @IsTest
+    static void aRecordAlreadyInApprovalIsRefusedByNameAndNothingIsLogged() {
+        // 6.1's M8 note. The platform would refuse a second submission at step 10
+        // with ALREADY_IN_PROCESS. The engine refuses first, naming the process,
+        // and the preview refuses too, so the confirmation modal never offers a
+        // route that cannot be taken.
+        requireActiveProcess(THREE_LEVEL);
+        Purchase_Request__c record = highValueApac();
+        insert record;
+
+        AMF_ApprovalMatrixService engine = engineRoutingTo(THREE_LEVEL);
+        List<String> refusals = new List<String>();
+
+        Test.startTest();
+        Assert.isTrue(
+            engine.submit(new List<Id>{ record.Id })[0].submitted,
+            'Precondition: the record is now pending'
+        );
+
+        for (Boolean isPreview : new List<Boolean>{ true, false }) {
+            try {
+                if (isPreview) {
+                    engine.preview(new List<Id>{ record.Id });
+                } else {
+                    engine.submit(new List<Id>{ record.Id });
+                }
+                Assert.fail((isPreview ? 'A preview' : 'A submission') + ' of a pending record must be refused');
+            } catch (AMF_SubmissionException e) {
+                refusals.add(e.getMessage());
+            }
+        }
+        Test.stopTest();
+
+        Assert.areEqual(2, refusals.size(), 'Both the preview and the submission are refused');
+        for (String message : refusals) {
+            Assert.isTrue(message.contains('already in an approval process'), 'Got: ' + message);
+            Assert.isTrue(message.contains(THREE_LEVEL), 'The refusal names the process. Got: ' + message);
+        }
+        Assert.areEqual(
+            1,
+            [SELECT COUNT() FROM Approval_Decision_Log__c WHERE Record_Id__c = :String.valueOf(record.Id)],
+            'Only the first submission is on record: a refusal decides nothing, so it logs nothing'
+        );
+        Assert.areEqual(
+            1,
+            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :record.Id],
+            'And nothing new routed'
+        );
+    }
+
+    @IsTest
+    static void aCallerWhoCannotReadTheRecordHearsAboutAccessNotTheApproval() {
+        // 11. The pending check runs after authorise(), so a caller who cannot
+        // read the record learns nothing about the approval it is in.
+        requireActiveProcess(THREE_LEVEL);
+        Purchase_Request__c record = highValueApac();
+        insert record;
+
+        AMF_ApprovalMatrixService engine = engineRoutingTo(THREE_LEVEL);
+        Assert.isTrue(
+            engine.submit(new List<Id>{ record.Id })[0].submitted,
+            'Precondition: the record is now pending'
+        );
+
+        User stranger = strangerUser();
+
+        Test.startTest();
+        System.runAs(stranger) {
+            try {
+                engine.preview(new List<Id>{ record.Id });
+                Assert.fail('A record the caller cannot read must be refused');
+            } catch (AMF_SubmissionException e) {
+                Assert.isTrue(e.getMessage().contains('read access'), 'Got: ' + e.getMessage());
+                Assert.isFalse(
+                    e.getMessage().contains(THREE_LEVEL),
+                    'Nothing about the approval reaches a caller who cannot read the record'
+                );
+            }
+        }
+        Test.stopTest();
+    }
+
+    private static Purchase_Request__c highValueApac() {
+        return new Purchase_Request__c(Amount__c = 250000, Region__c = 'APAC', Risk_Level__c = 'High');
+    }
+
+    /** The real Classic strategy behind an in-memory catch-all: one real route, no org CMDT. */
+    private static AMF_ApprovalMatrixService engineRoutingTo(String processApiName) {
+        return new AMF_ApprovalMatrixService(
+            new AMF_RuleBuilder.Stub(
+                new List<AMF_RuleDefinition>{
+                    new AMF_RuleBuilder()
+                        .named('PR_Catch_All')
+                        .withPriority(9999)
+                        .withExpression('TRUE')
+                        .routingTo(processApiName)
+                        .atVersion(1)
+                        .build()
+                }
+            ),
+            new AMF_ClassicProcessStrategy()
+        );
+    }
+
+    /** A Standard User with no framework permission set and no access to the test's records. */
+    private static User strangerUser() {
+        Profile standard = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        User stranger = new User(
+            Alias = 'amfint',
+            Email = 'amf.integration.stranger@example.invalid',
+            EmailEncodingKey = 'UTF-8',
+            LastName = 'Stranger',
+            LanguageLocaleKey = 'en_US',
+            LocaleSidKey = 'en_US',
+            ProfileId = standard.Id,
+            TimeZoneSidKey = 'GMT',
+            Username = 'amf.integration.stranger.' +
+                String.valueOf(Datetime.now().getTime()) +
+                '@amf.test.invalid'
+        );
+        // User is a setup object: inserting one in the same transaction as a
+        // Purchase_Request__c is MIXED_DML_OPERATION without this wrapper.
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert stranger;
+        }
+        return stranger;
     }
 
     /**

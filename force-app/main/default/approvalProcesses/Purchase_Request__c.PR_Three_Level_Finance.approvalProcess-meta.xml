@@ -80,6 +80,12 @@
     <finalRejectionRecordLock>false</finalRejectionRecordLock>
     <label>PR Three Level Finance</label>
     <processOrder>2</processOrder>
+    <recallActions>
+        <action>
+            <name>AMF_Clear_Matrix_Submission</name>
+            <type>FieldUpdate</type>
+        </action>
+    </recallActions>
     <recordEditability>AdminOnly</recordEditability>
     <showApprovalHistory>true</showApprovalHistory>
 </ApprovalProcess>

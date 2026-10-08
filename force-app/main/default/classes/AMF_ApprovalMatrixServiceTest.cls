@@ -317,8 +317,8 @@ private class AMF_ApprovalMatrixServiceTest {
         // 4.6, at its sharpest. If the priority-10 rule cannot be evaluated,
         // nobody can say a record would not have matched it, so routing that
         // record to priority 20 is precisely the silent misrouting this
-        // framework exists to prevent. 9's validator would catch this at deploy
-        // time; 9 is out of MVP scope (13.2), so it surfaces here.
+        // framework exists to prevent. 9's validator catches this at release
+        // time (M4); a matrix deployed without the gate surfaces it here.
         Purchase_Request__c record = request(500, 'EMEA', 'Low');
         insert record;
 
@@ -462,8 +462,8 @@ private class AMF_ApprovalMatrixServiceTest {
         Assert.areEqual(3, AMF_ExprCache.getCompilations(), 'One compilation per rule, not per record');
         Assert.isTrue(
             queriesAfter - queriesBefore <= 4,
-            'One union query plus authorisation and the stub read, not one per rule ' +
-            '(4.4). Queries used: ' + (queriesAfter - queriesBefore)
+            'One union query plus authorisation, the pending-approval check (M8) and the ' +
+            'stub read, not one per rule (4.4). Queries used: ' + (queriesAfter - queriesBefore)
         );
     }
 

@@ -36,21 +36,29 @@
  * exists to create. This class therefore blocks per-record faults by RECORDING
  * them -- log row written, Outcome not Submitted, record not submitted, reason
  * in the message -- and reserves exceptions for faults that condemn the whole
- * call: nothing to submit, a record the caller cannot read, an object with no
- * active rules, a rule that will not compile, a submission that failed. That is
- * not 4.6's forbidden catch-and-return-false; the evaluator still never
- * swallows anything, and a blocked record leaves a louder trace than an
- * exception would, because the trace survives the transaction. Recorded in
- * docs/decisions.md, 2026-08-18.
+ * call: nothing to submit, a record the caller cannot read, a record already in
+ * an approval process, an object with no active rules, a rule that will not
+ * compile, a submission that failed. That is not 4.6's forbidden
+ * catch-and-return-false; the evaluator still never swallows anything, and a
+ * blocked record leaves a louder trace than an exception would, because the
+ * trace survives the transaction. Recorded in docs/decisions.md, 2026-08-18.
  *
  * A RULE THAT WILL NOT COMPILE STOPS EVERYTHING (4.6). 9's config validator
- * would catch that at deploy time, but 9 is out of MVP scope (13.2), so a
- * compile error surfaces here instead -- as a positioned AMF_ExpressionException
- * that blocks the entire call. It must, and this is the anti-Sitetracker rule
- * at its sharpest: if the priority-10 rule cannot be evaluated, nobody can say
- * that a record would not have matched it, so routing that record to the
- * priority-20 rule is exactly the silent misrouting this framework was built to
- * make impossible.
+ * catches that at release time (M4); one that reaches runtime anyway -- a matrix
+ * deployed without the gate -- surfaces here as a positioned
+ * AMF_ExpressionException that blocks the entire call. It must, and this is the
+ * anti-Sitetracker rule at its sharpest: if the priority-10 rule cannot be
+ * evaluated, nobody can say that a record would not have matched it, so routing
+ * that record to the priority-20 rule is exactly the silent misrouting this
+ * framework was built to make impossible.
+ *
+ * A RECORD ALREADY IN AN APPROVAL PROCESS IS REFUSED (6.1's M8 note). The
+ * platform would refuse it anyway, with ALREADY_IN_PROCESS, but only at step 10,
+ * after a decision had been built for nothing -- and the preview, which never
+ * reaches step 10, would have offered a route that could not be taken. Asking
+ * first means both say plainly which process the record is already in. Nothing
+ * is decided, so nothing is logged, exactly as for a record the caller cannot
+ * read (docs/decisions.md, 2026-10-08).
  *
  * Declared without sharing per 11 -- it is infrastructure, and it writes an
  * audit row and stages a guard field that the submitter has no FLS to write
@@ -257,6 +265,7 @@ public without sharing class AMF_ApprovalMatrixService {
         String objectApiName = objectTypeOf(recordIds);
         authorise(recordIds);
         requireGuardField(objectApiName);
+        refuseRecordsAlreadyInApproval(recordIds);
 
         // Step 1. An object with no active rules is not governed (3.2), and
         // deactivating an object's rules is the framework's kill switch -- so
@@ -433,8 +442,8 @@ public without sharing class AMF_ApprovalMatrixService {
                 }
 
                 // Step 7. Resolve the template. Process_API_Name__c is Text with
-                // no referential check (3.1) and 9's validator is out of MVP
-                // scope, so a rule that names nothing is caught here.
+                // no referential check (3.1). 9's validator rejects a blank one
+                // at release time; one that reaches runtime anyway is caught here.
                 if (String.isBlank(rule.processApiName)) {
                     throw new AMF_SubmissionException(
                         'Rule ' +
@@ -560,6 +569,38 @@ public without sharing class AMF_ApprovalMatrixService {
                 UserInfo.getUsername() +
                 ' cannot read: ' +
                 String.join(denied, ', ')
+            );
+        }
+    }
+
+    /**
+     * 6.1's M8 note. A record with a pending ProcessInstance cannot enter
+     * another approval until that one is recalled or completes, so the call is
+     * refused here, by name, before any rule runs -- for a preview as much as
+     * for a submission.
+     *
+     * Runs after authorise(), so it says nothing about a record the caller
+     * cannot read. Like that check it condemns the whole call: the UI submits
+     * one record at a time, and a bulk caller is better told which records to
+     * leave out than handed a partial result.
+     */
+    private void refuseRecordsAlreadyInApproval(List<Id> recordIds) {
+        List<String> pending = new List<String>();
+
+        for (ProcessInstance instance : [
+            SELECT TargetObjectId, ProcessDefinition.DeveloperName
+            FROM ProcessInstance
+            WHERE TargetObjectId IN :recordIds AND Status = 'Pending'
+            ORDER BY TargetObjectId
+        ]) {
+            pending.add(instance.TargetObjectId + ' in ' + instance.ProcessDefinition?.DeveloperName);
+        }
+
+        if (!pending.isEmpty()) {
+            throw new AMF_SubmissionException(
+                'A record that is already in an approval process cannot be submitted again ' +
+                'until that request is recalled or completes. Already pending: ' +
+                String.join(pending, ', ')
             );
         }
     }

@@ -217,7 +217,11 @@ Naming: `<OBJ>_<Shape>`, e.g. `PR_Three_Level_Finance`.
 Native Approval Processes as metadata XML.
 
 - **Entry criteria on every template**: `Matrix_Submission__c = true`. This is the guard (§6.3).
-- **Final approval and rejection actions** reset `Matrix_Submission__c = false`, re-arming the guard.
+- **Final approval, final rejection and recall actions** reset `Matrix_Submission__c = false`,
+  re-arming the guard. A request can leave the process by any of the three, and the guard must be
+  cleared on each. Recall was missing until M8 (2026-10-08): a recalled record kept the guard set,
+  so a submission bypassing the engine passed entry criteria (technical log M7.8). The source gate
+  now requires the clearing action on all three.
 - Steps, approvers, parallel approvers and static queue steps are configured natively.
 
 ### 5.3 Flow templates
@@ -272,6 +276,14 @@ submit(List<Id> recordIds):
     Approval.process() call
 11. Stamp Execution_Ref_Id__c onto the log row
 ```
+
+**M8 implementation (2026-10-08): a record already in an approval process is refused.** After
+authorisation and before step 1, the engine looks for a pending `ProcessInstance` on each record.
+If it finds one, it refuses the whole call with a message naming the process. That covers the
+preview as well, so the confirmation modal never offers a route the platform would then refuse
+with `ALREADY_IN_PROCESS`. It writes no decision log row: nothing was decided, exactly as for a
+record the caller cannot read. Running the check after authorisation means it reveals nothing about
+records the caller cannot read.
 
 ### 6.2 Submission strategies
 
@@ -496,6 +508,7 @@ The lexer, parser and AST must be structured so these are **additive** — no sp
 | **M5** | Post-MVP §6.4 preview and the submit action's confirmation modal | Preview writes nothing (proved in tests and against the org), all Apex and Jest tests green, modal opens from the real action |
 | **M6** | Post-MVP Flow approvals technical spike — research only, artefacts under `spikes/` | Round 1's open questions answered or explicitly still open, every claim labelled, product untouched (all Apex tests green) |
 | **M7** | Post-MVP §8 decision timeline LWC, Classic only, on the governed record's page | All Apex and Jest tests green; in the real UI the timeline explains a submitted, a blocked and a pending record, and shows a new submission without a page reload |
+| **M8** | Post-MVP guard integrity: recall clears the guard (§5.2); a record already in approval is refused (§6.1) | Source gate fails a template that does not clear the guard on approval, rejection and recall; all Apex and Jest tests green; in the real UI a recall unticks `Matrix_Submission__c`, and submitting a pending record is refused by name with no log row |
 
 ### 13.5 Repository state
 
