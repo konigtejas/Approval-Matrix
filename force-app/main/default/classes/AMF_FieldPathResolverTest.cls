@@ -118,11 +118,11 @@ private class AMF_FieldPathResolverTest {
         try {
             AMF_FieldPathResolver.buildQuery(
                 PURCHASE_REQUEST,
-                new Set<String>{ 'Account__r.Owner.Alias' }
+                new Set<String>{ 'Account__r.Owner.Manager.Profile.Name' }
             );
-            Assert.fail('The 13.3 two-segment cap is enforced here as well as in the compiler');
+            Assert.fail('The compiler\'s segment cap is enforced here as well');
         } catch (AMF_ExpressionException e) {
-            Assert.isTrue(e.getMessage().contains('exceeds the maximum of 2 segments'), e.getMessage());
+            Assert.isTrue(e.getMessage().contains('exceeds the maximum of 4 segments'), e.getMessage());
         }
     }
 
@@ -135,11 +135,12 @@ private class AMF_FieldPathResolverTest {
             new Purchase_Request__c(Amount__c = 500, Region__c = 'EMEA')
         };
         insert requests;
+        String ownerProfile = [SELECT Profile.Name FROM User WHERE Id = :UserInfo.getUserId()].Profile.Name;
 
         Test.startTest();
         Map<Id, SObject> loaded = AMF_FieldPathResolver.load(
             PURCHASE_REQUEST,
-            new Set<String>{ 'Amount__c', 'Region__c', 'Account__r.Name' },
+            new Set<String>{ 'Amount__c', 'Region__c', 'Account__r.Name', 'Account__r.Owner.Profile.Name' },
             new Map<Id, Purchase_Request__c>(requests).keySet()
         );
         // Read inside the block: stopTest restores the outer context's counters.
@@ -159,6 +160,11 @@ private class AMF_FieldPathResolverTest {
             'Globex',
             withAccount.getSObject('Account__r').get('Name'),
             'And so does the two-hop path the evaluator will read'
+        );
+        Assert.areEqual(
+            ownerProfile,
+            withAccount.getSObject('Account__r').getSObject('Owner').getSObject('Profile').get('Name'),
+            'And a three-hop path, the deepest the compiler allows, is valid SOQL and arrives populated'
         );
 
         Purchase_Request__c withoutAccount = (Purchase_Request__c) loaded.get(requests[1].Id);

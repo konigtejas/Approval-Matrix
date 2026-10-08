@@ -8,7 +8,7 @@ name → decision log explains why.
 docs/architecture.md (v3.0) defines the full target design; its §13 is this MVP scope.
 WE ARE BUILDING THE MVP SUBSET ONLY (see MVP SCOPE). If the doc describes something
 not in MVP scope, do NOT build it. If a task seems to conflict with the doc, STOP and
-ask. docs/build-playbook.md carries the phase plan (M0–M8) and the gate for each.
+ask. docs/build-playbook.md carries the phase plan (M0–M9) and the gate for each.
 
 **Current authorised post-MVP work:** M0–M3 have passed their gates. M4 added the
 configuration validator in architecture §9, its source-metadata companion gate, and the
@@ -29,6 +29,9 @@ well as on final approval and rejection, and the source gate enforces it. The en
 record that is already in an approval process, in preview and submit, without writing a log row.
 It supersedes "recall handling" on the out-of-scope list for the templates' recall actions alone;
 recall from the framework itself (an action, an API, Flow recall) stays out of scope.
+M9 builds the full §4.1 grammar, superseding the MVP GRAMMAR section below: every construct it
+lists as not supported yet, plus the word forms AND / OR / NOT. It is confined to the evaluator
+package and changes no object, field, engine class or LWC. DateTime fields and literals stay out.
 
 ## MVP SCOPE — build ONLY these
 - One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)
@@ -54,6 +57,9 @@ TRUE, FALSE, NULL, YYYY-MM-DD; bare TRUE as a complete expression (catch-all rul
 NOT supported yet: IN, NOT IN, CONTAINS, STARTS_WITH, NOT/!, TODAY(±n), multipicklist,
 3+ hop paths. Structure the lexer/parser/AST so these are additive later — do not
 special-case around their absence.
+**M9 (2026-10-08) built all of the above**, plus AND / OR / NOT, with paths up to four
+segments (three hops). Semantics: architecture §4.1 and §4.3, M9 notes. Still unsupported:
+DateTime fields and literals.
 
 ## Non-negotiable conventions
 - CMDT access ONLY via RuleProvider interface. Engine classes never query __mdt.

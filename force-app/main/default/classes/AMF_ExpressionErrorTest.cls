@@ -62,15 +62,20 @@ private class AMF_ExpressionErrorTest {
 
     @IsTest
     static void overDeepPaths() {
+        // Four segments -- three relationship hops -- is the limit (M9).
         run(
             new List<ErrorCase>{
                 new ErrorCase(
-                    'Account__r.Owner.Alias == \'x\'',
+                    'Account__r.Owner.Manager.Profile.Name == \'x\'',
                     0,
-                    'has 3 segments; the maximum is 2'
+                    'has 5 segments; the maximum is 4'
                 ),
-                new ErrorCase('Account__r.Owner.Profile.Name == \'x\'', 0, 'has 4 segments'),
-                new ErrorCase('Amount__c > 1 && Account__r.Owner.Alias == \'x\'', 17, 'has 3 segments')
+                new ErrorCase('Account__r.Owner.Manager.Manager.Profile.Name == \'x\'', 0, 'has 6 segments'),
+                new ErrorCase(
+                    'Amount__c > 1 && Account__r.Owner.Manager.Profile.Name == \'x\'',
+                    17,
+                    'has 5 segments'
+                )
             }
         );
     }
@@ -141,23 +146,105 @@ private class AMF_ExpressionErrorTest {
         );
     }
 
+    // -------------------------------------------------- M9's grammar, misused
+
     @IsTest
-    static void deferredGrammarFailsLoudlyRatherThanSilently() {
-        // 13.3 defers IN, CONTAINS, STARTS_WITH, NOT and TODAY(n). None of them
-        // is special-cased anywhere -- they simply are not in the keyword table,
-        // so they arrive here as ordinary identifiers and fail as such. What
-        // matters for 4.6 is that each one is a positioned error and not a
-        // silent false, and each will start working the day it is added.
+    static void malformedInLists() {
         run(
             new List<ErrorCase>{
-                new ErrorCase('Region__c IN (\'APAC\', \'EMEA\')', 10, 'Unexpected token \'IN\''),
-                new ErrorCase('Region__c CONTAINS \'AP\'', 10, 'Unexpected token \'CONTAINS\''),
-                // NOT is not a keyword yet, so it arrives as an ordinary
-                // identifier and the failure lands on the token after it.
-                new ErrorCase('NOT Matrix_Submission__c', 4, 'Unexpected token \'Matrix_Submission__c\''),
-                new ErrorCase('!Matrix_Submission__c', 0, 'Unexpected character \'!\''),
-                new ErrorCase('TRUE AND FALSE', 5, 'Unexpected token \'AND\''),
-                new ErrorCase('TRUE OR FALSE', 5, 'Unexpected token \'OR\'')
+                new ErrorCase('Region__c IN ()', 14, 'An IN list must name at least one value'),
+                new ErrorCase('Region__c IN \'APAC\'', 13, 'Expected \'(\' after \'IN\''),
+                new ErrorCase('Region__c IN (\'APAC\',)', 21, 'Unexpected token \')\''),
+                new ErrorCase('Region__c IN (\'APAC\' \'EMEA\')', 21, 'Expected \',\' or \')\''),
+                new ErrorCase('Region__c NOT \'APAC\'', 14, 'Expected \'IN\' after \'NOT\''),
+                new ErrorCase('Region__c NOT IN (\'APAC\'', 24, 'Expected \',\' or \')\' but found end of expression'),
+                new ErrorCase(
+                    'Region__c IN (\'APAC\', Risk_Level__c)',
+                    22,
+                    'may only hold literals, not field \'Risk_Level__c\''
+                )
+            }
+        );
+    }
+
+    @IsTest
+    static void inListsAreTypedAndNeverHoldNull() {
+        run(
+            new List<ErrorCase>{
+                // Every value must be the operand's type, and the error points at
+                // the value that is not.
+                new ErrorCase('Region__c IN (\'APAC\', 5)', 22, 'Cannot compare field \'Region__c\' (PICKLIST) with a numeric literal'),
+                new ErrorCase('Amount__c IN (100, \'x\')', 19, 'with a text literal'),
+                new ErrorCase('CloseDate IN (TODAY, \'x\')', 21, 'Cannot compare field \'CloseDate\' (DATE) with a text literal'),
+                // 4.3: IN with a null operand is false. NULL in the list would
+                // contradict that, so it is refused on either side.
+                new ErrorCase('Region__c IN (\'APAC\', NULL)', 22, 'cannot be used with NULL'),
+                new ErrorCase('NULL IN (\'APAC\')', 0, 'cannot be used with NULL'),
+                new ErrorCase('Region__c NOT IN (NULL)', 18, 'test for a blank field with \'== NULL\''),
+                // A set has no single value to look up.
+                new ErrorCase('Channel IN (\'Email\')', 8, 'Operator \'IN\' is not supported for multi-select picklist values')
+            }
+        );
+    }
+
+    @IsTest
+    static void containsAndStartsWithAreForText() {
+        run(
+            new List<ErrorCase>{
+                new ErrorCase('Amount__c CONTAINS \'1\'', 10, 'Operator \'CONTAINS\' is not supported for numeric values'),
+                new ErrorCase('Matrix_Submission__c STARTS_WITH \'T\'', 21, 'not supported for boolean values'),
+                new ErrorCase('CloseDate CONTAINS \'2026\'', 10, 'not supported for date values'),
+                new ErrorCase('Region__c CONTAINS 5', 10, 'Cannot compare field \'Region__c\' (PICKLIST) with a numeric literal'),
+                new ErrorCase('Region__c CONTAINS NULL', 19, 'cannot be used with NULL'),
+                new ErrorCase('NULL STARTS_WITH \'A\'', 0, 'Operator \'STARTS_WITH\' cannot be used with NULL'),
+                new ErrorCase('Region__c CONTAINS', 18, 'Unexpected token end of expression'),
+                new ErrorCase('Channel STARTS_WITH \'E\'', 8, 'Operator \'STARTS_WITH\' is not supported for multi-select picklist values')
+            }
+        );
+    }
+
+    @IsTest
+    static void multiSelectPicklistsCompareOnlyWithAValueList() {
+        run(
+            new List<ErrorCase>{
+                new ErrorCase('Channel > \'Email\'', 8, 'Operator \'>\' is not supported for multi-select picklist values'),
+                new ErrorCase('Channel == 5', 11, 'can only be compared with a text literal of values separated by \';\''),
+                new ErrorCase('Channel CONTAINS Name', 17, 'not field \'Name\''),
+                // The empty set: a blank multi-select picklist reads NULL instead.
+                new ErrorCase('Channel == \'\'', 11, 'names no values'),
+                new ErrorCase('Channel CONTAINS \' ; \'', 17, 'names no values'),
+                new ErrorCase('\'abc\' CONTAINS Channel', 6, 'Cannot compare a text literal with field \'Channel\' (MULTIPICKLIST)')
+            }
+        );
+    }
+
+    @IsTest
+    static void malformedToday() {
+        run(
+            new List<ErrorCase>{
+                new ErrorCase('CloseDate > TODAY(1.5)', 18, 'must be a whole number of days, not \'1.5\''),
+                new ErrorCase('CloseDate > TODAY(36501)', 18, 'must be at most 36500 days'),
+                new ErrorCase('CloseDate > TODAY(+)', 19, 'Expected a number of days in \'TODAY\''),
+                new ErrorCase('CloseDate > TODAY(7', 19, 'Expected \')\' but found end of expression'),
+                // TODAY is a date, and only a date.
+                new ErrorCase('Amount__c > TODAY', 10, 'Cannot compare field \'Amount__c\' (CURRENCY) with TODAY'),
+                new ErrorCase('TODAY', 0, 'TODAY is not a Boolean')
+            }
+        );
+    }
+
+    @IsTest
+    static void malformedNegationsAndLogicalWords() {
+        run(
+            new List<ErrorCase>{
+                new ErrorCase('NOT Amount__c', 4, 'field \'Amount__c\' (CURRENCY) is not a Boolean'),
+                new ErrorCase('!\'APAC\'', 1, 'a text literal is not a Boolean'),
+                new ErrorCase('NOT', 3, 'Unexpected token end of expression'),
+                new ErrorCase('Amount__c > 1 NOT', 14, 'Unexpected token \'NOT\''),
+                new ErrorCase('TRUE AND', 8, 'Unexpected token end of expression'),
+                new ErrorCase('TRUE OR OR FALSE', 8, 'Unexpected token \'OR\''),
+                // A word glued to another is an identifier, not an operator.
+                new ErrorCase('TRUE ANDFALSE', 5, 'Unexpected token \'ANDFALSE\'')
             }
         );
     }
@@ -188,9 +275,12 @@ private class AMF_ExpressionErrorTest {
         List<String> failures = new List<String>();
 
         for (ErrorCase testCase : cases) {
+            // Dates live on Opportunity and the multi-select picklist on
+            // QuickText, standard objects, rather than on fields added to the
+            // pilot object only for tests (arch doc 10).
             String objectApiName = testCase.expression.contains('CloseDate')
                 ? 'Opportunity'
-                : PURCHASE_REQUEST;
+                : testCase.expression.contains('Channel') ? 'QuickText' : PURCHASE_REQUEST;
 
             try {
                 AMF_ExprCompiler.compile(objectApiName, testCase.expression);

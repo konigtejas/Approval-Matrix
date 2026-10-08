@@ -2,12 +2,16 @@
  * Unit test for AMF_ExprCompiler: path resolution against the schema, the type
  * and operator compatibility table, and the field-path list 4.4 queries with.
  *
- * Architecture section: 4.2, 4.3, 4.4, 4.6, 13.3.
+ * Architecture section: 4.2, 4.3, 4.4, 4.6.
  *
  * The malformed-input cases that assert character positions live in
  * AMF_ExpressionErrorTest, which is the phase's stated error suite. What is
  * tested here is what the compiler PRODUCES on the happy path, and the
- * boundaries of the MVP type surface.
+ * boundaries of the supported type surface.
+ *
+ * The multi-select picklist cases compile against QuickText.Channel, a standard
+ * field, by name only: no test class references QuickText as a type, so the
+ * suite still deploys to an org without it (technical log M9.2).
  */
 @IsTest
 private class AMF_ExprCompilerTest {
@@ -104,6 +108,95 @@ private class AMF_ExprCompilerTest {
             AMF_ExprCompiler.compile('Account', 'NumberOfEmployees >= 10').fieldPaths.size(),
             'Integer must compile'
         );
+        // Multi-select picklist (M9): QuickText.Channel is a standard one.
+        Assert.areEqual(
+            1,
+            AMF_ExprCompiler.compile('QuickText', 'Channel CONTAINS \'Email\'').fieldPaths.size(),
+            'Multi-select picklist must compile'
+        );
+    }
+
+    @IsTest
+    static void resolvesThreeRelationshipHops() {
+        AMF_ExprCompiler.CompiledExpression compiled = AMF_ExprCompiler.compile(
+            PURCHASE_REQUEST,
+            'account__r.owner.profile.NAME == \'System Administrator\''
+        );
+
+        Assert.areEqual(
+            new List<String>{ 'Account__r.Owner.Profile.Name' },
+            compiled.fieldPaths,
+            'Four segments resolve, each canonicalised to its API-name spelling'
+        );
+        Assert.areEqual(
+            Profile.Name.getDescribe().getName(),
+            compiled.describeByPath.get('Account__r.Owner.Profile.Name').getName(),
+            'The describe recorded is the leaf, on the object three hops away'
+        );
+        Assert.areEqual(4, AMF_ExprCompiler.MAX_PATH_SEGMENTS, 'Three hops is the limit (technical log M9.2)');
+    }
+
+    @IsTest
+    static void typesTheNewComparisons() {
+        Map<String, AMF_Ast.ValueType> expected = new Map<String, AMF_Ast.ValueType>{
+            'Region__c IN (\'APAC\', \'EMEA\')' => AMF_Ast.ValueType.TEXT,
+            'Amount__c NOT IN (1, 2)' => AMF_Ast.ValueType.NUMERIC,
+            'Region__c CONTAINS \'PA\'' => AMF_Ast.ValueType.TEXT,
+            'Account__r.Name STARTS_WITH Region__c' => AMF_Ast.ValueType.TEXT
+        };
+
+        for (String expression : expected.keySet()) {
+            AMF_Ast.ComparisonNode root = (AMF_Ast.ComparisonNode) AMF_ExprCompiler.compile(PURCHASE_REQUEST, expression)
+                .root;
+            Assert.areEqual(expected.get(expression), root.operandType, 'Wrong operand type for ' + expression);
+        }
+
+        for (String expression : new List<String>{ 'Channel == \'Email;Phone\'', 'Channel CONTAINS \'Email\'' }) {
+            AMF_Ast.ComparisonNode root = (AMF_Ast.ComparisonNode) AMF_ExprCompiler.compile('QuickText', expression)
+                .root;
+            Assert.areEqual(
+                AMF_Ast.ValueType.MULTI_SELECT,
+                root.operandType,
+                'A multi-select comparison is a set comparison: ' + expression
+            );
+        }
+    }
+
+    @IsTest
+    static void listsAndNegationsContributeTheirOperandsPathsOnly() {
+        AMF_ExprCompiler.CompiledExpression compiled = AMF_ExprCompiler.compile(
+            PURCHASE_REQUEST,
+            'NOT (Amount__c > 1) && Region__c IN (\'APAC\') OR Account__r.Name CONTAINS \'x\''
+        );
+
+        Assert.areEqual(
+            new List<String>{ 'Amount__c', 'Region__c', 'Account__r.Name' },
+            compiled.fieldPaths,
+            'A list of literals reads no field; its operand does'
+        );
+    }
+
+    @IsTest
+    static void flagsAnExpressionThatReadsToday() {
+        Assert.isTrue(
+            AMF_ExprCompiler.compile('Opportunity', 'CloseDate > TODAY(-7)').usesToday,
+            'TODAY on the right of a comparison'
+        );
+        Assert.isTrue(
+            AMF_ExprCompiler.compile('Opportunity', 'Amount > 1 || CloseDate IN (2026-01-01, TODAY)').usesToday,
+            'TODAY inside an IN list'
+        );
+        Assert.isFalse(
+            AMF_ExprCompiler.compile('Opportunity', 'CloseDate > 2026-01-01').usesToday,
+            'A fixed date is not TODAY'
+        );
+
+        AMF_ExprCompiler.CompiledExpression compiled = AMF_ExprCompiler.compile('Opportunity', 'CloseDate > TODAY');
+        Assert.areEqual(
+            new List<String>{ 'CloseDate' },
+            compiled.fieldPaths,
+            'TODAY is not a field, so it adds nothing to the 4.4 query'
+        );
     }
 
     @IsTest
@@ -131,8 +224,8 @@ private class AMF_ExprCompilerTest {
 
     @IsTest
     static void rejectsAnUnsupportedFieldType() {
-        // DateTime is in 4.3's full table but not in 13.3's MVP subset, and
-        // Multipicklist is deferred outright. Either must name itself.
+        // DateTime is in 4.3's full table but has not been built (M9 left it
+        // out), so it must name itself rather than misbehave.
         try {
             AMF_ExprCompiler.compile(PURCHASE_REQUEST, 'CreatedDate > 2026-01-01');
             Assert.fail('A DateTime field is outside the MVP grammar and must not compile');

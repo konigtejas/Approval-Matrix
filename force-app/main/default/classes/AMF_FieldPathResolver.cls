@@ -21,8 +21,11 @@
  * decision away from the caller that is supposed to be making it.
  */
 public inherited sharing class AMF_FieldPathResolver {
-    /** Mirrors AMF_ExprCompiler's MVP limit (13.3); one relationship hop. */
-    private static final Integer MAX_PATH_SEGMENTS = 2;
+    /**
+     * The compiler's limit, not a copy of it: until M9 this class carried its own
+     * constant, and raising the depth would have meant finding both.
+     */
+    private static final Integer MAX_PATH_SEGMENTS = AMF_ExprCompiler.MAX_PATH_SEGMENTS;
 
     private static final Pattern IDENTIFIER_PATH = Pattern.compile(
         '(?i)^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)*$'

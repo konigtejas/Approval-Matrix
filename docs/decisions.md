@@ -8,6 +8,20 @@ Format: `YYYY-MM-DD — <what changed> — <why>`
 
 ---
 
+2026-10-08 — **A broken relationship path is *unknown*, under three-valued (Kleene) logic, not false** (§4.3, M9 note) — extends the 2026-08-18 entry below. "False" sufficed while expressions could only `&&` and `||` a comparison; `NOT` would turn it into a match (`NOT (Account__r.Name == NULL)` true for a record with no Account), the very presence check that entry forbids. `AND`/`OR`/`NOT` now treat it as SQL treats unknown, and a rule matches only on a definite true. No pre-M9 expression changes its result; a null *leaf* stays two-valued.
+
+2026-10-08 — §4.1's **"NOT binds tightest, then comparisons" is read through its productions**: `NOT`'s operand is a `unary_expr`, so `NOT a == b && c` is `(NOT (a == b)) && c`. The prose's literal reading, `(NOT a) == b`, would apply `NOT` to a non-Boolean.
+
+2026-10-08 — **`NULL` is refused in an `IN` comparison, in the list and as its operand** (§4.3, M9 note) — otherwise `Field__c IN ('A', NULL)` would be true for a blank field, contradicting §4.3's "`IN` with a null operand is false". `IN` is accepted for every single-valued type, not only the text types §4.3's table names, because it is defined as `==` against any one value.
+
+2026-10-08 — **Multipicklists compare only with a `;`-separated text literal** (§4.3, M9 note): `==`/`!=` an exact set match in any order and case, `CONTAINS` membership of every listed value. Field-to-field, `IN`, `STARTS_WITH` and ordering on a multipicklist are refused, and a literal naming no values is a compile error — §4.3 defines none of them, and a guess would be a silent mis-route.
+
+2026-10-08 — **`TODAY` is recorded in `Evaluated_Values__c` under the key `TODAY`** (§3.3, §4.3 M9 note) — a decision that depended on the date must say which date; `Submitted_At__c` alone cannot, because `TODAY` is the submitter's local date and their time zone is not recorded. `TODAY` is a reserved word, so the key cannot collide with a field path; the timeline and the preview show it as recorded.
+
+2026-10-08 — §4.4's **path cap is four segments (three hops), and "platform limit" was wrong** — §4.1's "max 4 hops" is read in §13.3's unit, where `Account__r.Region__c` is two hops; SOQL itself allows five relationship hops (six segments), measured in `amf-dev`. One constant, `AMF_ExprCompiler.MAX_PATH_SEGMENTS`, now shared by the resolver, raises it.
+
+2026-10-08 — **Supersedes the 2026-08-18 word-forms entry below:** `AND`, `OR` and `NOT` are accepted alongside `&&`, `||` and `!`, as §4.1 specifies — M9 authorised the full grammar, and the entry's own premise was that enabling them was "two entries and no parser change".
+
 2026-10-08 — §5.2 **corrected: recall actions re-arm the guard too.** It named only the final approval and rejection actions, and both templates were built to it, so a recalled request kept `Matrix_Submission__c = true` and a submission bypassing the engine passed entry criteria unlogged (technical log M7.8). Both templates now clear the guard on recall, and the source gate fails any template that does not clear it on all three ways out of a process.
 
 2026-10-08 — A **record already in an approval process is refused for the whole call, before step 1, with no decision log row** (§6.1, M8 note) — chosen by the user over a new `Outcome__c` value: nothing was decided, as with a record the caller cannot read, and a new value would change a restricted picklist that the lock rule and every report rely on. The check runs after authorisation, so it reveals nothing about a record the caller cannot read. Like the read-access check it condemns the whole call; per-record handling belongs with bulk entry points, if they are built.

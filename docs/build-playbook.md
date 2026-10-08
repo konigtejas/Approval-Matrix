@@ -424,6 +424,46 @@ read the record is told about access, not about the approval.
 
 ---
 
+### M9 — Full expression grammar (post-MVP)
+
+**Goal:** let an admin write every condition §4.1 describes, so routing that needs a list, a
+negation, a text match, a multi-select picklist, a relative date or a deeper relationship is
+configuration and not a new rule per value.
+
+**Build:** §13.3's deferred list, additively, inside the evaluator package only:
+- `NOT` / `!`, and the word forms `AND` / `OR` / `NOT` (§4.1).
+- `IN` / `NOT IN` over a list of literals; `CONTAINS`, `STARTS_WITH` on text.
+- Multi-select picklists: `==` / `!=` as set equality and `CONTAINS` as membership, against a
+  `';'`-separated text literal (§4.3's M9 note).
+- `TODAY` and `TODAY(±n)`, resolved once per transaction to the submitter's local date and
+  recorded under `TODAY` in `Evaluated_Values__c`.
+- Field paths up to four segments (three hops), one constant shared by compiler and resolver.
+- A broken relationship path becomes *unknown* under three-valued logic, so `NOT` can never turn
+  an unresolvable path into a match.
+
+New AST nodes: `UnaryNode`, `ListNode`, `TodayNode`; new value type `MULTI_SELECT`. No objects,
+fields, metadata, permissions, LWCs or engine classes change. Rules are still org configuration:
+no shipped rule changes.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. Deploy the package.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev` — the shipped matrix still compiles.
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human -c` — all green; every evaluator
+   class at ≥ 95%.
+5. Jest, as in M5 — unchanged and green (no LWC change).
+6. **Optional, manual:** give a throwaway rule (inactive by default) a condition using the new
+   grammar, activate it in the org, and preview a record: the modal shows the condition and, for a
+   `TODAY` rule, the date it used. Deactivate it afterwards.
+
+Acceptance: table-driven cases for every new operator against every type it accepts, the null
+rules for each, `NOT` over a broken path at every hop, and `TODAY` pinned and unpinned; a
+malformed-input case with its character position for every new way to write a bad expression;
+mutation-checked that the three-valued logic and set membership are what the tests catch.
+
+---
+
 ## Part 4 — When Things Go Wrong
 
 - **Claude Code invents schema** (a field not in §3): stop it, point at the doc, restate

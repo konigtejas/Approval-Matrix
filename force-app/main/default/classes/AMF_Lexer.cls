@@ -2,22 +2,19 @@
  * Expression text to token stream, tracking the character position of every
  * token so later stages can point at the character that broke (4.2).
  *
- * Architecture section: 4.1 (grammar), 4.2 (pipeline), 13.3 (reduced MVP set).
+ * Architecture section: 4.1 (grammar), 4.2 (pipeline).
  *
  * The lexer knows nothing about grammar -- it does not know that '&&' joins two
- * comparisons, only that '&&' is one token. That separation is what keeps the
- * deferred 13.3 constructs additive: IN, CONTAINS, STARTS_WITH and NOT become
- * entries in KEYWORDS, and TODAY(n) reuses the identifier and paren tokens that
- * already exist. Nothing here is written around their absence -- a word that is
- * not in KEYWORDS is simply an identifier, which is what makes the table the
- * only thing a later phase touches.
+ * comparisons, only that '&&' is one token. That separation is what kept 13.3's
+ * deferred constructs additive: M9 added IN, CONTAINS, STARTS_WITH, NOT and TODAY
+ * as entries in KEYWORDS, plus the '!' and '+' symbols, and nothing that existed
+ * changed. A word that is not in KEYWORDS is simply an identifier.
  *
- * Word forms of the logical operators are deliberately NOT accepted in the MVP.
- * Arch doc 4.1 allows an admin to write AND for '&&', but 13.3 and CLAUDE.md
- * both list only the symbols, and CLAUDE.md is the override document
- * (docs/decisions.md, 2026-08-18). 'A AND B' therefore fails at the parser with a
- * positioned error rather than routing on a half-read expression, and enabling
- * the word forms later is two entries in KEYWORDS.
+ * Both spellings of the logical operators are accepted (4.1): AND and '&&' lex to
+ * the same LOGICAL_AND, OR and '||' to LOGICAL_OR, NOT and '!' to LOGICAL_NOT. The
+ * token keeps the raw spelling for error messages; the parser never needs it.
+ * Keywords are case-insensitive. They are also reserved: a field could not be
+ * named AND or TODAY and still be referenced, which no standard field is.
  */
 public class AMF_Lexer {
     /**
@@ -34,6 +31,11 @@ public class AMF_Lexer {
         IDENT,
         LOGICAL_AND,
         LOGICAL_OR,
+        LOGICAL_NOT,
+        IN_KEYWORD,
+        CONTAINS_KEYWORD,
+        STARTS_WITH_KEYWORD,
+        TODAY_KEYWORD,
         EQ,
         NEQ,
         GT,
@@ -45,6 +47,7 @@ public class AMF_Lexer {
         DOT,
         COMMA,
         MINUS,
+        PLUS,
         END_OF_INPUT
     }
 
@@ -79,12 +82,20 @@ public class AMF_Lexer {
     /**
      * Case-insensitive reserved words. Everything else that looks like a word is
      * an identifier -- see the class header on why this table is the extension
-     * point for the deferred grammar.
+     * point for the grammar. NOT IN is two tokens, NOT then IN; the parser joins
+     * them.
      */
     private static final Map<String, TokenType> KEYWORDS = new Map<String, TokenType>{
         'TRUE' => TokenType.TRUE_LITERAL,
         'FALSE' => TokenType.FALSE_LITERAL,
-        'NULL' => TokenType.NULL_LITERAL
+        'NULL' => TokenType.NULL_LITERAL,
+        'AND' => TokenType.LOGICAL_AND,
+        'OR' => TokenType.LOGICAL_OR,
+        'NOT' => TokenType.LOGICAL_NOT,
+        'IN' => TokenType.IN_KEYWORD,
+        'CONTAINS' => TokenType.CONTAINS_KEYWORD,
+        'STARTS_WITH' => TokenType.STARTS_WITH_KEYWORD,
+        'TODAY' => TokenType.TODAY_KEYWORD
     };
 
     private static final String DIGITS = '0123456789';
@@ -219,7 +230,8 @@ public class AMF_Lexer {
         if (keyword == TokenType.FALSE_LITERAL) {
             return new Token(keyword, text, false, start);
         }
-        if (keyword == TokenType.NULL_LITERAL) {
+        if (keyword != null) {
+            // NULL and the operator words carry no value.
             return new Token(keyword, text, null, start);
         }
         return new Token(TokenType.IDENT, text, null, start);
@@ -307,6 +319,13 @@ public class AMF_Lexer {
         }
         if (c == '-') {
             return new Token(TokenType.MINUS, c, null, start);
+        }
+        if (c == '+') {
+            return new Token(TokenType.PLUS, c, null, start);
+        }
+        // Only reached when '!' does not start '!=', which is matched above.
+        if (c == '!') {
+            return new Token(TokenType.LOGICAL_NOT, c, null, start);
         }
 
         throw AMF_ExpressionException.at('Unexpected character ' + quote(c), start);

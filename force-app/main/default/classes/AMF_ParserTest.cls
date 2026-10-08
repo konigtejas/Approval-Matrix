@@ -112,8 +112,8 @@ private class AMF_ParserTest {
 
     @IsTest
     static void deepPathsParseAndAreLeftForTheCompilerToReject() {
-        // The parser is a pure syntax machine: a three-segment path is
-        // grammatical, and 13.3's two-segment cap is a schema rule.
+        // The parser is a pure syntax machine: a path of any depth is
+        // grammatical, and the segment cap is a schema rule.
         AMF_Ast.FieldNode node = (AMF_Ast.FieldNode) ((AMF_Ast.ComparisonNode) AMF_Parser.parse(
                 'Account__r.Owner.Alias == \'x\''
             ))
@@ -164,20 +164,128 @@ private class AMF_ParserTest {
         Assert.isTrue(node.right instanceof AMF_Ast.FieldNode, 'Field on the right is grammatical');
     }
 
-    // -------------------------------------------------------- syntax failures
+    // ------------------------------------------------------------ M9 grammar
 
     @IsTest
-    static void wordFormsOfTheLogicalOperatorsAreNotAcceptedInTheMvp() {
-        // 4.1 allows AND/OR; 13.3 and CLAUDE.md list only the symbols, and
-        // CLAUDE.md wins (docs/decisions.md 2026-08-18). The point of this test
-        // is that the rejection is LOUD and positioned, not that it is silent.
-        try {
-            AMF_Parser.parse('TRUE AND FALSE');
-            Assert.fail('AND is not part of the MVP grammar');
-        } catch (AMF_ExpressionException e) {
-            Assert.areEqual(5, e.position, 'And it must point at the word it could not use');
+    static void wordFormsBuildTheSameTreeAsTheSymbols() {
+        // 4.1: admins may write AND, developers &&. Same precedence, same tree,
+        // and the canonical operator whichever was typed.
+        AMF_Ast.BinaryNode root = (AMF_Ast.BinaryNode) AMF_Parser.parse('TRUE OR FALSE AND FALSE');
+
+        Assert.areEqual('||', root.operator, 'OR is the loosest-binding operator, as || is');
+        Assert.areEqual('&&', ((AMF_Ast.BinaryNode) root.right).operator, 'AND groups first, as && does');
+        Assert.areEqual(5, root.position, 'Positioned at the word');
+
+        AMF_Ast.BinaryNode mixed = (AMF_Ast.BinaryNode) AMF_Parser.parse('TRUE and FALSE || TRUE');
+        Assert.areEqual('||', mixed.operator, 'The two spellings mix freely');
+        Assert.areEqual('&&', ((AMF_Ast.BinaryNode) mixed.left).operator, 'Lower-case words are keywords too');
+    }
+
+    @IsTest
+    static void notIsAUnaryNodeInEitherSpelling() {
+        for (String expression : new List<String>{ 'NOT TRUE', 'not TRUE', '!TRUE' }) {
+            AMF_Ast.UnaryNode node = (AMF_Ast.UnaryNode) AMF_Parser.parse(expression);
+            Assert.areEqual('!', node.operator, 'One canonical operator for ' + expression);
+            Assert.areEqual(0, node.position, 'Positioned at the NOT');
+            Assert.areEqual(true, ((AMF_Ast.LiteralNode) node.operand).value, 'Its operand is the TRUE');
         }
     }
+
+    @IsTest
+    static void notTakesAWholeComparisonAndBindsTighterThanAnd() {
+        // 4.1's unary_expr: NOT's operand is a unary, which can be a whole
+        // comparison. So NOT a == b && c is (NOT (a == b)) && c.
+        AMF_Ast.BinaryNode root = (AMF_Ast.BinaryNode) AMF_Parser.parse(
+            'NOT Region__c == \'APAC\' && Amount__c > 1'
+        );
+
+        Assert.areEqual('&&', root.operator, 'NOT binds tighter than &&');
+        AMF_Ast.UnaryNode negation = (AMF_Ast.UnaryNode) root.left;
+        Assert.isTrue(negation.operand instanceof AMF_Ast.ComparisonNode, 'NOT negates the whole comparison');
+        Assert.areEqual('==', ((AMF_Ast.ComparisonNode) negation.operand).operator, 'The comparison is intact');
+        Assert.isTrue(root.right instanceof AMF_Ast.ComparisonNode, 'And the && keeps its right operand');
+    }
+
+    @IsTest
+    static void negationsNestAndApplyToGroups() {
+        AMF_Ast.UnaryNode twice = (AMF_Ast.UnaryNode) AMF_Parser.parse('!!TRUE');
+        Assert.isTrue(twice.operand instanceof AMF_Ast.UnaryNode, 'A double negation is two nodes');
+
+        AMF_Ast.UnaryNode grouped = (AMF_Ast.UnaryNode) AMF_Parser.parse('NOT (TRUE || FALSE)');
+        Assert.areEqual('||', ((AMF_Ast.BinaryNode) grouped.operand).operator, 'NOT applies to the whole group');
+
+        AMF_Ast.ComparisonNode notEquals = (AMF_Ast.ComparisonNode) AMF_Parser.parse('Region__c != \'x\'');
+        Assert.areEqual('!=', notEquals.operator, 'The ! of != is still part of the comparison');
+    }
+
+    @IsTest
+    static void inBuildsAComparisonOverAList() {
+        AMF_Ast.ComparisonNode node = (AMF_Ast.ComparisonNode) AMF_Parser.parse(
+            'Region__c IN (\'APAC\', \'EMEA\', -5, TODAY)'
+        );
+
+        Assert.areEqual('IN', node.operator, 'Canonical operator');
+        Assert.areEqual(10, node.position, 'Positioned at IN');
+        AMF_Ast.ListNode values = (AMF_Ast.ListNode) node.right;
+        Assert.areEqual(13, values.position, 'The list is positioned at its opening parenthesis');
+        Assert.areEqual(4, values.items.size(), 'Every value is an item');
+        Assert.areEqual('EMEA', ((AMF_Ast.LiteralNode) values.items[1]).value, 'Items are literals, in order');
+        Assert.areEqual(-5, ((AMF_Ast.LiteralNode) values.items[2]).value, 'A negative number folds as elsewhere');
+        Assert.isTrue(values.items[3] instanceof AMF_Ast.TodayNode, 'TODAY is a literal too');
+    }
+
+    @IsTest
+    static void operatorWordsAreCanonicalisedWhateverTheirCase() {
+        // Apex switch on a String is case-sensitive (technical log M9.3), so the
+        // evaluator must never see 'in' or 'Contains'.
+        Map<String, String> expected = new Map<String, String>{
+            'Region__c in (\'x\')' => 'IN',
+            'Region__c NOT IN (\'x\')' => 'NOT IN',
+            'Region__c not in (\'x\')' => 'NOT IN',
+            'Name CONTAINS \'x\'' => 'CONTAINS',
+            'Name contains \'x\'' => 'CONTAINS',
+            'Name Starts_With \'x\'' => 'STARTS_WITH'
+        };
+
+        for (String expression : expected.keySet()) {
+            AMF_Ast.ComparisonNode node = (AMF_Ast.ComparisonNode) AMF_Parser.parse(expression);
+            Assert.areEqual(expected.get(expression), node.operator, 'Wrong operator for ' + expression);
+        }
+
+        AMF_Ast.ComparisonNode notIn = (AMF_Ast.ComparisonNode) AMF_Parser.parse('Region__c NOT IN (\'x\')');
+        Assert.areEqual(10, notIn.position, 'NOT IN is positioned at its NOT');
+        Assert.isTrue(notIn.right instanceof AMF_Ast.ListNode, 'And takes a list, as IN does');
+    }
+
+    @IsTest
+    static void containsTakesAnyOperandOnItsRight() {
+        AMF_Ast.ComparisonNode node = (AMF_Ast.ComparisonNode) AMF_Parser.parse('Name CONTAINS Account__r.Name');
+        Assert.isTrue(node.right instanceof AMF_Ast.FieldNode, 'A field may be the text searched for');
+    }
+
+    @IsTest
+    static void todayTakesAnOptionalSignedWholeOffset() {
+        Map<String, Integer> expected = new Map<String, Integer>{
+            'CloseDate > TODAY' => 0,
+            'CloseDate > TODAY()' => 0,
+            'CloseDate > TODAY(7)' => 7,
+            'CloseDate > TODAY(+7)' => 7,
+            'CloseDate > TODAY(-7)' => -7,
+            'CloseDate > today( - 30 )' => -30,
+            'CloseDate > TODAY(36500)' => 36500,
+            'CloseDate > TODAY(-36500)' => -36500
+        };
+
+        for (String expression : expected.keySet()) {
+            AMF_Ast.TodayNode today = (AMF_Ast.TodayNode) ((AMF_Ast.ComparisonNode) AMF_Parser.parse(expression))
+                .right;
+            Assert.areEqual(expected.get(expression), today.offsetDays, 'Wrong offset for ' + expression);
+            Assert.areEqual(12, today.position, 'Positioned at TODAY in ' + expression);
+            Assert.areEqual(AMF_Ast.ValueType.DATE_VALUE, today.valueType, 'TODAY is a date');
+        }
+    }
+
+    // -------------------------------------------------------- syntax failures
 
     @IsTest
     static void emptyExpressionsAreRejectedAtPositionZero() {
@@ -209,7 +317,29 @@ private class AMF_ParserTest {
             // Two operands with nothing joining them.
             'Amount__c 100' => 10,
             // A comparison operator where an operand belongs.
-            '> 100' => 0
+            '> 100' => 0,
+            // IN lists: missing, empty, unclosed, unseparated, trailing comma,
+            // and a field where only literals belong.
+            'Region__c IN' => 12,
+            'Region__c IN ()' => 14,
+            'Region__c IN (\'A\'' => 17,
+            'Region__c IN (\'A\' \'B\')' => 18,
+            'Region__c IN (\'A\',)' => 18,
+            'Region__c IN (Amount__c)' => 14,
+            // NOT after an operand can only begin NOT IN.
+            'Region__c NOT' => 13,
+            'Region__c NOT == \'A\'' => 14,
+            // A dangling NOT or logical word.
+            'NOT' => 3,
+            '!' => 1,
+            'TRUE AND' => 8,
+            'Name CONTAINS' => 13,
+            // TODAY: no number, a fraction, too far, unclosed, a bare sign.
+            'TODAY(' => 6,
+            'TODAY(1.5)' => 6,
+            'TODAY(36501)' => 6,
+            'TODAY(36500' => 11,
+            'TODAY(+)' => 7
         };
 
         for (String expression : expected.keySet()) {

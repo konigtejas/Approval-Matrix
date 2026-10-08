@@ -150,6 +150,21 @@ Keywords are case-insensitive. Both symbol and word forms of and/or/not are acce
 
 Operator precedence: `NOT` binds tightest, then comparisons, then `AND`, then `OR`. `a || b && c` parses as `a || (b && c)`.
 
+**M9 implementation (2026-10-08).** The whole grammar above is built except `DATETIME` literals,
+which wait on DateTime fields (§4.3). Three readings were settled while building it
+(`docs/decisions.md`):
+
+- **`NOT` takes a whole comparison.** The productions make `NOT`'s operand a `unary_expr`, which
+  can be a comparison, so `NOT a == b && c` is `(NOT (a == b)) && c`. "`NOT` binds tightest" means
+  tightest of the logical operators; `(NOT a) == b` would apply `NOT` to a non-Boolean.
+- **`TODAY()`** with empty parentheses is accepted as `TODAY`. The offset is a whole number of days,
+  at most 36,500 either way.
+- **`NOT IN` is exactly `NOT (… IN …)`**, and `IN` is `==` against any one value of the list.
+
+Keywords are reserved: `AND`, `OR`, `NOT`, `IN`, `CONTAINS`, `STARTS_WITH`, `TODAY`, `TRUE`, `FALSE`,
+`NULL`. The parser emits each operator in one canonical spelling (`&&`, `||`, `!`, `IN`, `NOT IN`,
+`CONTAINS`, `STARTS_WITH`), because Apex `switch on` a String is case-sensitive.
+
 ### 4.2 Pipeline
 
 ```
@@ -179,9 +194,36 @@ Record + CompiledExpression ──► AMF_Evaluator ──► Boolean + Map<Stri
 
 **Null rules**, stated once and tested exhaustively: `null == null` is true; `null` against `>`, `>=`, `<`, `<=` is false and never throws; `IN` with a null operand is false; null anywhere in a relationship path makes the comparison false. Presence checks are written `Field__c == NULL` / `Field__c != NULL`.
 
+**M9 implementation (2026-10-08).** What the table leaves open, settled (`docs/decisions.md`):
+
+| Construct | Semantics as built |
+|---|---|
+| `IN` / `NOT IN` | Every single-valued type: numeric, date, Boolean, text. `NULL` is refused in the list and as the operand, which keeps "`IN` with a null operand is false" exact; `NOT IN` of a null operand is therefore true |
+| `CONTAINS` / `STARTS_WITH` | Text only, case-insensitive like text equality; either side may be a field. A null on either side is false |
+| Multipicklist | Compared only with a text literal listing values separated by `;`. `==` / `!=` are an exact set match, in any order and case; `CONTAINS 'A;B'` means every listed value is selected (membership, never substring). A literal naming no values is a compile error: a blank multipicklist reads `NULL`. `IN`, `STARTS_WITH` and ordering are refused |
+| `TODAY` / `TODAY(±n)` | Compared with Date fields. Resolved once per transaction to the running user's local date (`Date.today()`), the submitter's for a submission. The date it resolved to is recorded in `Evaluated_Values__c` under the key `TODAY`, because the decision depended on it (§3.3) |
+| DateTime | **Still not supported**; a DateTime field is a compile error naming its type |
+
+**A broken relationship path is *unknown*, not false.** Before `NOT` the two were indistinguishable.
+With it, `NOT (Account__r.Name == NULL)` would be true for a record with no Account, which is the
+silent presence check the relationship-path rule exists to forbid. So a comparison over a broken
+path is unknown, and `AND`, `OR` and `NOT` follow three-valued (Kleene) logic, as in SQL. A rule
+matches only when its expression is definitely true. Every expression written before M9 evaluates
+exactly as it did, and the unknown is confined to broken paths: a null *leaf* value is an
+ordinary value under the rules above.
+
 ### 4.4 Field path resolution
 
 `AMF_FieldPathResolver` collects the union of every field path across all rules for an object and builds **one** dynamic SOQL query covering them, executed once per object per transaction. Relationship traversal uses `__r` dot notation, capped at 4 hops (platform limit), enforced at compile time.
+
+**M9 implementation (2026-10-08).** The cap is **four segments**: a field reached through three
+relationship hops, such as `Account__r.Owner.Profile.Name`. That reads "4 hops" in the unit §13.3
+uses, where `Account__r.Region__c` is two. "Platform limit" was wrong: SOQL allows **five**
+relationship hops (six segments) and refuses a sixth ("cannot query foreign key relationships
+more than 5 levels away from the root SObject", measured in `amf-dev`). The cap is one constant,
+`AMF_ExprCompiler.MAX_PATH_SEGMENTS`, which the resolver also enforces. A separate platform limit
+then matters: a query may name at most 55 child-to-parent relationships, across the union of an
+object's rules.
 
 ### 4.5 Caching
 
@@ -496,6 +538,10 @@ Deferred: `IN`, `NOT IN`, `CONTAINS`, `STARTS_WITH`, `NOT`/`!`, `TODAY(±n)`, mu
 
 The lexer, parser and AST must be structured so these are **additive** — no special-casing around their absence.
 
+**Delivered in M9 (2026-10-08)**, additively as required: every deferred item above, plus the word
+forms `AND` / `OR` / `NOT`, which the MVP had also withheld. §4.1 and §4.3 carry the M9 notes.
+DateTime remains unsupported.
+
 ### 13.4 Phases
 
 | Phase | Content | Gate |
@@ -509,6 +555,7 @@ The lexer, parser and AST must be structured so these are **additive** — no sp
 | **M6** | Post-MVP Flow approvals technical spike — research only, artefacts under `spikes/` | Round 1's open questions answered or explicitly still open, every claim labelled, product untouched (all Apex tests green) |
 | **M7** | Post-MVP §8 decision timeline LWC, Classic only, on the governed record's page | All Apex and Jest tests green; in the real UI the timeline explains a submitted, a blocked and a pending record, and shows a new submission without a page reload |
 | **M8** | Post-MVP guard integrity: recall clears the guard (§5.2); a record already in approval is refused (§6.1) | Source gate fails a template that does not clear the guard on approval, rejection and recall; all Apex and Jest tests green; in the real UI a recall unticks `Matrix_Submission__c`, and submitting a pending record is refused by name with no log row |
+| **M9** | Post-MVP full §4.1 grammar: `NOT`/`!`, word forms, `IN`/`NOT IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, paths to three hops | Every evaluator class at ≥ 95% with zero org-data dependence; each construct in the table-driven and malformed-input suites; the shipped matrix still validates; all Apex and Jest tests green |
 
 ### 13.5 Repository state
 

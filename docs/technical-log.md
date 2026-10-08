@@ -104,6 +104,7 @@ session needs. Update the row when a phase completes.
 | **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `972352a` (mislabelled, see M6.6) |
 | **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Complete** — org gate passed 2026-10-08 (M7.7): deploy, post-deploy check, RunLocalTests and every manual timeline check; 57/57 Jest. The gate's recall check confirmed that a Classic recall leaves the guard set (M7.8), owed to M8 | `25e0b2d` + M7.7 |
 | **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Org gate steps 1–5 passed** 2026-10-08 (M8.7): first deploy refused on a 329-character description, fixed; 197/197 Apex; PR-00000010 repaired. **Step 6, the manual UI check, is owed** | `caeafb3` + M8.7 |
+| **M9** | Full expression grammar — `NOT`, word forms, `IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, three-hop paths | **Complete** — gate run in `amf-dev` 2026-10-08: 232/232 Apex, evaluator classes all 100%, mutation-checked, 57/57 Jest, matrix valid; optional manual UI check not run | M9 commit |
 
 ### Superseded — the v1.0 plan
 
@@ -2966,3 +2967,178 @@ ID, status, step-name and pending assertions stand; name mapping remains covered
 `AMF_DecisionTimelineServiceTest` with in-memory instances. No production code changed.
 
 **Result.** 194/194 on amf-dev before the M8 pull.
+
+---
+
+## Phase M9 — Full expression grammar
+
+**Date:** 2026-10-08 · **Commit:** recorded in the follow-up commit · **Status:** complete. Built,
+deployed and gated against `amf-dev` in one session: 232/232 Apex, all eight evaluator classes at
+100%, 57/57 Jest, the shipped matrix still valid.
+**Playbook goal:** let an admin write every condition §4.1 describes.
+
+The user authorised M9 on 2026-10-08, after choosing it from the next-steps review ("start M9")
+as the grammar phase. `CLAUDE.md` now records it: §13.3's whole deferred list plus the word forms,
+confined to the evaluator package. DateTime stays out, being on neither list.
+
+### M9.1 File-level changes
+
+| File | Change | Notes |
+|---|---|---|
+| `classes/AMF_Ast.cls` | **modified** | `UnaryNode`, `ListNode`, `TodayNode`; `ValueType.MULTI_SELECT` |
+| `classes/AMF_Lexer.cls` | **modified** | keywords `AND OR NOT IN CONTAINS STARTS_WITH TODAY`; symbols `!` (when not `!=`) and `+` |
+| `classes/AMF_Parser.cls` | **modified** | `unary`, `[NOT] IN list`, `CONTAINS`, `STARTS_WITH`, `TODAY[(±n)]`; canonical operator spellings |
+| `classes/AMF_ExprCompiler.cls` | **modified** | the operator/type table for the new operators; multipicklist; `usesToday`; `MAX_PATH_SEGMENTS` 2 → 4, now public |
+| `classes/AMF_Evaluator.cls` | **modified** | three-valued logic for broken paths; `IN`, `CONTAINS`, `STARTS_WITH`, set comparison, `TODAY`; `valueSet`; `TODAY` recorded |
+| `classes/AMF_FieldPathResolver.cls` | **modified** | uses the compiler's constant instead of its own copy |
+| `classes/AMF_LexerTest.cls` | **modified** | +4 tests; `!` is no longer an unexpected character |
+| `classes/AMF_ParserTest.cls` | **modified** | the word-forms rejection test inverted; +7 tests; 17 new structural faults |
+| `classes/AMF_ExprCompilerTest.cls` | **modified** | +4 tests; multipicklist accepted |
+| `classes/AMF_EvaluatorTest.cls` | **modified** | +15 tests: every new operator, Kleene tables, three hops, `TODAY`, hand-built guards |
+| `classes/AMF_ExpressionErrorTest.cls` | **modified** | the deferred-grammar test replaced by six positioned-error tables (41 cases); depths moved to 5 and 6 segments |
+| `classes/AMF_FieldPathResolverTest.cls` | **modified** | depth limit 4; a real three-hop query |
+| `CLAUDE.md`, `docs/architecture.md` (§4.1, §4.3, §4.4, §13.3 notes, §13.4 row), `docs/build-playbook.md` (M9), `docs/decisions.md` (7 entries) | **modified** | authorisation, semantics, gate, decisions |
+
+No object, field, layout, permission set, CMDT row, LWC or engine class changed. `AMF_ApprovalMatrixService`,
+`AMF_ConfigValidator`, the timeline and the preview needed nothing: they reach the grammar only
+through `AMF_ExprCache`, `compile()` and the evaluated-values JSON.
+
+### M9.2 Design choices worth recording
+
+**(a) Unknown, not false, for a broken path.** M2 made a comparison over an unresolvable path
+false, and docs/decisions.md 2026-08-18 says why: such a path must route nothing. Without `NOT`,
+false and unknown cannot be told apart, because `&&` and `||` treat them alike for whether the whole
+is true. `NOT` breaks that: `NOT (Account__r.Name == NULL)` would match a record with no Account.
+So the evaluator returns `null` for such a comparison (and for a bare Checkbox reached through one).
+`&&`, `||` and `!` follow Kleene's tables, and `evaluate()` matches only on `== true`. Short-circuiting
+is kept, on the value that decides the result. No pre-M9 expression changes its result. The
+proof is that every pre-M9 test passes unchanged; it was not argued from first principles alone.
+
+**(b) Null leaves stay two-valued.** Only a *broken path* is unknown. A null field value is still
+an ordinary value under 4.3's rules, so `NOT (Amount__c > 100)` is true for a blank amount, exactly as
+`Amount__c != 100` already was. `aNullLeafIsAnOrdinaryValueUnderNegation` pins the difference.
+
+**(c) NULL is refused in IN comparisons.** 4.3 says `IN` with a null operand is false. Defining `IN`
+as `==` against any one value would make `Region__c IN ('A', NULL)` true for a blank region. Refusing
+`NULL` on either side, with a message pointing at `== NULL`, keeps the rule exact and the
+definition simple. `IN` is otherwise accepted for every single-valued type, which 4.3's table does
+not forbid.
+
+**(d) Multipicklists compare only with a value-list literal.** 4.3 gives `CONTAINS` = membership and
+`==` = exact set match, and nothing else. The literal is split on `;`, trimmed, de-blanked and
+lower-cased, the same as the stored value (`AMF_Evaluator.valueSet`, which the compiler reuses to
+refuse a literal naming nothing). `CONTAINS 'A;B'` means both are selected, as SOQL's `INCLUDES('A;B')`
+does. Membership is never substring: `Channel CONTAINS 'Mail'` does not match `Email`.
+
+**(e) TODAY is fixed per transaction, the submitter's date, and recorded.** `Date.today()` is the
+running user's local date, and the engine runs as the submitter. It is read once and cached
+statically, so all rules and records in one submission agree. It is written into the evaluated
+values under `TODAY`: the log otherwise records the moment (`Submitted_At__c`) but not the time zone
+that turned it into a date. `TodayNode` is a node, not a literal, because a compiled expression is
+cached and must not carry a date. `@TestVisible todayOverride` pins it for tests.
+
+**(f) Canonical operators.** The parser emits `&&`, `||`, `!`, `IN`, `NOT IN`, `CONTAINS`,
+`STARTS_WITH` however they were typed, because the evaluator's `switch on` a String is
+case-sensitive (M9.3b).
+
+**(g) Depth: four segments.** See M9.3a for the measurement. §4.1's "max 4 hops" is read in §13.3's
+unit, where `Account__r.Region__c` was "2 hops", so `Account__r.Owner.Profile.Name` is the deepest
+path. Under any reading of the doc this is the most conservative choice, and it is one constant away from the
+platform's five hops. The resolver now reads the compiler's constant: two copies would have to be
+found and raised together.
+
+**(h) Portable tests for the multipicklist.** No standard object every org has carries one.
+`QuickText.Channel` is in `amf-dev`, so the tests use it by name only (`Schema.getGlobalDescribe()`,
+`newSObject`, `put`), never as a type. The suite therefore still compiles in an org without
+QuickText, and the multipicklist tests fail there, naming the missing object. This follows arch §10:
+no field was added to `Purchase_Request__c` that only a test would use.
+
+### M9.3 Issues encountered
+
+**(a) The doc's depth limit was wrong about the platform.** A read-only probe in `amf-dev` queried
+`Purchase_Request__c` with paths of 4, 5, 6 and 7 segments:
+
+```
+DEPTH OK   SELECT Account__r.Owner.Profile.Name ...
+DEPTH OK   SELECT Account__r.Owner.Manager.Profile.Name ...
+DEPTH OK   SELECT Account__r.Owner.Manager.Manager.Profile.Name ...
+DEPTH FAIL SELECT Account__r.Owner.Manager.Manager.Manager.Profile.Name ... -> cannot query foreign
+           key relationships more than 5 levels away from the root SObject
+```
+
+§4.4 said "4 hops (platform limit)". It is five. Corrected in §4.4 and docs/decisions.md.
+
+**(b) Apex `switch on` a String is case-sensitive.** Measured by the same probe:
+`switch on 'IN' { when 'in' ... }` took the `when else` branch. That differs from Apex's `==` on
+Strings, which ignores case. An admin's `in` would otherwise have reached the evaluator's
+`when 'IN'` and fallen through. Hence M9.2f.
+
+**(c) `list` is a reserved word in Apex.** The first deploy of the test classes failed on a local
+variable `list` in `AMF_ParserTest` (*Missing ';' at 'list'*). It was renamed to `values`. The
+production classes had already passed a `--dry-run` compile, so nothing else was affected.
+
+**(d) Coverage found one unreachable branch and three untested ones.** At 99%, the uncovered lines
+were: a bare Checkbox through a broken path, `NULL` on the left of `STARTS_WITH`, the `areEqual`
+null guard, and `describeOperand`'s fallback for a non-operand node. The first three got tests;
+the null guard is exercised by a hand-built list, because it applies the ordinary null rule
+rather than falling through. The fourth was unreachable, since only fields, literals and `TODAY` are
+ever operands, so it was removed rather than tested.
+
+**(e) The multipicklist probe.** The same probe scanned 35 standard objects for MULTIPICKLIST fields.
+`Idea.Categories` (no values in this org) and `QuickText.Channel` (Email, Portal, Phone, Internal,
+Event, Task, Messaging, CaseComment) were the candidates; M9.2h explains the choice.
+
+### M9.4 Verification evidence
+
+```
+dry-run compile, the six production classes     Succeeded (no save)
+evaluator package, 7 test classes, -c           124/124  every class 100%:
+  AMF_Lexer AMF_Parser AMF_Ast AMF_ExprCompiler AMF_Evaluator AMF_FieldPathResolver
+  AMF_ExprCache AMF_ExpressionException
+mutation check (AMF_EvaluatorTest, 37 tests)
+  broken path -> false instead of unknown,
+  multipicklist CONTAINS -> substring           3 tests failed:
+    aBrokenPathStaysUnknownUnderNegation          9 of 23 cases
+    multiSelectPicklistsCompareAsSets             2 of 20 cases ('Mail', 'Phone;Email')
+    threeHopPathsResolveAndBreakSafelyAtEveryHop  1 of 10 cases
+  restored from a saved copy and redeployed
+gate 1  source gate      passed: 3 active rules, 2 approval processes
+gate 2  deploy           0Afaj00000n5ECdCAM  Succeeded  101 components, 0 errors
+gate 3  validate-config  Approval Matrix configuration is valid.
+gate 4  RunLocalTests    707aj00001K5CNL  Passed  232/232 (197 + 35)  org-wide 99%
+gate 5  Jest             57/57 in 4 suites (unchanged)
+```
+
+**Live, read-only, against real Purchase Requests** (anonymous Apex, no DML), through the real
+resolver. One query covers every path, a three-hop path included, and the verdicts match the data:
+
+```
+LIVE QUERY SELECT Id, Account__r.Owner.Profile.Name, Amount__c, CreatedBy.Profile.Name,
+           Matrix_Submission__c, Region__c, Risk_Level__c FROM Purchase_Request__c WHERE Id IN :recordIds
+e0 Region__c IN ('APAC','EMEA') AND NOT (Amount__c < 100000)
+e1 Risk_Level__c NOT IN ('Low') OR Region__c STARTS_WITH 'ap'
+e2 NOT (Account__r.Owner.Profile.Name == NULL)        <- no Account: unknown, so false
+e3 CreatedBy.Profile.Name CONTAINS 'admin' && Amount__c > 0
+e4 Matrix_Submission__c || NOT Matrix_Submission__c
+EMEA/500.00/Low     e0=false e1=false e2=false e3=true  e4=true
+APAC/250000.00/Low  e0=true  e1=true  e2=false e3=true  e4=true
+APAC/250000.00/High e0=true  e1=true  e2=false e3=false e4=true   (created by a non-admin)
+TODAY JSON {"TODAY":"2026-10-08","CloseDate":"2026-10-08"}
+```
+
+The optional manual check in the playbook's M9 gate, a throwaway rule previewed in the UI, was not
+run: it needs a CMDT row activated in the org, which changes routing for everyone while it is live.
+
+### M9.5 Carried into later phases
+
+| Item | Owner |
+|---|---|
+| DateTime fields and `DATETIME` literals: still a compile error naming the type | a later grammar phase |
+| Text-like field types outside the map (Email, Phone, URL, Text Area, Long Text Area) are compile errors; each is a map entry plus a test | a later grammar phase |
+| SOQL allows 55 child-to-parent relationships per query, across the union of an object's rules; deeper paths make that reachable. The validator compiles rules one at a time and does not check the union | config validator |
+| `TODAY` is the running user's date. An entry point that runs as an integration user (Flow, REST, M10) gets that user's time zone | entry-points phase |
+| Field-to-field multipicklist comparisons are refused (M9.2d) | if a need appears |
+| Keywords are reserved: a field named exactly `AND`, `IN`, `TODAY` etc. cannot be referenced. No standard field is | — |
+| The playbook's optional manual M9 check (a rule using the new grammar, previewed in the UI) | user, optional |
+| Still open from M8.7: the manual UI check (step 6) | user |
+| Still open from M8.7c: PR-00000014 to PR-00000025 carry the guard; they go with M6's teardown | M6 teardown |

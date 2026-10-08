@@ -45,7 +45,9 @@ private class AMF_LexerTest {
             '(' => AMF_Lexer.TokenType.LPAREN,
             ')' => AMF_Lexer.TokenType.RPAREN,
             ',' => AMF_Lexer.TokenType.COMMA,
-            '-' => AMF_Lexer.TokenType.MINUS
+            '-' => AMF_Lexer.TokenType.MINUS,
+            '+' => AMF_Lexer.TokenType.PLUS,
+            '!' => AMF_Lexer.TokenType.LOGICAL_NOT
         };
 
         for (String symbol : expected.keySet()) {
@@ -72,6 +74,70 @@ private class AMF_LexerTest {
             Assert.areEqual(expected.get(word), token.value, word + ' decodes to its literal value');
             Assert.areEqual(word, token.text, 'The raw spelling is kept for error messages');
         }
+    }
+
+    @IsTest
+    static void operatorWordsLexAsTheSameTokensAsTheirSymbols() {
+        // 4.1: AND and && are one operator, so they are one token type. The raw
+        // spelling survives for error messages.
+        Map<String, AMF_Lexer.TokenType> expected = new Map<String, AMF_Lexer.TokenType>{
+            'AND' => AMF_Lexer.TokenType.LOGICAL_AND,
+            'and' => AMF_Lexer.TokenType.LOGICAL_AND,
+            'Or' => AMF_Lexer.TokenType.LOGICAL_OR,
+            'NOT' => AMF_Lexer.TokenType.LOGICAL_NOT,
+            'not' => AMF_Lexer.TokenType.LOGICAL_NOT,
+            'IN' => AMF_Lexer.TokenType.IN_KEYWORD,
+            'in' => AMF_Lexer.TokenType.IN_KEYWORD,
+            'CONTAINS' => AMF_Lexer.TokenType.CONTAINS_KEYWORD,
+            'Contains' => AMF_Lexer.TokenType.CONTAINS_KEYWORD,
+            'STARTS_WITH' => AMF_Lexer.TokenType.STARTS_WITH_KEYWORD,
+            'starts_with' => AMF_Lexer.TokenType.STARTS_WITH_KEYWORD,
+            'TODAY' => AMF_Lexer.TokenType.TODAY_KEYWORD,
+            'today' => AMF_Lexer.TokenType.TODAY_KEYWORD
+        };
+
+        for (String word : expected.keySet()) {
+            List<AMF_Lexer.Token> tokens = AMF_Lexer.tokenize(word);
+            Assert.areEqual(2, tokens.size(), word + ' is one token plus END_OF_INPUT');
+            assertToken(tokens[0], expected.get(word), word, 0);
+        }
+    }
+
+    @IsTest
+    static void keywordsOnlyMatchWholeWords() {
+        // A field whose name merely starts with a keyword is still a field.
+        for (String word : new List<String>{ 'INDEX', 'Notes__c', 'ANDROID', 'Today__c', 'CONTAINS_X', 'STARTS', 'Order' }) {
+            Assert.areEqual(
+                AMF_Lexer.TokenType.IDENT,
+                AMF_Lexer.tokenize(word)[0].type,
+                word + ' must lex as an identifier, not a keyword'
+            );
+        }
+    }
+
+    @IsTest
+    static void bangIsNotEqualsOnlyWhenAnEqualsFollowsIt() {
+        List<AMF_Lexer.Token> notEquals = AMF_Lexer.tokenize('a!=b');
+        assertToken(notEquals[1], AMF_Lexer.TokenType.NEQ, '!=', 1);
+
+        List<AMF_Lexer.Token> negation = AMF_Lexer.tokenize('!TRUE');
+        assertToken(negation[0], AMF_Lexer.TokenType.LOGICAL_NOT, '!', 0);
+        assertToken(negation[1], AMF_Lexer.TokenType.TRUE_LITERAL, 'TRUE', 1);
+
+        List<AMF_Lexer.Token> twice = AMF_Lexer.tokenize('!!FALSE');
+        assertToken(twice[0], AMF_Lexer.TokenType.LOGICAL_NOT, '!', 0);
+        assertToken(twice[1], AMF_Lexer.TokenType.LOGICAL_NOT, '!', 1);
+    }
+
+    @IsTest
+    static void todayWithAnOffsetLexesAsItsParts() {
+        List<AMF_Lexer.Token> tokens = AMF_Lexer.tokenize('TODAY(-7)');
+
+        assertToken(tokens[0], AMF_Lexer.TokenType.TODAY_KEYWORD, 'TODAY', 0);
+        assertToken(tokens[1], AMF_Lexer.TokenType.LPAREN, '(', 5);
+        assertToken(tokens[2], AMF_Lexer.TokenType.MINUS, '-', 6);
+        assertToken(tokens[3], AMF_Lexer.TokenType.NUMBER_LITERAL, '7', 7);
+        assertToken(tokens[4], AMF_Lexer.TokenType.RPAREN, ')', 8);
     }
 
     @IsTest
@@ -182,9 +248,9 @@ private class AMF_LexerTest {
             // A lone & or | is not half of an operator, it is a bad character.
             'Amount__c & 5' => 10,
             'Amount__c | 5' => 10,
-            // = is the classic slip for ==, and ! for the deferred NOT.
+            // = is the classic slip for ==.
             'Amount__c = 5' => 10,
-            '!Amount__c' => 0
+            'Amount__c ~ 5' => 10
         };
 
         for (String expression : expected.keySet()) {

@@ -3,7 +3,7 @@
  * the evaluator runs and the field-path list AMF_FieldPathResolver queries with.
  *
  * Architecture section: 4.2 (compiler responsibilities), 4.3 (type semantics),
- * 4.4 (path depth), 4.6 (fail loudly), 13.3 (reduced MVP grammar).
+ * 4.4 (path depth), 4.6 (fail loudly).
  *
  * This class is where 4.6 is actually won. Every path is resolved through
  * describe and every operator is checked against the type it is applied to
@@ -12,10 +12,21 @@
  * every record to the next rule and tells nobody. The evaluator that follows can
  * therefore be simple: by the time it runs, the tree is known to be well typed.
  *
+ * The operator table (4.3, M9):
+ *
+ *   == !=                 every type; a multi-select picklist only against a
+ *                         text literal of ';'-separated values, compared as sets
+ *   > >= < <=             numeric and date only
+ *   IN, NOT IN            every single-valued type; never with NULL, which is
+ *                         what keeps 4.3's "IN with a null operand is false" exact
+ *   CONTAINS              text in text, case-insensitively; or a multi-select
+ *                         picklist holding every value a text literal names
+ *   STARTS_WITH           text only
+ *   NOT / !               a Boolean only
+ *
  * What is deliberately NOT checked here: whether 'APAC' is a member of
  * Region__c's value set. A restricted picklist typo would simply never match,
- * which is a configuration mistake rather than a malformed expression, and 9's
- * config validator is the thing that owns it. It is out of MVP scope (13.2).
+ * which is a configuration mistake rather than a malformed expression.
  *
  * NOTE, inherited from technical log 1.4d: describe does not return fields the
  * running user has no FLS on, so compilation of a rule over Purchase_Request__c
@@ -25,17 +36,19 @@
  */
 public class AMF_ExprCompiler {
     /**
-     * 13.3 caps MVP paths at two segments -- one relationship hop. 4.4's limit is
-     * the platform's four. Raising it is this constant and nothing else, which is
-     * what "structure them so they are additive" asks for.
+     * At most four segments: a field reached through three relationship hops,
+     * such as Account__r.Owner.Profile.Name. That is 4.1's "max 4", read in the
+     * unit 13.3 used when it called Account__r.Region__c two hops. SOQL itself
+     * allows five hops (six segments; measured in amf-dev, technical log M9.3),
+     * so raising this constant is all a deeper path would need.
+     * AMF_FieldPathResolver enforces the same constant on the query it builds.
      */
-    @TestVisible
-    private static final Integer MAX_PATH_SEGMENTS = 2;
+    public static final Integer MAX_PATH_SEGMENTS = 4;
 
     /**
-     * The MVP type surface (13.3). A field type absent from this map is a compile
-     * error naming the type, which is how a rule over a DateTime or a
-     * Multipicklist -- both deferred -- reports itself instead of misbehaving.
+     * The supported field types (4.3). A field type absent from this map is a
+     * compile error naming the type, which is how a rule over a DateTime --
+     * still unsupported -- reports itself instead of misbehaving.
      */
     private static final Map<Schema.DisplayType, AMF_Ast.ValueType> SUPPORTED_TYPES = new Map<Schema.DisplayType, AMF_Ast.ValueType>{
         Schema.DisplayType.CURRENCY => AMF_Ast.ValueType.NUMERIC,
@@ -48,21 +61,25 @@ public class AMF_ExprCompiler {
         Schema.DisplayType.ID => AMF_Ast.ValueType.TEXT,
         Schema.DisplayType.REFERENCE => AMF_Ast.ValueType.TEXT,
         Schema.DisplayType.BOOLEAN => AMF_Ast.ValueType.BOOLEAN_VALUE,
-        Schema.DisplayType.DATE => AMF_Ast.ValueType.DATE_VALUE
+        Schema.DisplayType.DATE => AMF_Ast.ValueType.DATE_VALUE,
+        Schema.DisplayType.MULTIPICKLIST => AMF_Ast.ValueType.MULTI_SELECT
     };
 
     /**
-     * 4.3: Boolean is identity-only, and text types carry equality plus the
-     * deferred CONTAINS/STARTS_WITH/IN -- never ordering. Amount__c > 100000 is
-     * meaningful; Region__c > 'APAC' is not, and saying so at compile time is
+     * 4.3: Boolean is identity-only, text and multi-select picklists carry
+     * equality plus CONTAINS/STARTS_WITH/IN -- never ordering. Amount__c > 100000
+     * is meaningful; Region__c > 'APAC' is not, and saying so at compile time is
      * the difference between a typo and a silent mis-route.
      */
     private static final Set<AMF_Ast.ValueType> EQUALITY_ONLY_TYPES = new Set<AMF_Ast.ValueType>{
         AMF_Ast.ValueType.BOOLEAN_VALUE,
-        AMF_Ast.ValueType.TEXT
+        AMF_Ast.ValueType.TEXT,
+        AMF_Ast.ValueType.MULTI_SELECT
     };
 
     private static final Set<String> EQUALITY_OPERATORS = new Set<String>{ '==', '!=' };
+    private static final Set<String> LIST_OPERATORS = new Set<String>{ 'IN', 'NOT IN' };
+    private static final Set<String> TEXT_MATCH_OPERATORS = new Set<String>{ 'CONTAINS', 'STARTS_WITH' };
 
     private static Map<String, Schema.SObjectType> globalDescribe;
     private static final Map<String, Map<String, Schema.DescribeFieldResult>> RELATIONSHIPS_BY_TYPE = new Map<String, Map<String, Schema.DescribeFieldResult>>();
@@ -88,6 +105,13 @@ public class AMF_ExprCompiler {
         public Map<String, Schema.DescribeFieldResult> describeByPath { get; private set; }
 
         /**
+         * Whether the expression reads TODAY anywhere. When it does, the
+         * evaluator records the date TODAY resolved to beside the field values,
+         * because the decision depended on it (3.3, 8).
+         */
+        public Boolean usesToday { get; private set; }
+
+        /**
          * Test-visible so AMF_EvaluatorTest can hand the evaluator a tree the
          * compiler would never have produced, and prove that the evaluator's
          * type guards throw rather than falling through to false (4.6). Nothing
@@ -101,11 +125,23 @@ public class AMF_ExprCompiler {
             List<String> fieldPaths,
             Map<String, Schema.DescribeFieldResult> describeByPath
         ) {
+            this(objectApiName, expression, root, fieldPaths, describeByPath, false);
+        }
+
+        private CompiledExpression(
+            String objectApiName,
+            String expression,
+            AMF_Ast.Node root,
+            List<String> fieldPaths,
+            Map<String, Schema.DescribeFieldResult> describeByPath,
+            Boolean usesToday
+        ) {
             this.objectApiName = objectApiName;
             this.expression = expression;
             this.root = root;
             this.fieldPaths = fieldPaths;
             this.describeByPath = describeByPath;
+            this.usesToday = usesToday;
         }
     }
 
@@ -114,6 +150,7 @@ public class AMF_ExprCompiler {
     private final Schema.SObjectType rootType;
     private final List<String> fieldPaths = new List<String>();
     private final Map<String, Schema.DescribeFieldResult> describeByPath = new Map<String, Schema.DescribeFieldResult>();
+    private Boolean usesToday = false;
 
     private AMF_ExprCompiler(String objectApiName, String expression) {
         this.objectApiName = objectApiName;
@@ -155,20 +192,26 @@ public class AMF_ExprCompiler {
             expression,
             root,
             compiler.fieldPaths,
-            compiler.describeByPath
+            compiler.describeByPath,
+            compiler.usesToday
         );
     }
 
     /**
      * @param node        The node to check.
      * @param asCondition True where the grammar requires a Boolean -- the root,
-     *                    and both sides of '&&' / '||'.
+     *                    both sides of '&&' / '||', and the operand of NOT.
      */
     private void analyse(AMF_Ast.Node node, Boolean asCondition) {
         if (node instanceof AMF_Ast.BinaryNode) {
             AMF_Ast.BinaryNode binary = (AMF_Ast.BinaryNode) node;
             analyse(binary.left, true);
             analyse(binary.right, true);
+            return;
+        }
+
+        if (node instanceof AMF_Ast.UnaryNode) {
+            analyse(((AMF_Ast.UnaryNode) node).operand, true);
             return;
         }
 
@@ -180,8 +223,19 @@ public class AMF_ExprCompiler {
             return;
         }
 
+        if (node instanceof AMF_Ast.ListNode) {
+            for (AMF_Ast.Node item : ((AMF_Ast.ListNode) node).items) {
+                analyse(item, false);
+            }
+            return;
+        }
+
         if (node instanceof AMF_Ast.FieldNode) {
             resolveField((AMF_Ast.FieldNode) node);
+        }
+
+        if (node instanceof AMF_Ast.TodayNode) {
+            usesToday = true;
         }
 
         if (asCondition && node.valueType != AMF_Ast.ValueType.BOOLEAN_VALUE) {
@@ -192,39 +246,172 @@ public class AMF_ExprCompiler {
         }
     }
 
-    /**
-     * 4.3's compatibility table, enforced in two parts: the operator has to make
-     * sense for the type, and the two sides have to be the same type. A NULL
-     * literal is typeless and passes both -- Field__c == NULL is the sanctioned
-     * presence check.
-     */
     private void checkComparison(AMF_Ast.ComparisonNode node) {
+        if (LIST_OPERATORS.contains(node.operator)) {
+            checkListComparison(node);
+        } else if (TEXT_MATCH_OPERATORS.contains(node.operator)) {
+            checkTextMatch(node);
+        } else if (isMultiSelect(node.left) || isMultiSelect(node.right)) {
+            checkMultiSelectEquality(node);
+        } else {
+            checkScalarComparison(node);
+        }
+    }
+
+    /**
+     * 4.3's compatibility table for the six comparison operators, enforced in two
+     * parts: the operator has to make sense for the type, and the two sides have
+     * to be the same type. A NULL literal is typeless and passes both --
+     * Field__c == NULL is the sanctioned presence check.
+     */
+    private void checkScalarComparison(AMF_Ast.ComparisonNode node) {
+        requireSameType(node.left, node.right, node.position);
+        node.operandType = node.left.valueType != null ? node.left.valueType : node.right.valueType;
+        requireOperatorSupports(node);
+    }
+
+    /**
+     * A multi-select picklist is a set, so == and != compare it with a set: a text
+     * literal naming values separated by ';', in any order and any case. Comparing
+     * one with another field, or ordering one, has no meaning 4.3 defines, so
+     * both are refused. NULL remains the presence check.
+     */
+    private void checkMultiSelectEquality(AMF_Ast.ComparisonNode node) {
+        node.operandType = AMF_Ast.ValueType.MULTI_SELECT;
+        requireOperatorSupports(node);
+
+        AMF_Ast.Node other = isMultiSelect(node.left) ? node.right : node.left;
+        if (isNullLiteral(other)) {
+            return;
+        }
+        requireValueListLiteral(node, other);
+    }
+
+    /**
+     * IN and NOT IN mean the operand equals one of the values (4.1), so every
+     * value has to be the operand's type. NULL is refused on either side: 4.3
+     * makes IN with a null operand false, and allowing NULL in the list would make
+     * Field__c IN ('A', NULL) true for a blank field and contradict it. A blank
+     * field is tested with == NULL.
+     */
+    private void checkListComparison(AMF_Ast.ComparisonNode node) {
+        if (isNullLiteral(node.left)) {
+            throw nullNotAllowed(node, node.left);
+        }
+        if (node.left.valueType == AMF_Ast.ValueType.MULTI_SELECT) {
+            throw unsupportedOperator(node, AMF_Ast.ValueType.MULTI_SELECT);
+        }
+
+        for (AMF_Ast.Node item : ((AMF_Ast.ListNode) node.right).items) {
+            if (isNullLiteral(item)) {
+                throw nullNotAllowed(node, item);
+            }
+            requireSameType(node.left, item, item.position);
+        }
+        node.operandType = node.left.valueType;
+    }
+
+    /**
+     * CONTAINS and STARTS_WITH match text within text. CONTAINS on a multi-select
+     * picklist is set membership instead: the field holds every value the literal
+     * names (4.3). Neither has a meaning for NULL, numbers, dates or Booleans.
+     */
+    private void checkTextMatch(AMF_Ast.ComparisonNode node) {
+        if (isNullLiteral(node.left)) {
+            throw nullNotAllowed(node, node.left);
+        }
+        if (isNullLiteral(node.right)) {
+            throw nullNotAllowed(node, node.right);
+        }
+
         AMF_Ast.ValueType leftType = node.left.valueType;
-        AMF_Ast.ValueType rightType = node.right.valueType;
+        if (leftType == AMF_Ast.ValueType.MULTI_SELECT && node.operator == 'CONTAINS') {
+            node.operandType = AMF_Ast.ValueType.MULTI_SELECT;
+            requireValueListLiteral(node, node.right);
+            return;
+        }
+        if (leftType != AMF_Ast.ValueType.TEXT) {
+            throw unsupportedOperator(node, leftType);
+        }
+
+        requireSameType(node.left, node.right, node.position);
+        node.operandType = AMF_Ast.ValueType.TEXT;
+    }
+
+    /**
+     * @param position Where to point: a comparison's operator, as it always has
+     *                 been, or the offending item of an IN list.
+     */
+    private void requireSameType(AMF_Ast.Node left, AMF_Ast.Node right, Integer position) {
+        AMF_Ast.ValueType leftType = left.valueType;
+        AMF_Ast.ValueType rightType = right.valueType;
 
         if (leftType != null && rightType != null && leftType != rightType) {
             throw AMF_ExpressionException.at(
-                'Cannot compare ' + describeOperand(node.left) + ' with ' + describeOperand(node.right),
-                node.position
+                'Cannot compare ' + describeOperand(left) + ' with ' + describeOperand(right),
+                position
             );
         }
+    }
 
-        node.operandType = leftType != null ? leftType : rightType;
-
+    private void requireOperatorSupports(AMF_Ast.ComparisonNode node) {
         if (
             node.operandType != null &&
             EQUALITY_ONLY_TYPES.contains(node.operandType) &&
             !EQUALITY_OPERATORS.contains(node.operator)
         ) {
+            throw unsupportedOperator(node, node.operandType);
+        }
+    }
+
+    /**
+     * The other side of a multi-select comparison must be a text literal naming
+     * at least one value. An empty one would be the empty set, which no stored
+     * value ever is -- a blank multi-select picklist reads null -- so it is a
+     * mistake to report, not a condition to evaluate.
+     */
+    private void requireValueListLiteral(AMF_Ast.ComparisonNode node, AMF_Ast.Node other) {
+        if (!(other instanceof AMF_Ast.LiteralNode) || other.valueType != AMF_Ast.ValueType.TEXT) {
             throw AMF_ExpressionException.at(
-                'Operator ' +
-                AMF_Lexer.quote(node.operator) +
-                ' is not supported for ' +
-                AMF_Ast.labelFor(node.operandType) +
-                ' values',
-                node.position
+                'A multi-select picklist can only be compared with a text literal of values separated by ' +
+                AMF_Lexer.quote(';') +
+                ', not ' +
+                describeOperand(other),
+                other.position
             );
         }
+        if (AMF_Evaluator.valueSet((String) ((AMF_Ast.LiteralNode) other).value).isEmpty()) {
+            throw AMF_ExpressionException.at(
+                'The value list for a multi-select picklist names no values; test for a blank field with ' +
+                AMF_Lexer.quote('== NULL'),
+                other.position
+            );
+        }
+    }
+
+    private AMF_ExpressionException unsupportedOperator(AMF_Ast.ComparisonNode node, AMF_Ast.ValueType type) {
+        return AMF_ExpressionException.at(
+            'Operator ' + AMF_Lexer.quote(node.operator) + ' is not supported for ' + AMF_Ast.labelFor(type) + ' values',
+            node.position
+        );
+    }
+
+    private AMF_ExpressionException nullNotAllowed(AMF_Ast.ComparisonNode node, AMF_Ast.Node nullNode) {
+        return AMF_ExpressionException.at(
+            'Operator ' +
+            AMF_Lexer.quote(node.operator) +
+            ' cannot be used with NULL; test for a blank field with ' +
+            AMF_Lexer.quote('== NULL'),
+            nullNode.position
+        );
+    }
+
+    private static Boolean isNullLiteral(AMF_Ast.Node node) {
+        return node instanceof AMF_Ast.LiteralNode && ((AMF_Ast.LiteralNode) node).isNullLiteral;
+    }
+
+    private static Boolean isMultiSelect(AMF_Ast.Node node) {
+        return node.valueType == AMF_Ast.ValueType.MULTI_SELECT;
     }
 
     /**
@@ -371,7 +558,12 @@ public class AMF_ExprCompiler {
                 AMF_Lexer.quote(field.path) +
                 (describe == null ? '' : ' (' + String.valueOf(describe.getType()) + ')');
         }
+        if (node instanceof AMF_Ast.TodayNode) {
+            return 'TODAY';
+        }
 
+        // Only operands are ever described, and the parser builds operands from
+        // fields, TODAY and literals alone.
         AMF_Ast.LiteralNode literal = (AMF_Ast.LiteralNode) node;
         if (literal.isNullLiteral) {
             return 'a NULL literal';
