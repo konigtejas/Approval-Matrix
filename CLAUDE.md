@@ -8,7 +8,7 @@ name → decision log explains why.
 docs/architecture.md (v3.0) defines the full target design; its §13 is this MVP scope.
 WE ARE BUILDING THE MVP SUBSET ONLY (see MVP SCOPE). If the doc describes something
 not in MVP scope, do NOT build it. If a task seems to conflict with the doc, STOP and
-ask. docs/build-playbook.md carries the phase plan (M0–M9) and the gate for each. Its Part 5
+ask. docs/build-playbook.md carries the phase plan (M0–M10) and the gate for each. Its Part 5
 is a PROPOSED roadmap only: a phase there is not authorised until the paragraph below names it.
 
 **Current authorised post-MVP work:** M0–M3 have passed their gates. M4 added the
@@ -33,6 +33,13 @@ recall from the framework itself (an action, an API, Flow recall) stays out of s
 M9 builds the full §4.1 grammar, superseding the MVP GRAMMAR section below: every construct it
 lists as not supported yet, plus the word forms AND / OR / NOT. It is confined to the evaluator
 package and changes no object, field, engine class or LWC. DateTime fields and literals stay out.
+M10 adds §7's remaining entry points: the AMF_SubmitForMatrixApproval invocable action and a REST
+resource, both over a new per-record engine entry, submitEach(). There a record that cannot be
+submitted (unreadable, already pending, refused by the platform, or of an object the matrix cannot
+govern) gets its own outcome while the rest still go through. The engine now writes the decision
+log after the platform answers, and the Classic strategy submits in chunks of at most 100 without
+all-or-nothing. It supersedes "bulk chunking" on the out-of-scope list. The header button keeps
+its whole-call contract.
 
 ## MVP SCOPE — build ONLY these
 - One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)

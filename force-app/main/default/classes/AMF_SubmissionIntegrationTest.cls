@@ -13,20 +13,25 @@
  * guard first, and that Execution_Ref_Id__c really does join to a
  * ProcessInstance the way 8 promises. Since M8, also the two things only a live
  * approval can show: that a recall re-arms the guard, and that a record already
- * in an approval process is refused before anything is decided.
+ * in an approval process is refused before anything is decided. Since M10, that
+ * the platform answers each record by itself -- one refusal is logged and
+ * leaves the others' submissions standing -- and that 200 records go through
+ * in one transaction.
  *
- * ORG DEPENDENCE IS DELIBERATE AND LOCAL. This class needs
- * PR_Three_Level_Finance active in the org -- it is repo metadata, deployed
- * with the engine. It routes to the three named-user template rather than the
- * manager one because PR_Two_Level_Mgmt resolves its approvers from the
- * SUBMITTER's manager chain, and the user running a test may have no manager;
- * that shape is covered by the phase's manual QA instead. The RULES are still
- * in-memory fixtures, so CLAUDE.md's "zero dependence on org CMDT rows" holds.
+ * ORG DEPENDENCE IS DELIBERATE AND LOCAL. This class needs both templates
+ * active in the org -- they are repo metadata, deployed with the engine. Most
+ * tests route to the three named-user template, because PR_Two_Level_Mgmt
+ * resolves its approvers from the SUBMITTER's manager chain and the user
+ * running a test may have no manager. M10 turns that into a fixture: a user
+ * created with no manager is refused by PR_Two_Level_Mgmt every time, which is
+ * the real refusal a per-record test needs. The RULES are still in-memory
+ * fixtures, so CLAUDE.md's "zero dependence on org CMDT rows" holds.
  */
 @IsTest
 private class AMF_SubmissionIntegrationTest {
 
     private static final String THREE_LEVEL = 'PR_Three_Level_Finance';
+    private static final String TWO_LEVEL = 'PR_Two_Level_Mgmt';
 
     @IsTest
     static void aRealSubmissionEntersTheNamedProcessAndJoinsBackToIt() {
@@ -287,6 +292,234 @@ private class AMF_SubmissionIntegrationTest {
         Test.stopTest();
     }
 
+    // ---------------------------------------------------------------------
+    // M10 -- each record answered by itself, and a Flow batch's worth at once
+    // (6.1 and 6.2's M10 notes).
+    // ---------------------------------------------------------------------
+
+    @IsTest
+    static void oneRefusedRecordLeavesTheOthersSubmissionsStanding() {
+        // 6.2's M10 note at the platform itself: allOrNone is false, and each
+        // record is answered by itself. The first record has no staged guard,
+        // so the template's entry criteria refuse it (6.3); the second has one,
+        // and its submission must stand.
+        requireActiveProcess(THREE_LEVEL);
+        Purchase_Request__c unstaged = highValueApac();
+        Purchase_Request__c staged = highValueApac();
+        staged.Matrix_Submission__c = true;
+        insert new List<Purchase_Request__c>{ unstaged, staged };
+
+        Test.startTest();
+        List<AMF_SubmitResult> results = new AMF_ClassicProcessStrategy()
+            .submit(
+                new List<AMF_SubmitRequest>{
+                    new AMF_SubmitRequest(unstaged.Id, THREE_LEVEL),
+                    new AMF_SubmitRequest(staged.Id, THREE_LEVEL)
+                }
+            );
+        Test.stopTest();
+
+        Assert.areEqual(2, results.size(), 'One answer per request');
+
+        AMF_SubmitResult refused = results[0];
+        Assert.areEqual(unstaged.Id, refused.recordId);
+        Assert.isFalse(refused.succeeded, 'Entry criteria must refuse a record without the guard (6.3)');
+        Assert.isTrue(String.isNotBlank(refused.errorMessage), 'The platform\'s reason is carried');
+        Assert.isNull(refused.executionRefId);
+        Assert.areEqual(0, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :unstaged.Id]);
+
+        AMF_SubmitResult entered = results[1];
+        Assert.areEqual(staged.Id, entered.recordId);
+        Assert.isTrue(
+            entered.succeeded,
+            'The refusal must not undo this submission. Reason given: ' + entered.errorMessage
+        );
+        Assert.areEqual(
+            'Pending',
+            [SELECT Status FROM ProcessInstance WHERE Id = :entered.executionRefId].Status,
+            'Its ProcessInstance stands'
+        );
+    }
+
+    @IsTest
+    static void aPlatformRefusalIsLoggedFailedWhileTheOtherRecordEntersItsProcess() {
+        // 6.1's M10 note, end to end. PR_Two_Level_Mgmt assigns the submitter's
+        // manager and this submitter has none, so the platform refuses that
+        // record. Its row says Failed with the platform's reason, and its guard
+        // is re-armed; the record routed to the named-user template enters it
+        // in the same call.
+        requireActiveProcess(TWO_LEVEL);
+        requireActiveProcess(THREE_LEVEL);
+
+        User submitter = managerlessSubmitter();
+        Purchase_Request__c toManager = new Purchase_Request__c(
+            Amount__c = 500,
+            Region__c = 'EMEA',
+            Risk_Level__c = 'Low'
+        );
+        Purchase_Request__c toFinance = highValueApac();
+
+        AMF_ApprovalMatrixService engine = new AMF_ApprovalMatrixService(
+            new AMF_RuleBuilder.Stub(
+                new List<AMF_RuleDefinition>{
+                    new AMF_RuleBuilder()
+                        .named('PR_High_Value_APAC')
+                        .withPriority(10)
+                        .withExpression('Amount__c > 100000 && Region__c == \'APAC\'')
+                        .routingTo(THREE_LEVEL)
+                        .atVersion(1)
+                        .build(),
+                    new AMF_RuleBuilder()
+                        .named('PR_Catch_All')
+                        .withPriority(9999)
+                        .withExpression('TRUE')
+                        .routingTo(TWO_LEVEL)
+                        .atVersion(1)
+                        .build()
+                }
+            ),
+            new AMF_ClassicProcessStrategy()
+        );
+        List<AMF_ApprovalMatrixService.Outcome> outcomes;
+
+        Test.startTest();
+        System.runAs(submitter) {
+            insert new List<Purchase_Request__c>{ toManager, toFinance };
+            outcomes = engine.submitEach(new List<Id>{ toManager.Id, toFinance.Id });
+        }
+        Test.stopTest();
+
+        AMF_ApprovalMatrixService.Outcome refused = outcomes[0];
+        Assert.areEqual(
+            'Failed',
+            refused.outcome,
+            'A submitter with no manager must be refused by ' + TWO_LEVEL + '. Got: ' + refused.message
+        );
+        Assert.isFalse(refused.submitted);
+        Assert.areEqual(TWO_LEVEL, refused.selectedProcess, 'The matrix still chose the route');
+        Assert.isTrue(
+            refused.message.startsWith('Approval process ' + TWO_LEVEL + ' refused the submission: '),
+            'Got: ' + refused.message
+        );
+
+        Approval_Decision_Log__c failedRow = [
+            SELECT Outcome__c, Matched_Rule__c, Selected_Process__c, Failure_Detail__c, Execution_Ref_Id__c
+            FROM Approval_Decision_Log__c
+            WHERE Record_Id__c = :String.valueOf(toManager.Id)
+        ];
+        Assert.areEqual('Failed', failedRow.Outcome__c);
+        Assert.areEqual('PR_Catch_All', failedRow.Matched_Rule__c);
+        Assert.areEqual(TWO_LEVEL, failedRow.Selected_Process__c);
+        Assert.areEqual(refused.message, failedRow.Failure_Detail__c, 'The platform\'s reason is on record');
+        Assert.isNull(failedRow.Execution_Ref_Id__c);
+        Assert.isFalse(guardOf(toManager.Id), 'A refused record\'s guard is re-armed (6.3)');
+        Assert.areEqual(0, [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :toManager.Id]);
+
+        AMF_ApprovalMatrixService.Outcome entered = outcomes[1];
+        Assert.isTrue(entered.submitted, 'The refusal must not undo the other submission: ' + entered.message);
+        Assert.areEqual(
+            'Pending',
+            [SELECT Status FROM ProcessInstance WHERE Id = :entered.executionRefId].Status
+        );
+        Assert.areEqual(
+            entered.executionRefId,
+            [
+                SELECT Execution_Ref_Id__c
+                FROM Approval_Decision_Log__c
+                WHERE Record_Id__c = :String.valueOf(toFinance.Id)
+            ]
+            .Execution_Ref_Id__c,
+            'Its row carries the reference from the moment it was written'
+        );
+        Assert.isTrue(guardOf(toFinance.Id), 'Its guard stays set for the life of the approval');
+    }
+
+    @IsTest
+    static void submitEachRefusesAPendingRecordByNameAndSubmitsTheOther() {
+        // The M8 refusal, record by record: the pending record is Refused,
+        // naming its process, with no row, and the other record still goes.
+        requireActiveProcess(THREE_LEVEL);
+        Purchase_Request__c pending = highValueApac();
+        Purchase_Request__c fresh = highValueApac();
+        insert new List<Purchase_Request__c>{ pending, fresh };
+
+        AMF_ApprovalMatrixService engine = engineRoutingTo(THREE_LEVEL);
+
+        Test.startTest();
+        Assert.isTrue(
+            engine.submit(new List<Id>{ pending.Id })[0].submitted,
+            'Precondition: the record is now pending'
+        );
+        List<AMF_ApprovalMatrixService.Outcome> outcomes = engine.submitEach(
+            new List<Id>{ pending.Id, fresh.Id }
+        );
+        Test.stopTest();
+
+        Assert.areEqual('Refused', outcomes[0].outcome);
+        Assert.isTrue(outcomes[0].message.contains(THREE_LEVEL), 'It names the process. Got: ' + outcomes[0].message);
+        Assert.isNull(outcomes[0].decisionLogId, 'A refusal decides nothing, so it logs nothing');
+        Assert.areEqual(
+            1,
+            [SELECT COUNT() FROM Approval_Decision_Log__c WHERE Record_Id__c = :String.valueOf(pending.Id)],
+            'Only the first submission is on record'
+        );
+
+        Assert.isTrue(outcomes[1].submitted, 'The other record still goes: ' + outcomes[1].message);
+    }
+
+    @IsTest
+    static void twoHundredRecordsEnterTheirProcessInOneTransaction() {
+        // M10's bulk claim against the real platform: 200 records -- a Flow
+        // batch, and the REST cap -- go through in chunks of 100 inside one
+        // transaction's limits. What the transaction spent is in every message:
+        // a failure here is a finding about bulk size, not a flake.
+        requireActiveProcess(THREE_LEVEL);
+
+        List<Purchase_Request__c> records = new List<Purchase_Request__c>();
+        for (Integer i = 0; i < 200; i++) {
+            records.add(highValueApac());
+        }
+        insert records;
+
+        List<Id> recordIds = new List<Id>();
+        for (Purchase_Request__c record : records) {
+            recordIds.add(record.Id);
+        }
+
+        Test.startTest();
+        List<AMF_ApprovalMatrixService.Outcome> outcomes = engineRoutingTo(THREE_LEVEL).submitEach(recordIds);
+        String spent = spentSoFar();
+        Test.stopTest();
+
+        System.debug(LoggingLevel.INFO, '200-record submission spent ' + spent);
+
+        String firstProblem = null;
+        Integer submitted = 0;
+        for (AMF_ApprovalMatrixService.Outcome outcome : outcomes) {
+            if (outcome.submitted) {
+                submitted++;
+            } else if (firstProblem == null) {
+                firstProblem = outcome.outcome + ': ' + outcome.message;
+            }
+        }
+
+        Assert.areEqual(200, submitted, 'Every record should be in its process. First problem: ' + firstProblem + ' (' + spent + ')');
+        Assert.areEqual(
+            200,
+            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId IN :recordIds AND Status = 'Pending'],
+            spent
+        );
+        Assert.areEqual(
+            200,
+            [
+                SELECT COUNT()
+                FROM Approval_Decision_Log__c
+                WHERE Purchase_Request__c IN :recordIds AND Execution_Ref_Id__c != NULL
+            ],
+            'Every row written once, with its reference (' + spent + ')'
+        );
+    }
+
     private static Purchase_Request__c highValueApac() {
         return new Purchase_Request__c(Amount__c = 250000, Region__c = 'APAC', Risk_Level__c = 'High');
     }
@@ -311,26 +544,74 @@ private class AMF_SubmissionIntegrationTest {
 
     /** A Standard User with no framework permission set and no access to the test's records. */
     private static User strangerUser() {
-        Profile standard = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
-        User stranger = new User(
-            Alias = 'amfint',
-            Email = 'amf.integration.stranger@example.invalid',
-            EmailEncodingKey = 'UTF-8',
-            LastName = 'Stranger',
-            LanguageLocaleKey = 'en_US',
-            LocaleSidKey = 'en_US',
-            ProfileId = standard.Id,
-            TimeZoneSidKey = 'GMT',
-            Username = 'amf.integration.stranger.' +
-                String.valueOf(Datetime.now().getTime()) +
-                '@amf.test.invalid'
-        );
+        User stranger = standardUser('amfint', 'Stranger');
         // User is a setup object: inserting one in the same transaction as a
         // Purchase_Request__c is MIXED_DML_OPERATION without this wrapper.
         System.runAs(new User(Id = UserInfo.getUserId())) {
             insert stranger;
         }
         return stranger;
+    }
+
+    /**
+     * A Standard User holding Approval_Matrix_User, with no manager: a real
+     * submitter whom PR_Two_Level_Mgmt, which assigns the submitter's manager,
+     * refuses every time.
+     */
+    private static User managerlessSubmitter() {
+        User submitter = standardUser('amfnomgr', 'Submitter');
+        PermissionSet matrix = [SELECT Id FROM PermissionSet WHERE Name = 'Approval_Matrix_User' LIMIT 1];
+
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert submitter;
+            insert new PermissionSetAssignment(AssigneeId = submitter.Id, PermissionSetId = matrix.Id);
+        }
+        return submitter;
+    }
+
+    private static User standardUser(String alias, String lastName) {
+        Profile standard = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        String name = 'amf.integration.' + lastName.toLowerCase();
+        return new User(
+            Alias = alias,
+            Email = name + '@example.invalid',
+            EmailEncodingKey = 'UTF-8',
+            LastName = lastName,
+            LanguageLocaleKey = 'en_US',
+            LocaleSidKey = 'en_US',
+            ProfileId = standard.Id,
+            TimeZoneSidKey = 'GMT',
+            Username = name + '.' + String.valueOf(Datetime.now().getTime()) + '@amf.test.invalid'
+        );
+    }
+
+    private static Boolean guardOf(Id recordId) {
+        return [SELECT Matrix_Submission__c FROM Purchase_Request__c WHERE Id = :recordId]
+        .Matrix_Submission__c;
+    }
+
+    /** What the transaction has spent so far, for the bulk test's messages. */
+    private static String spentSoFar() {
+        return 'CPU ' +
+            Limits.getCpuTime() +
+            '/' +
+            Limits.getLimitCpuTime() +
+            ' ms, SOQL ' +
+            Limits.getQueries() +
+            '/' +
+            Limits.getLimitQueries() +
+            ', DML ' +
+            Limits.getDmlStatements() +
+            '/' +
+            Limits.getLimitDmlStatements() +
+            ', DML rows ' +
+            Limits.getDmlRows() +
+            '/' +
+            Limits.getLimitDmlRows() +
+            ', heap ' +
+            Limits.getHeapSize() +
+            '/' +
+            Limits.getLimitHeapSize();
     }
 
     /**

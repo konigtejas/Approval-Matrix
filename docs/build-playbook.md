@@ -462,6 +462,63 @@ rules for each, `NOT` over a broken path at every hop, and `TODAY` pinned and un
 malformed-input case with its character position for every new way to write a bad expression;
 mutation-checked that the three-valued logic and set membership are what the tests catch.
 
+### M10 — Entry points and bulk submission (post-MVP)
+
+**Goal:** submit through the matrix from Flow, Apex and integrations, and keep one record's problem
+from sinking a batch.
+
+**Build:**
+- **A per-record engine entry.** `AMF_ApprovalMatrixService.submitEach(List<Id>)` sits beside the
+  unchanged `submit()` and `preview()`. It groups records by object and answers a duplicate once.
+  An unreadable or pending record is refused by itself (`Refused`, no log row), and a fault that
+  condemns one object's records becomes refusals for those records only.
+- **The log after the answer.** Steps 1–7 become one step that writes nothing, `prepare()`; the
+  preview is that step alone. `execute()` stages the guard and submits, and only then writes each
+  row: with the instance Id, or `Failed` with the platform's reason and the guard re-armed.
+- **A per-record strategy.** `AMF_SubmitResult` carries success or the platform's reason, and
+  `AMF_ClassicProcessStrategy` submits in chunks of 100 with `allOrNone` false.
+- **Entry points.** `AMF_SubmitForMatrixApproval` (the invocable *Submit for Matrix Approval*) and
+  `AMF_MatrixSubmissionResource` (`POST /services/apexrest/approval-matrix/v1/submissions`, at most
+  200 records) share one result shape. Both permission sets grant both classes.
+- **Timeline wording.** A `Failed` entry's title says the attempt failed rather than that routing
+  did, and its summary becomes the first line of its recorded reason, which may now be the
+  platform's rather than the evaluator's.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. Deploy the package.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green, including a real
+   200-record submission. If that one fails on a governor limit, report the numbers it prints:
+   that is a finding about bulk size, not a flake.
+5. Jest, as in M5.
+6. **Manual, the invocable**, through the platform's invocable framework, with no Flow saved.
+   In anonymous Apex, on a throwaway Purchase Request:
+   ```
+   Invocable.Action action = Invocable.Action.createCustomAction('apex', 'AMF_SubmitForMatrixApproval');
+   action.setInvocationParameter('recordId', '<throwaway Id>');
+   System.debug(action.invoke()[0].getOutputParameters());
+   ```
+   The first run returns `submitted` true with a decision log row Id. A second run on the same
+   record returns `Refused`, naming the process it is already in.
+7. **Manual, REST:**
+   `sf api request rest /services/apexrest/approval-matrix/v1/submissions --method POST --body '{"recordIds":["<pending Id>","<another throwaway Id>"]}' -o amf-dev`
+   (or Workbench's REST Explorer). It answers 200 with one result per Id: `Refused` for the
+   pending one, `Submitted` for the other. An empty body answers 400.
+
+Acceptance: engine tests prove, with in-memory rules and the stub:
+- a platform refusal becomes a `Failed` row with the guard re-armed, while the others submit;
+- an unreadable record is refused alone;
+- every object in a call is answered;
+- a rule that will not compile refuses only its own object's records;
+- duplicates are submitted once;
+- the whole-call contract is unchanged.
+
+Real-platform tests prove that one refused record leaves the others' submissions standing, and that
+200 records go through in chunks within one transaction. The invocable and REST tests prove one
+answer per request, in order, and the REST 400s.
+
 ---
 
 ## Part 4 — When Things Go Wrong
@@ -499,28 +556,13 @@ mutation-checked that the three-valued logic and set membership are what the tes
 |---|---|
 | M8's manual UI check: submit, submit again (refused by name, no modal, no log row), recall (*Matrix Submission* unticked), resubmit | technical log M8.7d |
 | Optional: M9's manual check, a throwaway rule using the new grammar previewed in the UI | technical log M9.4 |
+| M10's org gate: deploy, RunLocalTests (253), the invocable and REST checks | technical log M10.5 |
 
-### M10 — Entry points and bulk submission *(recommended next)*
+### M10 — Entry points and bulk submission *(authorised and built, 2026-10-08)*
 
-**Goal:** submit through the matrix from Flow, Apex and integrations, not only the header button.
-
-**Sketch:** §7's remaining rows: the `AMF_SubmitForMatrixApproval` invocable action and an
-`@RestResource` wrapper over the same service. §6.1 step 10's chunking, at most 100 records per
-`Approval.process()` call, which is "bulk chunking" on the out-of-scope list.
-
-**Why next:** the header button is the only entry point today, and M9's grammar makes automated
-routing worth having. §7 already designs it, and none of it needs the Flow strategy.
-
-**Decide first:**
-1. **Per-record refusal.** The engine refuses the *whole call* for a pending record (M8) or one the
-   caller cannot read (M3). That is right for one button and wrong for a 200-record Flow.
-   Per-record outcomes change the service's contract (`docs/decisions.md` 2026-08-18,
-   2026-10-08; technical log M8.6).
-2. **Whose date `TODAY` is** when an integration user submits on someone's behalf (M9.5).
-3. **What the invocable returns per record:** outcome, message, decision log row Id.
-
-**Watch:** the engine's query budget in the unit suite is spent exactly, 4 of 4 (M8.2e). Governor
-limits for a full 200-record Flow transaction need a test at that size.
+Moved to Part 3, with its gate. The three decisions it needed were taken: per-record outcomes for
+the bulk entry points, `TODAY` as the running user's date, and one shared result shape
+(`docs/decisions.md`, 2026-10-08).
 
 ### M11 — A second governed object
 

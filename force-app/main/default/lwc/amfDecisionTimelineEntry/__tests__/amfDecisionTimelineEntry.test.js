@@ -308,7 +308,7 @@ describe('c-amf-decision-timeline-entry', () => {
         expect(byId(element, 'approval-missing')).toBeNull();
     });
 
-    it('tells a failed attempt by the rule it was evaluating, with the recorded failure', () => {
+    it('tells a failed attempt by the first line of its recorded reason, with the whole failure in the details', () => {
         const failed = {
             key: 'a01000000000006AAA',
             occurredAt: '2026-09-08T10:00:00.000Z',
@@ -327,19 +327,64 @@ describe('c-amf-decision-timeline-entry', () => {
 
         const element = render(failed, true);
 
-        expect(textOf(byId(element, 'title'))).toBe('Not submitted: routing failed');
+        expect(textOf(byId(element, 'title'))).toBe('Not submitted: the attempt failed');
         expect(byId(element, 'icon').iconName).toBe('utility:error');
         expect(byId(element, 'badge').label).toBe('Failed');
-        expect(textOf(byId(element, 'summary'))).toBe('Routing failed while evaluating PR_High_Risk v2.');
+        expect(textOf(byId(element, 'summary'))).toBe(
+            'Routing failed while evaluating rule PR_High_Risk: field deleted'
+        );
         expect(textOf(byId(element, 'rule'))).toBe('PR_High_Risk v2');
         expect(byId(element, 'detail').textContent).toBe(failed.decision.detail);
+    });
+
+    it('tells a submission the platform refused by the reason it gave, not as a rule that failed', () => {
+        const refused = {
+            key: 'a01000000000008AAA',
+            occurredAt: '2026-10-08T10:00:00.000Z',
+            decision: {
+                logId: 'a01000000000008AAA',
+                logName: 'ADL-00000008',
+                outcome: 'Failed',
+                matchedRule: 'PR_Catch_All',
+                ruleVersion: 1,
+                expression: 'TRUE',
+                selectedProcess: 'PR_Two_Level_Mgmt',
+                values: [],
+                detail: 'Approval process PR_Two_Level_Mgmt refused the submission: MANAGER_NOT_DEFINED: Manager undefined.',
+                submittedByName: 'Ann Submitter'
+            }
+        };
+
+        const element = render(refused, true);
+
+        expect(textOf(byId(element, 'title'))).toBe('Not submitted: the attempt failed');
+        expect(textOf(byId(element, 'summary'))).toBe(refused.decision.detail);
+        expect(textOf(byId(element, 'rule'))).toBe('PR_Catch_All v1');
+        expect(byId(element, 'approval')).toBeNull();
+        expect(byId(element, 'approval-missing')).toBeNull();
+    });
+
+    it('falls back to the rule a failed row names when it recorded no reason', () => {
+        const element = render({
+            key: 'a01000000000009AAA',
+            occurredAt: '2026-09-08T10:00:00.000Z',
+            decision: {
+                logId: 'a01000000000009AAA',
+                outcome: 'Failed',
+                matchedRule: 'PR_High_Risk',
+                ruleVersion: 2,
+                values: []
+            }
+        });
+
+        expect(textOf(byId(element, 'summary'))).toBe('Routing failed while evaluating PR_High_Risk v2.');
     });
 
     it('says when routing failed before any rule was evaluated', () => {
         const element = render({
             key: 'a01000000000007AAA',
             occurredAt: '2026-09-08T10:00:00.000Z',
-            decision: { logId: 'a01000000000007AAA', outcome: 'Failed', values: [], detail: 'boom' }
+            decision: { logId: 'a01000000000007AAA', outcome: 'Failed', values: [], detail: '  ' }
         });
 
         expect(textOf(byId(element, 'summary'))).toBe('Routing failed before any rule was evaluated.');

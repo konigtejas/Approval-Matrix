@@ -105,6 +105,7 @@ session needs. Update the row when a phase completes.
 | **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Complete** — org gate passed 2026-10-08 (M7.7): deploy, post-deploy check, RunLocalTests and every manual timeline check; 57/57 Jest. The gate's recall check confirmed that a Classic recall leaves the guard set (M7.8), owed to M8 | `25e0b2d` + M7.7 |
 | **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Org gate steps 1–5 passed** 2026-10-08 (M8.7): first deploy refused on a 329-character description, fixed; 197/197 Apex; PR-00000010 repaired. **Step 6, the manual UI check, is owed** | `caeafb3` + M8.7 |
 | **M9** | Full expression grammar — `NOT`, word forms, `IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, three-hop paths | **Complete** — gate run in `amf-dev` 2026-10-08: 232/232 Apex, evaluator classes all 100%, mutation-checked, 57/57 Jest, matrix valid; optional manual UI check not run | `a79c880` |
+| **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers | **Built, org gate owed** (M10.5) — verified locally: apex-ls clean, 59/59 Jest, source gate green; expect 253/253 Apex | `PENDING` |
 
 ### Superseded — the v1.0 plan
 
@@ -120,9 +121,9 @@ Retained only as a record of what was built. Phases 2–8 of that plan were neve
 carried-forward table), then the phase prompt in `docs/build-playbook.md`. Do not rely on
 conversation history — there is none by design.
 
-**Choosing the next phase:** `docs/build-playbook.md` Part 5 holds the proposed roadmap after M9
-(M10 entry points and bulk, M11 second object, M12 template lifecycle, validator hardening, Flow
-approvals), with the decisions each needs first. It authorises nothing; `CLAUDE.md` does.
+**Choosing the next phase:** `docs/build-playbook.md` Part 5 holds the proposed roadmap after M10
+(M11 second object, M12 template lifecycle, validator hardening, Flow approvals), with the
+decisions each needs first. It authorises nothing; `CLAUDE.md` does.
 
 ---
 
@@ -3146,3 +3147,169 @@ run: it needs a CMDT row activated in the org, which changes routing for everyon
 | The playbook's optional manual M9 check (a rule using the new grammar, previewed in the UI) | user, optional |
 | Still open from M8.7: the manual UI check (step 6) | user |
 | Still open from M8.7c: PR-00000014 to PR-00000025 carry the guard; they go with M6's teardown | M6 teardown |
+
+## Phase M10 — Entry points and bulk submission
+
+**Date:** 2026-10-08 · **Commit:** `PENDING` · **Status:** built and verified locally. The org gate
+is owed (M10.5).
+**Playbook goal:** submit through the matrix from Flow, Apex and integrations, and keep one record's
+problem from sinking a batch.
+
+The user authorised M10 on 2026-10-08, after the post-M9 review, and took the three decisions the
+roadmap asked for first. The bulk entry points answer per record, isolated, while the header button
+keeps its whole-call contract. `TODAY` stays the running user's date. Flow and REST share one result
+shape. `CLAUDE.md` records the authorisation, which supersedes "bulk chunking" on the out-of-scope
+list.
+
+### M10.1 File-level changes
+
+| File | Change | Notes |
+|---|---|---|
+| `classes/AMF_ApprovalMatrixService.cls` | **modified** | `prepare()` (steps 1–7, writes nothing) and `execute()` (9, 10, then 8 with 11 folded in) behind `submit()` and `preview()`; new `submitEach()`; `submit()` refuses a duplicate Id; access checked in chunks of 200; `execute()` under a savepoint |
+| `classes/AMF_SubmitResult.cls` | **modified** | `succeeded`, `errorMessage`, `refused()` |
+| `classes/AMF_SubmissionStrategy.cls` | **modified** | the contract: one result per request, and a refusal is data |
+| `classes/AMF_ClassicProcessStrategy.cls` | **modified** | chunks of 100, `allOrNone` false, the platform's reason per record |
+| `classes/AMF_DecisionLogWriter.cls` | **modified** | `stamp()` removed; docs |
+| `classes/AMF_SubmissionException.cls` | **modified** | docs only |
+| `classes/AMF_SubmitForMatrixApproval.cls` | **new** | the *Submit for Matrix Approval* invocable action; its `submitEach()` also serves REST |
+| `classes/AMF_MatrixSubmissionResource.cls` | **new** | `POST /services/apexrest/approval-matrix/v1/submissions` |
+| `classes/AMF_StrategyStub.cls` | **modified** | `refuse`, `refusalMessage`, `omit` |
+| `classes/AMF_ApprovalMatrixServiceTest.cls` | **modified** | +12 tests; two comments the new order made wrong; one user helper for the stranger and the submitter |
+| `classes/AMF_SubmissionIntegrationTest.cls` | **modified** | +4 real-platform tests, including 200 records |
+| `classes/AMF_ClassicProcessStrategyTest.cls` | **modified** | +1 test; the refused result |
+| `classes/AMF_DecisionLogWriterTest.cls` | **modified** | the two `stamp()` tests removed |
+| `classes/AMF_SubmitForMatrixApprovalTest.cls` | **new** | 4 tests |
+| `classes/AMF_MatrixSubmissionResourceTest.cls` | **new** | 2 tests, one of them 12 bad bodies |
+| `permissionsets/Approval_Matrix_Admin`, `Approval_Matrix_User` | **modified** | both new classes |
+| `lwc/amfDecisionTimelineEntry` (+ Jest) | **modified** | a `Failed` entry's title and summary; +2 Jest tests |
+| `CLAUDE.md`, `docs/architecture.md` (§6.1, §6.2, §7 notes; §13.4 row), `docs/build-playbook.md` (M10 in Part 3; Part 5 pointer), `docs/decisions.md` (4 entries) | **modified** | authorisation, design, gate, decisions |
+
+No object, field, layout, validation rule, approval process or CMDT row changed.
+`Lock_Decision_Log` is untouched (M10.6).
+
+### M10.2 Design choices worth recording
+
+**(a) Two contracts on one path.** The header button calls `submit()` and `preview()` for one
+record, and its messages and tests rest on their whole-call refusals, so those stay. `submitEach()`
+is a third entry over the same `prepare()`. It takes the records one object at a time, in the order
+first supplied, submits a duplicate once, and turns each whole-call refusal into a `Refused`
+outcome for the records concerned. `Refused` is an outcome, never an `Outcome__c` value: nothing
+was decided, so nothing is logged. A fault that condemns one object's records (not governed, no
+guard field, a rule that will not compile) refuses that object's records and no others. 4.6 still
+holds, since none of them routes.
+
+**(b) The log after the answer.** Before M10 the row was inserted first and stamped after submit
+(step 11), and the Classic strategy ran `allOrNone` true. A row saying `Submitted` could not be
+walked back to `Failed` under `Lock_Decision_Log` (M1.3), so one refusal had to roll back every
+record in the call, rows included (M3.8's carried bulk item, closed here). Now `execute()` stages
+the guard, submits, and only then inserts each row: with the reference, which arrives in the
+insert so no update follows, or as `Failed` with the platform's reason. `stamp()` had no other
+caller and is gone, with its two tests. Rows still go in input order, in one insert.
+
+**(c) A refusal is data; an exception is a broken strategy.** The strategy answers once per
+request. A refusal is `succeeded` false with the platform's errors as `STATUS_CODE: message`. A
+request left unanswered, or a success with no reference, is a contradiction, and throws.
+
+**(d) The engine rolls itself back.** `execute()` runs under a savepoint and rolls back to it
+before rethrowing. An exception that escapes to the top of the request would roll back anyway,
+but a Flow fault path or an Apex caller can catch it. Without the savepoint, that caller would keep
+records in a process with no row explaining them, or guards staged on records that never entered
+one. The cost is one DML statement per object per call.
+
+**(e) A refused record's guard is re-armed** in the same transaction. Step 9 sets it so the
+template's entry criteria pass; left set on a record in no process, it would let a bypass through,
+the same hole M8 closed for recall.
+
+**(f) Authorisation in chunks of 200.** `UserRecordAccess` answers for at most 200 records per
+query. Flow batches and the REST cap are 200, but an Apex caller of `submitEach()` is not capped,
+so the check runs one query per 200 records. Up to 200 records, the unit suite's query count is
+still 4 (M8.6).
+
+**(g) Duplicates.** `submit()` refuses an Id that appears twice: it would be submitted twice, the
+second refused by the platform, and the guard of the first, by then pending, re-armed.
+`submitEach()` submits it once and gives every request the same answer.
+
+**(h) REST.** The body is `{"recordIds": [...]}`, and the answer `{"results": [...]}` rather than a
+bare array, so v1 can add top-level fields later. Every 400 is decided before anything is read or
+written. Any other fault escapes, so the platform answers 500 and rolls back: catching it would end
+the request normally and commit whatever had happened. 15-character Ids are accepted.
+
+**(i) A real refusal that can be counted on.** `PR_Two_Level_Mgmt` assigns the submitter's
+manager, so a test user created without one is refused by it every time. That gives the
+end-to-end refusal test a deterministic platform refusal with no new metadata. The strategy-level
+isolation test uses entry criteria instead: a record without the guard.
+
+**(j) `TODAY` unchanged.** It stays the running user's date (decisions.md), and each row records
+the date it used (M9.2e). That closes M9.5's item by decision rather than by code.
+
+**(k) The timeline's `Failed` wording.** A `Failed` row may now record the platform refusing the
+process the matrix chose, so "routing failed while evaluating rule X" would misreport it. The
+title now says the attempt failed, and the summary is the first line of `Failure_Detail__c`: the
+engine's or the platform's sentence, without any stack trace. A row with no detail keeps the old
+wording.
+
+### M10.3 Issues encountered
+
+**(a) Prettier is a parse check here, not a style gate.** `prettier --check` flags every Apex class
+in the repo, untouched ones included (`AMF_Lexer`, `AMF_ConfigValidator`, `AMF_SubmitRequest`),
+because the repo has never been formatted with it. Every class parsed. The style warnings predate
+M10 and were left alone.
+
+**(b) Review finding: guard staging is still all-or-nothing within an object.** Step 9's update
+uses `allOrNone` true. A record whose guard cannot be set therefore fails the whole call, rolled
+back, instead of failing alone. That covers a validation rule the record fails, and the lock a
+final approval leaves (`finalApprovalRecordLock`). Not built in M10: no test can make that update
+fail without adding metadata only a test would use, or depending on an org setting
+(`Approval.lock()`). Carried (M10.6).
+
+### M10.4 Verification evidence (this session)
+
+No org access in this session.
+
+```
+apex-ls, whole project              no errors; the one pre-existing warning ('of', AMF_ExpressionException)
+Apex parser (prettier-plugin-apex)  51/51 classes parse (style warnings pre-existing, M10.3a)
+Jest                                59/59 in 4 suites (57 + 2)
+ESLint (lwc)                        clean
+source gate, PowerShell 7.4.6       passed: 3 active rules, 2 approval processes
+metadata XML                        104 files well-formed; both new classes in both permission sets
+Apex test methods                   232 -> 253: +12 engine, +4 integration, +1 strategy,
+                                    +4 invocable, +2 REST, -2 decision log writer
+```
+
+### M10.5 The gate still owed, in this order
+
+The playbook's M10 gate, Part 3:
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. `sf project deploy start -o amf-dev`. Two new classes; no metadata beyond them and the
+   permission sets.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`. Expect 253/253. The new
+   integration tests need both templates active, and create Standard Users. The 200-record test
+   writes what it spent to the debug log and into its failure messages. If it fails on a governor
+   limit, report which: that is a finding about bulk size, not a flake.
+5. Jest, as in M5.
+6. The invocable, through the platform's framework, in anonymous Apex (playbook step 6): a first
+   run returns `submitted` true with a decision log row Id; a second run on the same record returns
+   `Refused`, naming the process.
+7. REST (playbook step 7): `Refused` for the pending Id, `Submitted` for the other, and a 400 for
+   an empty body.
+
+Still owed from M8.7: the manual UI check, step 6.
+
+### M10.6 Carried into later phases
+
+| Item | Owner |
+|---|---|
+| **The org gate in M10.5** | user |
+| `Lock_Decision_Log` still permits one post-insert stamp of `Execution_Ref_Id__c`, which nothing performs since M10. Forbidding every update would also close M1.10's residual long-text hole, but it changes M1's rule and `AMF_DecisionLogLockTest` | a later hardening pass |
+| Guard staging is all-or-nothing within an object (M10.3b). The remedy is `Database.update(…, false)` and a `Failed` row per failure, once a test can make the update fail | next bulk change |
+| A record-triggered Flow on a governed object that calls the action is re-triggered by the engine's guard update and by the templates' clearing update. Its entry conditions must exclude those, for example "only when a record is updated to meet the condition requirements" | whoever builds such a Flow |
+| ~~M8.6: a pending record refuses the whole call; per-record handling belongs with bulk entry points~~ | **closed in M10**, for `submitEach()` |
+| ~~M3.8: a bulk submission's rows are rolled back if any record's submission fails~~ | **closed in M10** |
+| ~~M9.5: `TODAY` for an integration user~~ | **closed by decision**, 2026-10-08 |
+| Still open from M8.7: the manual UI check (step 6) | user |
+| Still open from M8.7c: PR-00000014 to PR-00000025 carry the guard; they go with M6's teardown | M6 teardown |
+| The playbook's optional manual M9 check | user, optional |
+| M9.5's grammar items: DateTime, the text-like field types, the 55-relationship union, reserved keywords, field-to-field multipicklists | as in M9.5 |

@@ -8,6 +8,14 @@ Format: `YYYY-MM-DD — <what changed> — <why>`
 
 ---
 
+2026-10-08 — **Bulk entry points answer per record; the header button keeps its whole-call contract** — the user's choice. `submitEach()` gives an unreadable, already-pending, platform-refused or ungovernable record its own outcome (`Refused` or `Failed`) and lets the rest through, because one bad record must not fail a 200-record Flow. `submit()` and `preview()` keep refusing the whole call (the 2026-08-18 and 2026-10-08 entries below still hold for them), because the UI submits one record and its messages and tests are built on that contract. `Refused` is an outcome, not an `Outcome__c` value: nothing was decided, so nothing is logged.
+
+2026-10-08 — §6.1's step order changes: **the decision log is written after the platform answers** (step 10 before step 8, with step 11 folded in), and the Classic strategy submits **without all-or-nothing**. A platform refusal is now a `Failed` row carrying the platform's reason, with the record's guard re-armed, instead of a rollback that also erased every other record's row (M3.8's carried bulk item). Through the header button this changes one thing: a platform refusal there now leaves a `Failed` row. `AMF_DecisionLogWriter.stamp()` is retired with step 11; `Lock_Decision_Log` still permits the one post-insert stamp, which nothing performs any more (technical log M10.6).
+
+2026-10-08 — **`TODAY` stays the running user's date** for Flow and REST submissions — the user's choice over the org's time zone. One rule serves every entry point, and every row records the date it used, so an integration user's time zone shows in the log rather than hiding in a setting.
+
+2026-10-08 — **A record Id twice in one call:** `submit()` refuses it, because submitting it twice would see the second refused by the platform and the guard of a pending record re-armed; `submitEach()` submits it once and gives every request the same answer. The REST call takes at most 200 records, the size tested in one transaction.
+
 2026-10-08 — **A broken relationship path is *unknown*, under three-valued (Kleene) logic, not false** (§4.3, M9 note) — extends the 2026-08-18 entry below. "False" sufficed while expressions could only `&&` and `||` a comparison; `NOT` would turn it into a match (`NOT (Account__r.Name == NULL)` true for a record with no Account), the very presence check that entry forbids. `AND`/`OR`/`NOT` now treat it as SQL treats unknown, and a rule matches only on a definite true. No pre-M9 expression changes its result; a null *leaf* stays two-valued.
 
 2026-10-08 — §4.1's **"NOT binds tightest, then comparisons" is read through its productions**: `NOT`'s operand is a `unary_expr`, so `NOT a == b && c` is `(NOT (a == b)) && c`. The prose's literal reading, `(NOT a) == b`, would apply `NOT` to a non-Boolean.

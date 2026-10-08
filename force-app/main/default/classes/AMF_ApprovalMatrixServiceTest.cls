@@ -240,11 +240,12 @@ private class AMF_ApprovalMatrixServiceTest {
         Assert.areEqual(UserInfo.getUserId(), row.Submitted_By__c);
         Assert.isNotNull(row.Submitted_At__c);
 
-        // 6.1 step 11, and the one post-insert update Lock_Decision_Log allows.
+        // 6.1's M10 note: the row is written once the platform has answered, so
+        // it carries the reference from its insert, with no update after it.
         Assert.areEqual(
             outcomes[0].executionRefId,
             row.Execution_Ref_Id__c,
-            'Execution_Ref_Id__c is stamped back onto the row after submit'
+            'Execution_Ref_Id__c is on the row the submission wrote'
         );
         Assert.isNotNull(row.Execution_Ref_Id__c);
 
@@ -499,9 +500,9 @@ private class AMF_ApprovalMatrixServiceTest {
 
     @IsTest
     static void aStrategyFailureIsNotSwallowed() {
-        // 4.6 at the engine's own boundary. The strategy throwing must reach the
-        // caller, because the decision log rows already say Submitted and
-        // Lock_Decision_Log will not let the engine walk that back (M1.3).
+        // 4.6 at the engine's own boundary. A strategy that throws has failed as
+        // a whole (6.2's M10 note), so the exception reaches the caller and the
+        // call is rolled back with it: no row, and no guard left staged.
         Purchase_Request__c record = request(500, 'EMEA', 'Low');
         insert record;
 
@@ -516,6 +517,9 @@ private class AMF_ApprovalMatrixServiceTest {
             Assert.areEqual('the platform said no', e.getMessage());
         }
         Test.stopTest();
+
+        Assert.areEqual(0, logsFor(record.Id).size(), 'Nothing is logged for a call that failed');
+        Assert.isFalse(guardOf(record.Id), 'And the guard staged before submit is rolled back');
     }
 
     @IsTest
@@ -903,26 +907,443 @@ private class AMF_ApprovalMatrixServiceTest {
         Test.stopTest();
     }
 
-    private static User strangerUser() {
-        Profile standard = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
-        User stranger = new User(
-            Alias = 'amfstr',
-            Email = 'amf.stranger@example.invalid',
-            EmailEncodingKey = 'UTF-8',
-            LastName = 'Stranger',
-            LanguageLocaleKey = 'en_US',
-            LocaleSidKey = 'en_US',
-            ProfileId = standard.Id,
-            TimeZoneSidKey = 'GMT',
-            Username = 'amf.stranger.' +
-                String.valueOf(Datetime.now().getTime()) +
-                '@amf.test.invalid'
+    // ---------------------------------------------------------------------
+    // M10 -- the log written after the platform answers, and submitEach()'s
+    // record-by-record contract (6.1 and 6.2's M10 notes).
+    // ---------------------------------------------------------------------
+
+    @IsTest
+    static void aPlatformRefusalIsLoggedFailedAndTheOtherRecordStillSubmits() {
+        // 6.2's M10 note. The strategy answers per record, so a refusal is that
+        // record's Failed row -- the rule and process the matrix chose, and the
+        // platform's reason -- while the other record's submission stands.
+        Purchase_Request__c refusedRecord = request(250000, 'APAC', 'Low');
+        Purchase_Request__c enteredRecord = request(500, 'EMEA', 'Low');
+        insert new List<Purchase_Request__c>{ refusedRecord, enteredRecord };
+
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+        strategy.refuse.add(refusedRecord.Id);
+
+        Test.startTest();
+        List<AMF_ApprovalMatrixService.Outcome> outcomes = serviceWith(shippedShape(), strategy)
+            .submitEach(new List<Id>{ refusedRecord.Id, enteredRecord.Id });
+        Test.stopTest();
+
+        Assert.areEqual(1, strategy.calls, 'Both records went to the strategy in one call');
+        Assert.isTrue(strategy.guardAtSubmit.get(refusedRecord.Id), 'It was submitted with the guard staged');
+
+        AMF_ApprovalMatrixService.Outcome refused = outcomes[0];
+        Assert.areEqual('Failed', refused.outcome);
+        Assert.isFalse(refused.submitted);
+        Assert.areEqual('PR_High_Value_APAC', refused.matchedRule, 'The matrix still decided');
+        Assert.areEqual(THREE_LEVEL, refused.selectedProcess);
+        Assert.isNull(refused.executionRefId);
+        Assert.areEqual(
+            'Approval process ' + THREE_LEVEL + ' refused the submission: ' + strategy.refusalMessage,
+            refused.message
         );
+
+        List<Approval_Decision_Log__c> failedRows = logsFor(refusedRecord.Id);
+        Assert.areEqual(1, failedRows.size());
+        Assert.areEqual(failedRows[0].Id, refused.decisionLogId);
+        Assert.areEqual('Failed', failedRows[0].Outcome__c);
+        Assert.areEqual('PR_High_Value_APAC', failedRows[0].Matched_Rule__c);
+        Assert.areEqual(3, failedRows[0].Rule_Version__c);
+        Assert.areEqual(THREE_LEVEL, failedRows[0].Selected_Process__c);
+        Assert.areEqual(refused.evaluatedValuesJson, failedRows[0].Evaluated_Values__c);
+        Assert.areEqual(refused.message, failedRows[0].Failure_Detail__c, 'The platform\'s reason, on record');
+        Assert.isNull(failedRows[0].Execution_Ref_Id__c);
+        Assert.isFalse(guardOf(refusedRecord.Id), 'A refused record\'s guard is re-armed (6.3)');
+
+        AMF_ApprovalMatrixService.Outcome entered = outcomes[1];
+        Assert.isTrue(entered.submitted, 'A refusal must not undo another record\'s submission');
+        Assert.areEqual('Submitted', entered.outcome);
+        Assert.areEqual(entered.executionRefId, logsFor(enteredRecord.Id)[0].Execution_Ref_Id__c);
+        Assert.isTrue(guardOf(enteredRecord.Id), 'Its guard stays set for the life of the approval');
+    }
+
+    @IsTest
+    static void aPlatformRefusalThroughSubmitLeavesAFailedRowInsteadOfNothing() {
+        // The one thing M10 changes on the header button's path (docs/decisions.md,
+        // 2026-10-08). Before it, a refusal rolled the call back and left no
+        // trace; now it is logged like any other failure, and answered.
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+        strategy.refuse.add(record.Id);
+
+        Test.startTest();
+        AMF_ApprovalMatrixService.Outcome outcome = serviceWith(shippedShape(), strategy)
+            .submit(new List<Id>{ record.Id })[0];
+        Test.stopTest();
+
+        Assert.areEqual('Failed', outcome.outcome);
+        Assert.isFalse(outcome.submitted);
+        Assert.isTrue(outcome.message.contains(strategy.refusalMessage), 'Got: ' + outcome.message);
+
+        List<Approval_Decision_Log__c> rows = logsFor(record.Id);
+        Assert.areEqual(1, rows.size());
+        Assert.areEqual('Failed', rows[0].Outcome__c);
+        Assert.areEqual(rows[0].Id, outcome.decisionLogId);
+        Assert.isFalse(guardOf(record.Id), 'Re-armed');
+    }
+
+    @IsTest
+    static void submitEachRefusesARecordTheCallerCannotReadAndSubmitsTheRest() {
+        // 11, record by record. Purchase_Request__c is Private, so the submitter
+        // can read the record they own and not the one they do not.
+        Purchase_Request__c notTheirs = request(500, 'EMEA', 'Low');
+        insert notTheirs;
+
+        User submitter = submitterUser();
+        Purchase_Request__c theirs = request(500, 'EMEA', 'Low');
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+        List<AMF_ApprovalMatrixService.Outcome> outcomes;
+
+        Test.startTest();
+        System.runAs(submitter) {
+            insert theirs;
+            outcomes = serviceWith(shippedShape(), strategy)
+                .submitEach(new List<Id>{ notTheirs.Id, theirs.Id });
+        }
+        Test.stopTest();
+
+        AMF_ApprovalMatrixService.Outcome refused = outcomes[0];
+        Assert.areEqual(notTheirs.Id, refused.recordId);
+        Assert.areEqual('Refused', refused.outcome);
+        Assert.isFalse(refused.submitted);
+        Assert.isTrue(refused.message.contains('read access'), 'Got: ' + refused.message);
+        Assert.isNull(refused.matchedRule, 'Nothing about the record was read');
+        Assert.isNull(refused.evaluatedValuesJson);
+        Assert.isNull(refused.decisionLogId, 'Nothing was decided, so nothing is logged');
+        Assert.areEqual(0, logsFor(notTheirs.Id).size());
+        Assert.isNull(strategy.processFor(notTheirs.Id), 'It never reached the strategy');
+
+        Assert.isTrue(outcomes[1].submitted, 'The record the caller can read still goes: ' + outcomes[1].message);
+        Assert.areEqual(1, logsFor(theirs.Id).size());
+    }
+
+    @IsTest
+    static void submitEachAnswersEveryObjectInTheCall() {
+        // The rule set and the union query are per object, so submitEach() takes
+        // one object at a time. An object the matrix cannot govern is refused
+        // record by record, and the other object's records still go through.
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+        Account account = new Account(Name = 'Mixed batch');
+        insert account;
+
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+
+        Test.startTest();
+        List<AMF_ApprovalMatrixService.Outcome> outcomes = serviceWith(shippedShape(), strategy)
+            .submitEach(new List<Id>{ account.Id, record.Id });
+        Test.stopTest();
+
+        Assert.areEqual(2, outcomes.size());
+        Assert.areEqual(account.Id, outcomes[0].recordId, 'In the order supplied');
+        Assert.areEqual('Refused', outcomes[0].outcome);
+        Assert.isTrue(
+            outcomes[0].message.contains('Matrix_Submission__c'),
+            'It says why the object cannot be governed. Got: ' + outcomes[0].message
+        );
+        Assert.areEqual(0, logsFor(account.Id).size());
+
+        Assert.areEqual(record.Id, outcomes[1].recordId);
+        Assert.isTrue(outcomes[1].submitted);
+    }
+
+    @IsTest
+    static void submitEachRefusesEveryRecordOfAnObjectWhoseRuleWillNotCompile() {
+        // 4.6 still holds: none of the object's records may route past a rule
+        // that nobody can evaluate. What changes is that the call is answered,
+        // record by record, instead of thrown, so other objects are answered too.
+        Purchase_Request__c first = request(500, 'EMEA', 'Low');
+        Purchase_Request__c second = request(250000, 'APAC', 'High');
+        insert new List<Purchase_Request__c>{ first, second };
+        Account account = new Account(Name = 'Another object');
+        insert account;
+
+        List<AMF_RuleDefinition> withBrokenRule = new List<AMF_RuleDefinition>{
+            new AMF_RuleBuilder()
+                .named('PR_Broken')
+                .withPriority(10)
+                .withExpression('Nonexistent__c == \'x\'')
+                .routingTo(THREE_LEVEL)
+                .build(),
+            new AMF_RuleBuilder()
+                .named('PR_Catch_All')
+                .withPriority(9999)
+                .withExpression('TRUE')
+                .routingTo(TWO_LEVEL)
+                .build()
+        };
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+
+        Test.startTest();
+        List<AMF_ApprovalMatrixService.Outcome> outcomes = serviceWith(withBrokenRule, strategy)
+            .submitEach(new List<Id>{ first.Id, account.Id, second.Id });
+        Test.stopTest();
+
+        for (Integer i : new List<Integer>{ 0, 2 }) {
+            Assert.areEqual('Refused', outcomes[i].outcome);
+            Assert.isTrue(
+                outcomes[i].message.contains('position'),
+                'The positioned compile error (4.2). Got: ' + outcomes[i].message
+            );
+        }
+        Assert.areEqual('Refused', outcomes[1].outcome, 'The Account is answered for its own reason');
+        Assert.isTrue(outcomes[1].message.contains('Matrix_Submission__c'), 'Got: ' + outcomes[1].message);
+
+        Assert.areEqual(0, strategy.calls, 'The catch-all must NOT pick either record up');
+        Assert.areEqual(0, [SELECT COUNT() FROM Approval_Decision_Log__c], 'Nothing was decided, so nothing is logged');
+    }
+
+    @IsTest
+    static void submitEachRecordsABlockAndAFailureJustAsSubmitDoes() {
+        // Only Refused is new. Every decided outcome keeps its row and its meaning.
+        Purchase_Request__c blocked = request(500, 'EMEA', 'Low');
+        Purchase_Request__c failed = request(500, 'EMEA', 'High');
+        insert new List<Purchase_Request__c>{ blocked, failed };
+
+        List<AMF_RuleDefinition> rules = new List<AMF_RuleDefinition>{
+            new AMF_RuleBuilder()
+                .named('PR_High_Risk')
+                .withPriority(20)
+                .withExpression('Risk_Level__c == \'High\'')
+                .routingTo(null)
+                .build()
+        };
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+
+        Test.startTest();
+        List<AMF_ApprovalMatrixService.Outcome> outcomes = serviceWith(rules, strategy)
+            .submitEach(new List<Id>{ blocked.Id, failed.Id });
+        Test.stopTest();
+
+        Assert.areEqual('Blocked_No_Match', outcomes[0].outcome);
+        Assert.areEqual('Blocked_No_Match', logsFor(blocked.Id)[0].Outcome__c);
+        Assert.areEqual(logsFor(blocked.Id)[0].Id, outcomes[0].decisionLogId);
+
+        Assert.areEqual('Failed', outcomes[1].outcome);
+        Assert.isTrue(outcomes[1].message.contains('Process_API_Name__c'), 'Got: ' + outcomes[1].message);
+        Assert.areEqual('Failed', logsFor(failed.Id)[0].Outcome__c);
+
+        Assert.areEqual(0, strategy.calls, 'Neither was routed');
+    }
+
+    @IsTest
+    static void submitEachSubmitsARecordSuppliedTwiceOnceAndAnswersBoth() {
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        Purchase_Request__c other = request(500, 'AMER', 'Low');
+        insert new List<Purchase_Request__c>{ record, other };
+
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+
+        Test.startTest();
+        List<AMF_ApprovalMatrixService.Outcome> outcomes = serviceWith(shippedShape(), strategy)
+            .submitEach(new List<Id>{ record.Id, other.Id, record.Id });
+        Test.stopTest();
+
+        Assert.areEqual(3, outcomes.size(), 'One answer per request');
+        Assert.areEqual(record.Id, outcomes[2].recordId);
+        Assert.isTrue(outcomes[0].submitted);
+        Assert.isTrue(outcomes[2].submitted);
+        Assert.areEqual(outcomes[0].decisionLogId, outcomes[2].decisionLogId, 'The same answer, not a second submission');
+        Assert.areEqual(outcomes[0].executionRefId, outcomes[2].executionRefId);
+        Assert.areEqual(2, strategy.received.size(), 'Each record submitted once');
+        Assert.areEqual(1, logsFor(record.Id).size(), 'And logged once');
+    }
+
+    @IsTest
+    static void submitRefusesARecordSuppliedTwice() {
+        // submit() answers for the whole call, and a duplicate would be submitted
+        // twice: the second refused by the platform, and the guard of the first,
+        // by then pending, re-armed (docs/decisions.md, 2026-10-08).
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+
+        try {
+            serviceWith(shippedShape(), strategy).submit(new List<Id>{ record.Id, record.Id });
+            Assert.fail('A record supplied twice must be refused');
+        } catch (AMF_SubmissionException e) {
+            Assert.isTrue(e.getMessage().contains('more than once'), 'Got: ' + e.getMessage());
+            Assert.isTrue(e.getMessage().contains(String.valueOf(record.Id)), 'It names the record');
+        }
+
+        Assert.areEqual(0, strategy.calls);
+        Assert.areEqual(0, logsFor(record.Id).size());
+    }
+
+    @IsTest
+    static void submitEachAnswersANullIdByItselfAndAnEmptyCallWithNothing() {
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+
+        AMF_ApprovalMatrixService service = serviceWith(shippedShape(), new AMF_StrategyStub());
+
+        List<AMF_ApprovalMatrixService.Outcome> outcomes = service.submitEach(new List<Id>{ null, record.Id });
+
+        Assert.areEqual(2, outcomes.size());
+        Assert.isNull(outcomes[0].recordId);
+        Assert.areEqual('Refused', outcomes[0].outcome);
+        Assert.isTrue(outcomes[0].message.contains('record Id is required'), 'Got: ' + outcomes[0].message);
+        Assert.isTrue(outcomes[1].submitted, 'A null beside it does not stop the record');
+
+        Assert.areEqual(0, service.submitEach(null).size(), 'Nothing in, nothing out -- not an exception');
+        Assert.areEqual(0, service.submitEach(new List<Id>()).size());
+    }
+
+    @IsTest
+    static void aStrategyThatLeavesARecordUnansweredFailsTheCallAndLeavesNothingBehind() {
+        // 6.2's M10 note: one answer per request. A record with none has an
+        // unknown fate, so there is nothing true to log. The engine rolls the
+        // call back itself, so even a caller that catches the exception -- a
+        // Flow fault path -- keeps no staged guard and no submission.
+        Purchase_Request__c answered = request(500, 'EMEA', 'Low');
+        Purchase_Request__c unanswered = request(500, 'AMER', 'Low');
+        insert new List<Purchase_Request__c>{ answered, unanswered };
+
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+        strategy.omit.add(unanswered.Id);
+
+        Test.startTest();
+        try {
+            serviceWith(shippedShape(), strategy).submitEach(new List<Id>{ answered.Id, unanswered.Id });
+            Assert.fail('A request the strategy did not answer must fail the call');
+        } catch (AMF_SubmissionException e) {
+            Assert.isTrue(e.getMessage().contains('no answer'), 'Got: ' + e.getMessage());
+            Assert.isTrue(e.getMessage().contains(String.valueOf(unanswered.Id)), 'It names the record');
+        }
+        Test.stopTest();
+
+        Assert.isTrue(strategy.guardAtSubmit.get(answered.Id), 'Precondition: the guard was staged before submit');
+        Assert.isFalse(guardOf(answered.Id), 'The staged guard was rolled back');
+        Assert.isFalse(guardOf(unanswered.Id));
+        Assert.areEqual(0, [SELECT COUNT() FROM Approval_Decision_Log__c], 'And nothing was logged');
+    }
+
+    @IsTest
+    static void twoHundredRecordsCostTheEngineWhatThreeDo() {
+        // 4.4 and 4.5 at a Flow batch's size. The engine's queries are per call,
+        // not per record: authorisation (one per 200 records), the pending check,
+        // the union load and the stub's read. The real platform at this size is
+        // AMF_SubmissionIntegrationTest's job.
+        List<Purchase_Request__c> records = new List<Purchase_Request__c>();
+
+        for (Integer i = 0; i < 200; i++) {
+            records.add(request(250000 + i, Math.mod(i, 2) == 0 ? 'APAC' : 'EMEA', 'Low'));
+        }
+        insert records;
+
+        List<Id> recordIds = new List<Id>();
+
+        for (Purchase_Request__c record : records) {
+            recordIds.add(record.Id);
+        }
+
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        List<AMF_ApprovalMatrixService.Outcome> outcomes = serviceWith(shippedShape(), strategy)
+            .submitEach(recordIds);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Assert.areEqual(200, outcomes.size());
+        for (AMF_ApprovalMatrixService.Outcome outcome : outcomes) {
+            Assert.isTrue(outcome.submitted, outcome.recordId + ': ' + outcome.message);
+        }
+        Assert.areEqual(1, strategy.calls, 'One strategy call; chunking for the platform is the strategy\'s job');
+        Assert.areEqual(
+            200,
+            [SELECT COUNT() FROM Approval_Decision_Log__c WHERE Execution_Ref_Id__c != NULL],
+            'Every row written once, with its reference'
+        );
+        Assert.isTrue(queriesUsed <= 4, 'The same four queries as for three records. Used: ' + queriesUsed);
+    }
+
+    @IsTest
+    static void moreThanTwoHundredRecordsAreAuthorisedInChunks() {
+        // UserRecordAccess answers for at most 200 records per query, and an Apex
+        // caller of submitEach() is not held to the REST cap. 201 records take
+        // two access queries, not an exception.
+        List<Purchase_Request__c> records = new List<Purchase_Request__c>();
+
+        for (Integer i = 0; i < 201; i++) {
+            records.add(request(500, 'EMEA', 'Low'));
+        }
+        insert records;
+
+        List<Id> recordIds = new List<Id>();
+
+        for (Purchase_Request__c record : records) {
+            recordIds.add(record.Id);
+        }
+
+        Test.startTest();
+        Integer queriesBefore = Limits.getQueries();
+        List<AMF_ApprovalMatrixService.Outcome> outcomes = serviceWith(shippedShape(), new AMF_StrategyStub())
+            .submitEach(recordIds);
+        Integer queriesUsed = Limits.getQueries() - queriesBefore;
+        Test.stopTest();
+
+        Integer submitted = 0;
+        for (AMF_ApprovalMatrixService.Outcome outcome : outcomes) {
+            submitted += outcome.submitted ? 1 : 0;
+        }
+        Assert.areEqual(201, submitted, 'Every record the caller can read is authorised');
+        Assert.isTrue(queriesUsed <= 5, 'Two access queries, then the same three. Used: ' + queriesUsed);
+    }
+
+    private static Boolean guardOf(Id recordId) {
+        return [SELECT Matrix_Submission__c FROM Purchase_Request__c WHERE Id = :recordId]
+        .Matrix_Submission__c;
+    }
+
+    /** A Standard User with no framework permission set and no access to the test's records. */
+    private static User strangerUser() {
+        User stranger = standardUser('amfstr', 'Stranger');
         // User is a setup object: inserting one in the same transaction as a
         // Purchase_Request__c is MIXED_DML_OPERATION without this wrapper.
         System.runAs(new User(Id = UserInfo.getUserId())) {
             insert stranger;
         }
         return stranger;
+    }
+
+    /**
+     * A Standard User holding Approval_Matrix_User: a real submitter, who reads
+     * the Purchase Requests they own and, the object being Private, no others.
+     */
+    private static User submitterUser() {
+        User submitter = standardUser('amfsub', 'Submitter');
+        PermissionSet matrix = [SELECT Id FROM PermissionSet WHERE Name = 'Approval_Matrix_User' LIMIT 1];
+
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert submitter;
+            insert new PermissionSetAssignment(AssigneeId = submitter.Id, PermissionSetId = matrix.Id);
+        }
+        return submitter;
+    }
+
+    private static User standardUser(String alias, String lastName) {
+        Profile standard = [SELECT Id FROM Profile WHERE Name = 'Standard User' LIMIT 1];
+        String name = 'amf.' + lastName.toLowerCase();
+        return new User(
+            Alias = alias,
+            Email = name + '@example.invalid',
+            EmailEncodingKey = 'UTF-8',
+            LastName = lastName,
+            LanguageLocaleKey = 'en_US',
+            LocaleSidKey = 'en_US',
+            ProfileId = standard.Id,
+            TimeZoneSidKey = 'GMT',
+            Username = name + '.' + String.valueOf(Datetime.now().getTime()) + '@amf.test.invalid'
+        );
     }
 }

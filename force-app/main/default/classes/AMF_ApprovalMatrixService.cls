@@ -2,8 +2,9 @@
  * The engine. Runs the matrix over a set of records and submits each one to the
  * approval process its highest-priority matching rule names.
  *
- * Architecture section: 6.1 (submission flow, steps 1-11), 6.3 (the guard),
- * 6.4 (preview), 4.6 (fail loudly), 11 (security), 7 (entry points).
+ * Architecture section: 6.1 (submission flow, steps 1-11, and its M8 and M10
+ * notes), 6.3 (the guard), 6.4 (preview), 4.6 (fail loudly), 11 (security),
+ * 7 (entry points).
  *
  * PREVIEW (6.4, added in M5) is this same path stopped after step 7: it
  * answers "where would this go, and why" with nothing written or submitted,
@@ -29,6 +30,18 @@
  *   10. AMF_SubmissionStrategy.submit(...)
  *   11. Stamp Execution_Ref_Id__c back onto the row
  *
+ * SINCE M10 THEY RUN IN TWO HALVES (6.1's M10 note). prepare() is steps 1-7
+ * and writes nothing; the preview is that half alone. execute() runs steps 9
+ * and 10, then 8: each decision log row is written once the platform has
+ * answered for its record, so step 11's reference goes onto the row as it is
+ * written. A record the platform refuses is therefore one Failed row, with its
+ * guard re-armed, rather than a rollback of every record in the call.
+ *
+ * TWO CONTRACTS ON THAT ONE PATH (M10). submit() and preview() answer for the
+ * whole call, which is what the header button relies on. submitEach() is what
+ * Flow, Apex and REST callers use (7), and answers record by record, so one bad
+ * record cannot fail a 200-record Flow. docs/decisions.md, 2026-10-08.
+ *
  * FAILURE, AND WHY THIS CLASS RETURNS OUTCOMES RATHER THAN THROWING PER RECORD.
  * 6.1 step 6 reads "write a Blocked_No_Match log row, throw a clear error", and
  * in Apex those two instructions fight: an exception that escapes the top of a
@@ -37,20 +50,25 @@
  * them -- log row written, Outcome not Submitted, record not submitted, reason
  * in the message -- and reserves exceptions for faults that condemn the whole
  * call: nothing to submit, a record the caller cannot read, a record already in
- * an approval process, an object with no active rules, a rule that will not
- * compile, a submission that failed. That is not 4.6's forbidden
- * catch-and-return-false; the evaluator still never swallows anything, and a
- * blocked record leaves a louder trace than an exception would, because the
- * trace survives the transaction. Recorded in docs/decisions.md, 2026-08-18.
+ * an approval process, a record supplied twice, an object with no active rules,
+ * a rule that will not compile, a strategy that failed. That is not 4.6's
+ * forbidden catch-and-return-false; the evaluator still never swallows
+ * anything, and a blocked record leaves a louder trace than an exception would,
+ * because the trace survives the transaction. Recorded in docs/decisions.md,
+ * 2026-08-18. submitEach() keeps only the last of those as an exception: it
+ * answers an empty call with no outcomes, submits a duplicate once, and
+ * refuses the rest record by record -- Refused, with no row, because nothing
+ * was decided.
  *
  * A RULE THAT WILL NOT COMPILE STOPS EVERYTHING (4.6). 9's config validator
  * catches that at release time (M4); one that reaches runtime anyway -- a matrix
  * deployed without the gate -- surfaces here as a positioned
- * AMF_ExpressionException that blocks the entire call. It must, and this is the
- * anti-Sitetracker rule at its sharpest: if the priority-10 rule cannot be
- * evaluated, nobody can say that a record would not have matched it, so routing
- * that record to the priority-20 rule is exactly the silent misrouting this
- * framework was built to make impossible.
+ * AMF_ExpressionException that blocks the entire call, or, from submitEach(),
+ * every record of that object. It must, and this is the anti-Sitetracker rule
+ * at its sharpest: if the priority-10 rule cannot be evaluated, nobody can say
+ * that a record would not have matched it, so routing that record to the
+ * priority-20 rule is exactly the silent misrouting this framework was built
+ * to make impossible.
  *
  * A RECORD ALREADY IN AN APPROVAL PROCESS IS REFUSED (6.1's M8 note). The
  * platform would refuse it anyway, with ALREADY_IN_PROCESS, but only at step 10,
@@ -76,6 +94,18 @@ public without sharing class AMF_ApprovalMatrixService {
     private static final String GUARD_FIELD = 'Matrix_Submission__c';
 
     /**
+     * Outcome values. The first three are Outcome__c's whole domain (3.3).
+     * Refused is never written: a refused record was never decided.
+     */
+    private static final String SUBMITTED = 'Submitted';
+    private static final String BLOCKED_NO_MATCH = 'Blocked_No_Match';
+    private static final String FAILED = 'Failed';
+    private static final String REFUSED = 'Refused';
+
+    /** UserRecordAccess answers for at most 200 records per query. */
+    private static final Integer ACCESS_QUERY_LIMIT = 200;
+
+    /**
      * One record's answer: what happened, and everything needed to explain it.
      *
      * preview() returns the same shape (6.4). There, outcome is the verdict a
@@ -92,7 +122,12 @@ public without sharing class AMF_ApprovalMatrixService {
         @AuraEnabled
         public Boolean submitted = false;
 
-        /** Outcome__c as written to the log: Submitted, Blocked_No_Match or Failed. */
+        /**
+         * Outcome__c as written to the log: Submitted, Blocked_No_Match or Failed.
+         * From submitEach() it may also be Refused: nothing was decided for the
+         * record, so no row was written -- the caller cannot read it, it is
+         * already in an approval process, or its object cannot be governed.
+         */
         @AuraEnabled
         public String outcome;
 
@@ -133,13 +168,34 @@ public without sharing class AMF_ApprovalMatrixService {
         @AuraEnabled
         public String executionRefId;
 
-        /** The Approval_Decision_Log__c row written for this record. Always set by submit(); null from preview(). */
+        /** The Approval_Decision_Log__c row written for this record. Set for every outcome but Refused; null from preview(). */
         @AuraEnabled
         public Id decisionLogId;
 
         /** Why this record did not route. Null when it did. */
         @AuraEnabled
         public String message;
+    }
+
+    /**
+     * What prepare() decided and execute() acts on: one outcome per record, in
+     * the order supplied, and the decision log row for each record decided.
+     */
+    private class Plan {
+
+        private final String objectApiName;
+
+        private final List<Outcome> outcomes = new List<Outcome>();
+
+        /** Unsaved rows by record. A refused record has none. */
+        private final Map<Id, Approval_Decision_Log__c> rowByRecord = new Map<Id, Approval_Decision_Log__c>();
+
+        /** The rules decided with, by DeveloperName, so a refused submission's row can name its rule. */
+        private final Map<String, AMF_RuleDefinition> ruleByName = new Map<String, AMF_RuleDefinition>();
+
+        private Plan(String objectApiName) {
+            this.objectApiName = objectApiName;
+        }
     }
 
     private final AMF_RuleProvider ruleProvider;
@@ -216,17 +272,18 @@ public without sharing class AMF_ApprovalMatrixService {
     }
 
     /**
-     * 6.1, steps 1-11.
+     * 6.1, steps 1-11, answering for the whole call.
      *
-     * @param recordIds The governed records to submit. All must be the same
-     *                  object: the rule set and the union query are both per
-     *                  object, and 6.1 step 1 loads rules for "the object".
+     * @param recordIds The governed records to submit, each once. All must be
+     *                  the same object: the rule set and the union query are
+     *                  both per object, and 6.1 step 1 loads rules for "the
+     *                  object".
      * @return One Outcome per record, in the order supplied.
      * @throws AMF_SubmissionException On a fault condemning the whole call.
      * @throws AMF_ExpressionException If any active rule will not compile.
      */
     public List<Outcome> submit(List<Id> recordIds) {
-        return run(recordIds, true);
+        return execute(prepare(recordIds, true));
     }
 
     /**
@@ -246,35 +303,200 @@ public without sharing class AMF_ApprovalMatrixService {
      * @throws AMF_ExpressionException If any active rule will not compile.
      */
     public List<Outcome> preview(List<Id> recordIds) {
-        return run(recordIds, false);
+        // The rows prepare() built are discarded unsaved, and execute() -- the
+        // guard, the strategy and the log -- is never reached.
+        return prepare(recordIds, true).outcomes;
     }
 
     /**
-     * The one engine path behind submit() and preview().
+     * 7's Flow, Apex and Integration rows (M10): 6.1 answering record by record.
      *
-     * @param recordIds      The governed records.
-     * @param commitDecision False for 6.4's preview: stop after step 7. 6.4 names
-     *                       this flag commit, which Apex reserves.
-     * @return One Outcome per record, in the order supplied.
+     * Where submit() refuses the whole call, this refuses only the records
+     * concerned and submits the rest:
+     *   - a record the caller cannot read, or one already in an approval
+     *     process, is Refused, with no row;
+     *   - records are taken one object at a time, and a fault that condemns an
+     *     object's records -- no active rules, no guard field, a rule that will
+     *     not compile -- refuses those records alone;
+     *   - a record supplied twice is submitted once, and each request for it
+     *     gets the same answer;
+     *   - a null Id is Refused by itself.
+     * Every other outcome, row included, is exactly what submit() records.
+     *
+     * @param recordIds The records to submit, of any objects.
+     * @return One Outcome per Id supplied, in the order supplied. Empty for none.
+     * @throws AMF_SubmissionException If the strategy fails as a whole; that
+     *         object's submissions are rolled back first.
      */
-    private List<Outcome> run(List<Id> recordIds, Boolean commitDecision) {
+    public List<Outcome> submitEach(List<Id> recordIds) {
+        List<Outcome> outcomes = new List<Outcome>();
+
+        if (recordIds == null || recordIds.isEmpty()) {
+            return outcomes;
+        }
+
+        // One object at a time, in the order first supplied, each record once:
+        // the rule set and the union query are per object (6.1 steps 1 and 4).
+        Map<String, List<Id>> idsByObject = new Map<String, List<Id>>();
+        List<String> objectOrder = new List<String>();
+        Set<Id> seen = new Set<Id>();
+
+        for (Id recordId : recordIds) {
+            if (recordId == null || !seen.add(recordId)) {
+                continue;
+            }
+            String objectApiName = String.valueOf(recordId.getSObjectType());
+
+            if (!idsByObject.containsKey(objectApiName)) {
+                idsByObject.put(objectApiName, new List<Id>());
+                objectOrder.add(objectApiName);
+            }
+            idsByObject.get(objectApiName).add(recordId);
+        }
+
+        Map<Id, Outcome> outcomeById = new Map<Id, Outcome>();
+
+        for (String objectApiName : objectOrder) {
+            List<Id> sameObject = idsByObject.get(objectApiName);
+            Plan plan;
+
+            // prepare() writes nothing, so a fault in it has nothing to undo:
+            // the object's records are refused with its message, and the next
+            // object goes ahead. 4.6 still holds -- none of them is routed.
+            try {
+                plan = prepare(sameObject, false);
+            } catch (AMF_SubmissionException e) {
+                refuseAll(sameObject, e.getMessage(), outcomeById);
+                continue;
+            } catch (AMF_ExpressionException e) {
+                refuseAll(sameObject, e.getMessage(), outcomeById);
+                continue;
+            }
+
+            for (Outcome result : execute(plan)) {
+                outcomeById.put(result.recordId, result);
+            }
+        }
+
+        for (Id recordId : recordIds) {
+            outcomes.add(recordId == null ? refusal(null, 'A record Id is required.') : outcomeById.get(recordId));
+        }
+        return outcomes;
+    }
+
+    /**
+     * Steps 1-7, writing nothing: the decision for each record, and the row
+     * that would record it. The preview is this alone.
+     *
+     * @param recordIds The governed records, all of one object.
+     * @param wholeCall True for submit() and preview(): a record the caller
+     *                  cannot read, one already in an approval process, or one
+     *                  supplied twice refuses the whole call. False for
+     *                  submitEach(), which refuses those records one by one.
+     * @return The plan for execute().
+     */
+    private Plan prepare(List<Id> recordIds, Boolean wholeCall) {
         if (recordIds == null || recordIds.isEmpty()) {
             throw new AMF_SubmissionException('No records were supplied to submit');
         }
 
-        String objectApiName = objectTypeOf(recordIds);
-        authorise(recordIds);
-        requireGuardField(objectApiName);
-        refuseRecordsAlreadyInApproval(recordIds);
+        Plan plan = new Plan(objectTypeOf(recordIds));
 
+        // 11: the service runs without sharing, so it authorises explicitly,
+        // before it reads or decides anything.
+        Set<Id> unreadable = unreadableAmong(recordIds);
+
+        if (wholeCall && !unreadable.isEmpty()) {
+            List<String> denied = new List<String>();
+
+            for (Id recordId : recordIds) {
+                if (unreadable.contains(recordId)) {
+                    denied.add(String.valueOf(recordId));
+                }
+            }
+            throw new AMF_SubmissionException(
+                'Submission requires read access to the record. ' +
+                UserInfo.getUsername() +
+                ' cannot read: ' +
+                String.join(denied, ', ')
+            );
+        }
+
+        requireGuardField(plan.objectApiName);
+
+        // 6.1's M8 note. Asked only about records the caller can read, so it
+        // says nothing about an approval behind a record they cannot.
+        List<Id> readable = new List<Id>();
+
+        for (Id recordId : recordIds) {
+            if (!unreadable.contains(recordId)) {
+                readable.add(recordId);
+            }
+        }
+
+        Map<Id, String> pendingProcessByRecord = pendingProcessesOf(readable);
+
+        if (wholeCall && !pendingProcessByRecord.isEmpty()) {
+            List<String> pending = new List<String>();
+
+            for (Id recordId : recordIds) {
+                if (pendingProcessByRecord.containsKey(recordId)) {
+                    pending.add(recordId + ' in ' + pendingProcessByRecord.get(recordId));
+                }
+            }
+            throw new AMF_SubmissionException(
+                'A record that is already in an approval process cannot be submitted again ' +
+                'until that request is recalled or completes. Already pending: ' +
+                String.join(pending, ', ')
+            );
+        }
+
+        List<Outcome> toDecide = new List<Outcome>();
+
+        for (Id recordId : recordIds) {
+            Outcome result;
+
+            if (unreadable.contains(recordId)) {
+                result = refusal(
+                    recordId,
+                    'Submission requires read access to the record, and ' +
+                    UserInfo.getUsername() +
+                    ' cannot read it.'
+                );
+            } else if (pendingProcessByRecord.containsKey(recordId)) {
+                result = refusal(
+                    recordId,
+                    'This record is already in approval process ' +
+                    pendingProcessByRecord.get(recordId) +
+                    '. It cannot be submitted again until that request is recalled or completes.'
+                );
+            } else {
+                result = new Outcome();
+                result.recordId = recordId;
+                toDecide.add(result);
+            }
+            plan.outcomes.add(result);
+        }
+
+        if (!toDecide.isEmpty()) {
+            decide(plan, toDecide);
+        }
+        return plan;
+    }
+
+    /**
+     * Steps 1-7 for the records left to decide: each outcome is filled in place
+     * and its unsaved row added to the plan.
+     */
+    private void decide(Plan plan, List<Outcome> toDecide) {
         // Step 1. An object with no active rules is not governed (3.2), and
         // deactivating an object's rules is the framework's kill switch -- so
         // this is a deliberate configuration state, reported as such.
-        List<AMF_RuleDefinition> provided = ruleProvider.getActiveRules(objectApiName);
+        List<AMF_RuleDefinition> provided = ruleProvider.getActiveRules(plan.objectApiName);
 
         if (provided == null || provided.isEmpty()) {
             throw new AMF_SubmissionException(
-                objectApiName +
+                plan.objectApiName +
                 ' is not governed by the approval matrix: it has no active ' +
                 'Approval_Matrix_Rule__mdt rows. Activate a rule for it, or submit ' +
                 'through a path that does not use the matrix.'
@@ -298,102 +520,194 @@ public without sharing class AMF_ApprovalMatrixService {
             AMF_ExprCompiler.CompiledExpression expression = AMF_ExprCache.get(rule);
             compiledByRule.put(rule.developerName, expression);
             compiled.add(expression);
+            plan.ruleByName.put(rule.developerName, rule);
         }
 
         // Step 4. ONE query for the union of every path across every rule (4.4).
         // A matrix of catch-alls reads no fields and costs nothing here.
+        Set<Id> recordIds = new Set<Id>();
+
+        for (Outcome result : toDecide) {
+            recordIds.add(result.recordId);
+        }
+
         Map<Id, SObject> recordsById = AMF_FieldPathResolver.load(
-            objectApiName,
+            plan.objectApiName,
             AMF_FieldPathResolver.unionPaths(compiled),
-            new Set<Id>(recordIds)
+            recordIds
         );
 
-        List<Outcome> outcomes = new List<Outcome>();
-        List<Approval_Decision_Log__c> rows = new List<Approval_Decision_Log__c>();
-        List<Outcome> outcomeByRow = new List<Outcome>();
-        List<AMF_SubmitRequest> submitRequests = new List<AMF_SubmitRequest>();
-        List<Outcome> outcomeByRequest = new List<Outcome>();
-        Set<Id> guardIds = new Set<Id>();
-
-        for (Id recordId : recordIds) {
-            Outcome result = new Outcome();
-            result.recordId = recordId;
-            outcomes.add(result);
-
-            Approval_Decision_Log__c row = match(
-                recordId,
-                objectApiName,
-                rules,
-                compiledByRule,
-                recordsById,
-                result
+        // Steps 5-7, per record.
+        for (Outcome result : toDecide) {
+            plan.rowByRecord.put(
+                result.recordId,
+                match(result.recordId, plan.objectApiName, rules, compiledByRule, recordsById, result)
             );
+        }
+    }
 
-            rows.add(row);
-            outcomeByRow.add(result);
+    /**
+     * Steps 9 and 10, then 8, with 11 folded in (6.1's M10 note): stage the
+     * guard, submit, and write each decided record's row once the platform has
+     * answered for it.
+     *
+     * A failure in here -- a strategy that throws, or answers in a way that
+     * contradicts itself -- condemns the call, and the plan's DML is rolled
+     * back before it is rethrown. An escaping exception would roll it back
+     * anyway; doing it here means a caller that catches the exception, such as
+     * a Flow fault path, cannot keep a submission whose row was never written.
+     *
+     * @return The plan's outcomes, in the order supplied, now final.
+     */
+    private List<Outcome> execute(Plan plan) {
+        Savepoint beforeSubmission = Database.setSavepoint();
 
-            if (result.outcome == 'Submitted') {
-                guardIds.add(recordId);
-                submitRequests.add(new AMF_SubmitRequest(recordId, result.selectedProcess));
-                outcomeByRequest.add(result);
+        try {
+            submitRouted(plan);
+
+            // Step 8. Every decided record gets its row, whatever happened to
+            // it, written once. A refused record has none: nothing was decided.
+            List<Approval_Decision_Log__c> rows = new List<Approval_Decision_Log__c>();
+            List<Outcome> logged = new List<Outcome>();
+
+            for (Outcome result : plan.outcomes) {
+                if (plan.rowByRecord.containsKey(result.recordId)) {
+                    rows.add(plan.rowByRecord.get(result.recordId));
+                    logged.add(result);
+                }
+            }
+
+            AMF_DecisionLogWriter.save(rows);
+
+            for (Integer i = 0; i < rows.size(); i++) {
+                logged[i].decisionLogId = rows[i].Id;
+            }
+        } catch (Exception e) {
+            Database.rollback(beforeSubmission);
+            throw e;
+        }
+
+        return plan.outcomes;
+    }
+
+    /**
+     * Steps 9, 10 and 11 for every record the matrix routed. Each outcome and
+     * row is settled by the platform's answer: the execution reference on a
+     * success, or a Failed row carrying the platform's reason on a refusal.
+     */
+    private void submitRouted(Plan plan) {
+        List<AMF_SubmitRequest> requests = new List<AMF_SubmitRequest>();
+        Set<Id> routed = new Set<Id>();
+
+        for (Outcome result : plan.outcomes) {
+            if (result.outcome == SUBMITTED) {
+                requests.add(new AMF_SubmitRequest(result.recordId, result.selectedProcess));
+                routed.add(result.recordId);
             }
         }
 
-        // 6.4. A preview ends here, with steps 1-7 run exactly as a submission
-        // runs them and nothing written: the rows built above are discarded
-        // unsaved, and the guard and the strategy are never reached.
-        if (!commitDecision) {
-            return outcomes;
-        }
-
-        // Step 8. Every record gets a row, whatever happened to it.
-        AMF_DecisionLogWriter.save(rows);
-
-        for (Integer i = 0; i < rows.size(); i++) {
-            outcomeByRow[i].decisionLogId = rows[i].Id;
-        }
-
-        if (submitRequests.isEmpty()) {
-            return outcomes;
+        if (requests.isEmpty()) {
+            return;
         }
 
         // Step 9. Same transaction, before submit. This is the guard (6.3): the
         // engine is the only thing that sets it, the templates require it as
         // entry criteria, and a submission that bypassed the matrix therefore
         // fails entry criteria loudly rather than routing silently.
-        stageGuard(objectApiName, guardIds);
+        setGuard(plan.objectApiName, routed, true);
 
         // Step 10. The only route to Approval.process(), through the interface.
-        List<AMF_SubmitResult> submitted = strategy.submit(submitRequests);
+        Map<Id, AMF_SubmitResult> answers = answersFor(requests, strategy.submit(requests));
+        Set<Id> refused = new Set<Id>();
 
-        Map<Id, String> executionRefByRecordId = new Map<Id, String>();
-        for (AMF_SubmitResult submitResult : submitted) {
-            executionRefByRecordId.put(submitResult.recordId, submitResult.executionRefId);
-        }
-
-        // Step 11. Stamp the provenance reference back onto each row.
-        Map<Id, String> executionRefByLogId = new Map<Id, String>();
-
-        for (Outcome result : outcomeByRequest) {
-            String executionRefId = executionRefByRecordId.get(result.recordId);
-
-            if (String.isBlank(executionRefId)) {
-                throw new AMF_SubmissionException(
-                    'Record ' +
-                    result.recordId +
-                    ' was submitted to ' +
-                    result.selectedProcess +
-                    ' but the strategy returned no execution reference for it'
-                );
+        for (Outcome result : plan.outcomes) {
+            if (!routed.contains(result.recordId)) {
+                continue;
             }
 
-            result.executionRefId = executionRefId;
-            result.submitted = true;
-            executionRefByLogId.put(result.decisionLogId, executionRefId);
+            AMF_SubmitResult answer = answers.get(result.recordId);
+
+            if (answer.succeeded) {
+                // 8: Execution_Ref_Id__c is a provenance stamp that must not be
+                // optimised away, so "submitted, reference unknown" is a
+                // contradiction, not a result.
+                if (String.isBlank(answer.executionRefId)) {
+                    throw new AMF_SubmissionException(
+                        'Record ' +
+                        result.recordId +
+                        ' was submitted to ' +
+                        result.selectedProcess +
+                        ' but the strategy returned no execution reference for it'
+                    );
+                }
+
+                // Step 11, folded in: the row carries the reference from the
+                // moment it is written.
+                result.submitted = true;
+                result.executionRefId = answer.executionRefId;
+                plan.rowByRecord.get(result.recordId).Execution_Ref_Id__c = answer.executionRefId;
+            } else {
+                // The matrix decided, and the platform refused. The row says
+                // both: the rule and process it chose, and the platform's reason.
+                result.outcome = FAILED;
+                result.message =
+                    'Approval process ' +
+                    result.selectedProcess +
+                    ' refused the submission: ' +
+                    answer.errorMessage;
+                plan.rowByRecord.put(
+                    result.recordId,
+                    AMF_DecisionLogWriter.forFailure(
+                        result.recordId,
+                        plan.objectApiName,
+                        plan.ruleByName.get(result.matchedRule),
+                        result.evaluatedValuesJson,
+                        result.message
+                    )
+                );
+                refused.add(result.recordId);
+            }
         }
 
-        AMF_DecisionLogWriter.stamp(executionRefByLogId);
-        return outcomes;
+        // A refused record entered no process, so its guard is re-armed in this
+        // same transaction (6.3). Left set, it would let a submission that
+        // bypasses the engine pass entry criteria.
+        if (!refused.isEmpty()) {
+            setGuard(plan.objectApiName, refused, false);
+        }
+    }
+
+    /**
+     * The strategy's answers by record, checked for one per request (6.2's M10
+     * note). A request left unanswered is a broken strategy rather than a
+     * refusal: the record's fate is unknown, so there is nothing true to log.
+     */
+    private Map<Id, AMF_SubmitResult> answersFor(
+        List<AMF_SubmitRequest> requests,
+        List<AMF_SubmitResult> results
+    ) {
+        Map<Id, AMF_SubmitResult> answers = new Map<Id, AMF_SubmitResult>();
+
+        if (results != null) {
+            for (AMF_SubmitResult result : results) {
+                if (result != null) {
+                    answers.put(result.recordId, result);
+                }
+            }
+        }
+
+        for (AMF_SubmitRequest request : requests) {
+            if (!answers.containsKey(request.recordId)) {
+                throw new AMF_SubmissionException(
+                    'Record ' +
+                    request.recordId +
+                    ' was submitted to ' +
+                    request.processApiName +
+                    ' but the strategy returned no answer for it'
+                );
+            }
+        }
+        return answers;
     }
 
     /**
@@ -458,7 +772,7 @@ public without sharing class AMF_ApprovalMatrixService {
                 // preview shows is byte for byte what the log would record.
                 String evaluatedValuesJson = evaluation.toJson();
 
-                result.outcome = 'Submitted';
+                result.outcome = SUBMITTED;
                 result.matchedRule = rule.developerName;
                 result.ruleVersion = rule.version;
                 result.rulePriority = rule.priority;
@@ -475,7 +789,7 @@ public without sharing class AMF_ApprovalMatrixService {
                 );
             }
         } catch (Exception e) {
-            result.outcome = 'Failed';
+            result.outcome = FAILED;
             result.message =
                 'Routing ' +
                 recordId +
@@ -498,7 +812,7 @@ public without sharing class AMF_ApprovalMatrixService {
         // default routing adds a catch-all rule at priority 9999 with expression
         // TRUE, so the default appears IN the matrix where an auditor reads it,
         // rather than hiding in a config switch.
-        result.outcome = 'Blocked_No_Match';
+        result.outcome = BLOCKED_NO_MATCH;
         result.message =
             'No active rule matched this ' +
             objectApiName +
@@ -518,104 +832,109 @@ public without sharing class AMF_ApprovalMatrixService {
     }
 
     /**
-     * Step 9. Stages the guard on every record about to be submitted.
+     * Steps 9 and, for a refused record, its undoing: writes the guard on each
+     * record.
      *
      * Written through newSObject/put rather than a typed field so the engine
      * stays object-agnostic -- 3.2 makes Matrix_Submission__c a convention on
      * every governed object, and hardcoding Purchase_Request__c here would make
      * the second object a code change.
      */
-    private void stageGuard(String objectApiName, Set<Id> recordIds) {
+    private void setGuard(String objectApiName, Set<Id> recordIds, Boolean value) {
         Schema.SObjectType sobjectType = Schema.getGlobalDescribe().get(objectApiName);
-        List<SObject> staged = new List<SObject>();
+        List<SObject> records = new List<SObject>();
 
         for (Id recordId : recordIds) {
             SObject record = sobjectType.newSObject(recordId);
-            record.put(GUARD_FIELD, true);
-            staged.add(record);
+            record.put(GUARD_FIELD, value);
+            records.add(record);
         }
 
-        update staged;
+        update records;
     }
 
     /**
      * 11: the service runs without sharing, so it authorises explicitly.
      * UserRecordAccess answers the record-level question that CRUD and FLS
      * checks cannot, and it answers it for a user whose sharing this class has
-     * deliberately stepped outside of.
+     * deliberately stepped outside of. It answers for at most 200 records per
+     * query, so a bulk call asks in chunks: one query per 200 records.
+     *
+     * @return The records the running user cannot read.
      */
-    private void authorise(List<Id> recordIds) {
+    private Set<Id> unreadableAmong(List<Id> recordIds) {
         Set<Id> readable = new Set<Id>();
 
-        for (UserRecordAccess access : [
-            SELECT RecordId
-            FROM UserRecordAccess
-            WHERE UserId = :UserInfo.getUserId() AND RecordId IN :recordIds AND HasReadAccess = TRUE
-        ]) {
-            readable.add(access.RecordId);
-        }
+        for (Integer start = 0; start < recordIds.size(); start += ACCESS_QUERY_LIMIT) {
+            List<Id> chunk = new List<Id>();
 
-        List<String> denied = new List<String>();
+            for (Integer i = start; i < Math.min(start + ACCESS_QUERY_LIMIT, recordIds.size()); i++) {
+                chunk.add(recordIds[i]);
+            }
 
-        for (Id recordId : recordIds) {
-            if (!readable.contains(recordId)) {
-                denied.add(String.valueOf(recordId));
+            for (UserRecordAccess access : [
+                SELECT RecordId
+                FROM UserRecordAccess
+                WHERE UserId = :UserInfo.getUserId() AND RecordId IN :chunk AND HasReadAccess = TRUE
+            ]) {
+                readable.add(access.RecordId);
             }
         }
 
-        if (!denied.isEmpty()) {
-            throw new AMF_SubmissionException(
-                'Submission requires read access to the record. ' +
-                UserInfo.getUsername() +
-                ' cannot read: ' +
-                String.join(denied, ', ')
-            );
+        Set<Id> unreadable = new Set<Id>();
+
+        for (Id recordId : recordIds) {
+            if (!readable.contains(recordId)) {
+                unreadable.add(recordId);
+            }
         }
+        return unreadable;
     }
 
     /**
      * 6.1's M8 note. A record with a pending ProcessInstance cannot enter
-     * another approval until that one is recalled or completes, so the call is
-     * refused here, by name, before any rule runs -- for a preview as much as
-     * for a submission.
+     * another approval until that one is recalled or completes, so it is
+     * refused, by name, before any rule runs -- for a preview as much as for a
+     * submission.
      *
-     * Runs after authorise(), so it says nothing about a record the caller
-     * cannot read. Like that check it condemns the whole call: the UI submits
-     * one record at a time, and a bulk caller is better told which records to
-     * leave out than handed a partial result.
+     * @return The DeveloperName of the process each pending record is in.
      */
-    private void refuseRecordsAlreadyInApproval(List<Id> recordIds) {
-        List<String> pending = new List<String>();
+    private Map<Id, String> pendingProcessesOf(List<Id> recordIds) {
+        Map<Id, String> processByRecord = new Map<Id, String>();
+
+        if (recordIds.isEmpty()) {
+            return processByRecord;
+        }
 
         for (ProcessInstance instance : [
             SELECT TargetObjectId, ProcessDefinition.DeveloperName
             FROM ProcessInstance
             WHERE TargetObjectId IN :recordIds AND Status = 'Pending'
-            ORDER BY TargetObjectId
         ]) {
-            pending.add(instance.TargetObjectId + ' in ' + instance.ProcessDefinition?.DeveloperName);
+            processByRecord.put(instance.TargetObjectId, instance.ProcessDefinition?.DeveloperName);
         }
-
-        if (!pending.isEmpty()) {
-            throw new AMF_SubmissionException(
-                'A record that is already in an approval process cannot be submitted again ' +
-                'until that request is recalled or completes. Already pending: ' +
-                String.join(pending, ', ')
-            );
-        }
+        return processByRecord;
     }
 
     /**
-     * One object per call. Both the rule set (step 1) and the union query
-     * (step 4) are per object, so a mixed list is a caller error rather than
-     * something to silently partition.
+     * One object per call, each record once. Both the rule set (step 1) and the
+     * union query (step 4) are per object, so a mixed list is a caller error
+     * rather than something to silently partition; submitEach() partitions it
+     * openly before it gets here. A record twice would be submitted twice, the
+     * second refused by the platform and the guard of the first re-armed.
      */
     private String objectTypeOf(List<Id> recordIds) {
         Set<String> objectApiNames = new Set<String>();
+        Set<Id> seen = new Set<Id>();
 
         for (Id recordId : recordIds) {
             if (recordId == null) {
                 throw new AMF_SubmissionException('A null record Id was supplied to submit');
+            }
+            if (!seen.add(recordId)) {
+                throw new AMF_SubmissionException(
+                    'Record ' + recordId + ' was supplied more than once. One call submits a record once.'
+                );
             }
             objectApiNames.add(String.valueOf(recordId.getSObjectType()));
         }
@@ -634,8 +953,7 @@ public without sharing class AMF_ApprovalMatrixService {
     /**
      * 3.2 makes the guard a convention, which means an object without it is
      * misconfigured rather than differently configured. Said plainly here
-     * because the alternative is a field-not-found deep inside step 9, after
-     * the decision log has already been written.
+     * because the alternative is a field-not-found deep inside step 9.
      */
     private void requireGuardField(String objectApiName) {
         Schema.SObjectType sobjectType = Schema.getGlobalDescribe().get(objectApiName);
@@ -648,5 +966,21 @@ public without sharing class AMF_ApprovalMatrixService {
                 ' field. Every governed object carries the guard (arch doc 3.2, 6.3).'
             );
         }
+    }
+
+    /** Every record of an object the matrix cannot act on, refused with the reason it gave. */
+    private static void refuseAll(List<Id> recordIds, String message, Map<Id, Outcome> outcomeById) {
+        for (Id recordId : recordIds) {
+            outcomeById.put(recordId, refusal(recordId, message));
+        }
+    }
+
+    /** An outcome for a record nothing was decided about, so nothing is logged. */
+    private static Outcome refusal(Id recordId, String message) {
+        Outcome result = new Outcome();
+        result.recordId = recordId;
+        result.outcome = REFUSED;
+        result.message = message;
+        return result;
     }
 }

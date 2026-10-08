@@ -1,12 +1,12 @@
 /**
- * The audit artefact's own suite: one row per outcome, and the single
- * post-insert stamp Lock_Decision_Log permits.
+ * The audit artefact's own suite: one row per outcome, in the shapes 3.3
+ * describes.
  *
- * Architecture section: 3.3, 6.1 steps 8 and 11, 8.
+ * Architecture section: 3.3, 6.1 step 8 (and its M10 note), 8.
  *
- * AMF_DecisionLogLockTest (M1) covers the validation rule from the rule's side.
- * This covers it from the writer's -- that the engine's one legitimate update
- * passes, and that the row shapes it produces are the ones 3.3 describes.
+ * AMF_DecisionLogLockTest (M1) covers the validation rule. Since M10 the
+ * writer performs no update for it to police: the engine saves each row once
+ * the platform has answered, with Execution_Ref_Id__c already on it.
  */
 @IsTest
 private class AMF_DecisionLogWriterTest {
@@ -20,21 +20,6 @@ private class AMF_DecisionLogWriterTest {
             .routingTo('PR_Three_Level_Finance')
             .atVersion(7)
             .build();
-    }
-
-    /**
-     * The seeded amfu1, who holds neither permission set and therefore not
-     * AMF_Bypass_Log_Lock. Same subject AMF_DecisionLogLockTest uses, for the
-     * same reason (M1.10).
-     */
-    private static User subjectWithoutBypass() {
-        List<User> seeded = [SELECT Id FROM User WHERE Alias = 'amfu1' AND IsActive = TRUE LIMIT 1];
-        Assert.areEqual(
-            1,
-            seeded.size(),
-            'Seeded user amfu1 is missing; run scripts/seed-data.apex against this org first'
-        );
-        return seeded[0];
     }
 
     private static Purchase_Request__c governedRecord() {
@@ -90,7 +75,10 @@ private class AMF_DecisionLogWriterTest {
         Assert.areEqual('{"Amount__c":250000,"Region__c":"APAC"}', saved.Evaluated_Values__c);
         Assert.areEqual(UserInfo.getUserId(), saved.Submitted_By__c);
         Assert.isNotNull(saved.Submitted_At__c);
-        Assert.isNull(saved.Execution_Ref_Id__c, 'Written before submit, so blank until step 11');
+        Assert.isNull(
+            saved.Execution_Ref_Id__c,
+            'The writer leaves the reference to the engine, which sets it once the platform answers (M10)'
+        );
     }
 
     @IsTest
@@ -283,80 +271,9 @@ private class AMF_DecisionLogWriterTest {
     }
 
     @IsTest
-    static void stampWritesTheExecutionReferenceAndNothingElse() {
-        // 6.1 step 11 against M1.3's lock, and the M1.10 carried item stated as
-        // a test: the stamp is built from scratch -- a fresh SObject carrying
-        // only Id and Execution_Ref_Id__c -- so it cannot dirty a field the
-        // validation rule watches, however the caller has handled the row since.
-        //
-        // RUN WITHOUT THE BYPASS, deliberately. Approval_Matrix_Admin grants
-        // AMF_Bypass_Log_Lock (M1.6e), so a test running as the deploying admin
-        // would pass whether or not the stamp were legal -- the lock would
-        // simply never fire. Only a user without the permission proves that
-        // step 11 survives the rule in the conditions a real submitter meets.
-        Purchase_Request__c record = governedRecord();
-
-        Approval_Decision_Log__c row = AMF_DecisionLogWriter.forSubmission(
-            record.Id,
-            OBJECT_NAME,
-            rule(),
-            '{}'
-        );
-        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>{ row });
-
-        Test.startTest();
-        System.runAs(subjectWithoutBypass()) {
-            AMF_DecisionLogWriter.stamp(new Map<Id, String>{ row.Id => '04g000000000001AAA' });
-        }
-        Test.stopTest();
-
-        Approval_Decision_Log__c saved = [
-            SELECT Execution_Ref_Id__c, Outcome__c, Matched_Rule__c, Selected_Process__c
-            FROM Approval_Decision_Log__c
-            WHERE Id = :row.Id
-        ];
-        Assert.areEqual('04g000000000001AAA', saved.Execution_Ref_Id__c);
-        Assert.areEqual('Submitted', saved.Outcome__c, 'Untouched by the stamp');
-        Assert.areEqual('PR_High_Value_APAC', saved.Matched_Rule__c, 'Untouched by the stamp');
-        Assert.areEqual('PR_Three_Level_Finance', saved.Selected_Process__c, 'Untouched by the stamp');
-    }
-
-    // A SECOND STAMP is not asserted here on purpose. Lock_Decision_Log's own
-    // semantics -- one blank-to-populated update and no more -- are owned by
-    // AMF_DecisionLogLockTest, which M1 built for exactly that and which already
-    // runs every case as a user without the bypass. Re-asserting it from this
-    // side would duplicate that coverage and add a second dependency on the
-    // seeded org user for no new information.
-
-    @IsTest
-    static void aBlankReferenceIsRefusedWithTheEnginesOwnMessage() {
-        Purchase_Request__c record = governedRecord();
-
-        Approval_Decision_Log__c row = AMF_DecisionLogWriter.forSubmission(
-            record.Id,
-            OBJECT_NAME,
-            rule(),
-            '{}'
-        );
-        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>{ row });
-
-        try {
-            AMF_DecisionLogWriter.stamp(new Map<Id, String>{ row.Id => null });
-            Assert.fail('A blank reference must be refused before it reaches the lock rule');
-        } catch (AMF_SubmissionException e) {
-            Assert.isTrue(
-                e.getMessage().contains('blank execution reference'),
-                'Got: ' + e.getMessage()
-            );
-        }
-    }
-
-    @IsTest
     static void emptyWorkIsNotWork() {
         AMF_DecisionLogWriter.save(null);
         AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>());
-        AMF_DecisionLogWriter.stamp(null);
-        AMF_DecisionLogWriter.stamp(new Map<Id, String>());
 
         Assert.areEqual(
             0,

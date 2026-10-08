@@ -203,10 +203,11 @@ function headlineOf(decision, approval) {
                 assistiveText: 'Failed submission',
                 icon: 'utility:error',
                 iconVariant: 'error',
-                title: 'Not submitted: routing failed',
-                summary: decision.rule
-                    ? `Routing failed while evaluating ${decision.rule}.`
-                    : 'Routing failed before any rule was evaluated.',
+                title: 'Not submitted: the attempt failed',
+                // The recorded reason says what failed. Since M10 that may be the
+                // platform refusing the process the matrix chose, not only the
+                // evaluator, so the rule alone no longer tells the story.
+                summary: firstLineOf(decision.detail) ?? failureWithoutReason(decision),
                 badge: { label: 'Failed', className: 'slds-theme_error' }
             };
         default:
@@ -220,6 +221,19 @@ function headlineOf(decision, approval) {
                 badge: approval?.badge
             };
     }
+}
+
+/** The first line of a recorded reason: the message, without any stack trace recorded after it. */
+function firstLineOf(text) {
+    const line = (text ?? '').split(/\r?\n/)[0].trim();
+    return line || undefined;
+}
+
+/** A Failed row recorded without a reason: say what the row itself shows. */
+function failureWithoutReason(decision) {
+    return decision.rule
+        ? `Routing failed while evaluating ${decision.rule}.`
+        : 'Routing failed before any rule was evaluated.';
 }
 
 /** Arch doc 8's sentence: the rule, and the values that made it true. */

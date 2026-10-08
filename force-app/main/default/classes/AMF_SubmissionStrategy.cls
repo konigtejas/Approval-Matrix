@@ -26,18 +26,22 @@
 public interface AMF_SubmissionStrategy {
 
     /**
-     * Submits each request and returns its execution reference.
+     * Submits each request and answers for each one (6.2's M10 note).
      *
-     * Failure is an exception, never a short or empty result list. A strategy
-     * that cannot submit must say so loudly: the engine has already written a
-     * decision log row claiming Submitted by the time this runs, and 4.6 plus
-     * the M1.3 lock design require that a post-write failure roll the whole
-     * transaction back rather than leave a row asserting something that did not
-     * happen.
+     * A record the platform refuses is a result that did not succeed, carrying
+     * the platform's reason -- never an exception, and never a missing result.
+     * The engine writes that record a Failed decision log row and lets the other
+     * records' submissions stand, which it can do because it writes no row until
+     * this method has answered.
+     *
+     * An exception means the strategy itself failed: a malformed request, or a
+     * platform answer that contradicts itself. The engine rolls the whole call
+     * back on it, submissions included, so nothing enters a process without the
+     * row that explains it.
      *
      * @param requests The records to submit and the process selected for each.
-     * @return One result per request, in any order -- the engine matches them
-     *         back by recordId. Empty only when requests was empty.
+     * @return Exactly one result per request, in any order -- the engine matches
+     *         them back by recordId. Empty only when requests was empty.
      */
     List<AMF_SubmitResult> submit(List<AMF_SubmitRequest> requests);
 }

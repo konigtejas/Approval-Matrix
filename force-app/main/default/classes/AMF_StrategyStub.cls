@@ -34,11 +34,24 @@ public class AMF_StrategyStub implements AMF_SubmissionStrategy {
     /** When true, submit() returns results with no execution reference. */
     public Boolean returnBlankReference = false;
 
+    /**
+     * Records the "platform" refuses: each gets a result that did not succeed,
+     * carrying refusalMessage, as a real refusal does (6.2's M10 note).
+     */
+    public Set<Id> refuse = new Set<Id>();
+
+    /** The reason each refused record is given, in the platform's "CODE: message" form. */
+    public String refusalMessage = 'NO_APPLICABLE_PROCESS: stub refusal';
+
+    /** Records left out of the answer altogether: a broken strategy, for proving the engine notices. */
+    public Set<Id> omit = new Set<Id>();
+
     private Integer counter = 0;
 
     /**
      * @param requests The records the engine selected processes for.
-     * @return One result per request, carrying a synthetic ProcessInstance Id.
+     * @return One result per request, carrying a synthetic ProcessInstance Id,
+     *         unless the request is in refuse or omit.
      */
     public List<AMF_SubmitResult> submit(List<AMF_SubmitRequest> requests) {
         calls++;
@@ -53,6 +66,13 @@ public class AMF_StrategyStub implements AMF_SubmissionStrategy {
         List<AMF_SubmitResult> results = new List<AMF_SubmitResult>();
 
         for (AMF_SubmitRequest request : requests) {
+            if (omit.contains(request.recordId)) {
+                continue;
+            }
+            if (refuse.contains(request.recordId)) {
+                results.add(AMF_SubmitResult.refused(request.recordId, refusalMessage));
+                continue;
+            }
             results.add(
                 new AMF_SubmitResult(
                     request.recordId,

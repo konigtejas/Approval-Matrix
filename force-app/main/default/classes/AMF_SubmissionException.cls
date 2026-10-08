@@ -16,6 +16,10 @@
  * blocked Outcome, because an exception escaping the top of an Apex request
  * rolls back every DML before it and would erase the very audit row 3.3 exists
  * to create. Recorded in docs/decisions.md, 2026-08-18.
+ *
+ * The engine's per-record entry, submitEach() (M10), catches the ones that
+ * condemn an object's records and refuses those records instead, so from
+ * there this escapes only when the strategy fails as a whole.
  */
 public class AMF_SubmissionException extends Exception {
 }

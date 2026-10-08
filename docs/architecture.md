@@ -327,6 +327,27 @@ with `ALREADY_IN_PROCESS`. It writes no decision log row: nothing was decided, e
 record the caller cannot read. Running the check after authorisation means it reveals nothing about
 records the caller cannot read.
 
+**M10 implementation (2026-10-08): one record at a time, and the log after the answer.**
+
+- **Two contracts, one path.** `submit()` and `preview()` keep the whole-call contract the header
+  button relies on: a record the caller cannot read, or one already in approval, refuses the call.
+  `submitEach()`, behind the bulk entry points (§7), answers per record instead:
+  - such a record gets a `Refused` outcome and no log row;
+  - a duplicate Id is answered once;
+  - records are grouped by object, and a fault that condemns one object's records (not governed,
+    no guard field, a rule that will not compile) refuses only those records.
+
+  Steps 1–7 are one step that writes nothing, `prepare()`, shared by all three entries; the preview
+  is that step alone.
+- **The log is written after the platform answers.** Step 10 now runs before step 8, and step 11
+  folds into it. Each row is written once: with the `ProcessInstance` Id, or, when the platform
+  refuses a record, as a `Failed` row carrying the platform's reason, with that record's guard
+  re-armed in the same transaction. Before M10 the row came first, so a refusal had to roll back
+  the whole call, and every other record's row with it. This also changes the header button: a
+  platform refusal there now leaves a `Failed` row instead of nothing.
+- **Duplicates.** `submit()` refuses a record Id that appears twice; `submitEach()` submits it once
+  and answers every request.
+
 ### 6.2 Submission strategies
 
 ```apex
@@ -337,6 +358,12 @@ public interface SubmissionStrategy {
 ```
 
 `AMF_ClassicProcessStrategy` calls `Approval.process()` with `ProcessSubmitRequest.setProcessDefinitionNameOrId(processApiName)` and returns `ProcessInstance` Ids. `AMF_FlowApprovalStrategy` launches the named orchestration and returns `ApprovalSubmission` Ids. Nothing upstream of step 10 knows which is in play.
+
+**M10 implementation (2026-10-08).** A strategy answers per record: one `AMF_SubmitResult` for every
+request, either succeeded with the execution reference or not succeeded with the platform's reason.
+A refusal is data, not an exception; an exception means the strategy itself failed, and the call
+rolls back. `AMF_ClassicProcessStrategy` submits in chunks of at most 100 requests per
+`Approval.process()` call with `allOrNone` false, so one refused record does not undo the others.
 
 ### 6.3 The guard
 
@@ -376,6 +403,23 @@ No approver resolution. No chain advancement. No lock management. No mid-flight 
 | Flow | `AMF_SubmitForMatrixApproval` invocable |
 | Apex | Direct service call |
 | Integration | `@RestResource` wrapper |
+
+**M10 implementation (2026-10-08).** The Flow, Apex and Integration rows are built over
+`submitEach()` (§6.1):
+
+- **Flow:** the **Submit for Matrix Approval** action, `AMF_SubmitForMatrixApproval`. It returns
+  one result per request, in order: record Id, submitted, outcome (`Submitted`,
+  `Blocked_No_Match`, `Failed` or `Refused`), message, matched rule and version, selected process,
+  decision log row Id and approval instance Id.
+- **Integration:** `POST /services/apexrest/approval-matrix/v1/submissions` with
+  `{"recordIds": [...]}`, at most 200, answers `{"results": [...]}`: the same results, one per Id, in
+  order. A missing, malformed, empty or oversized body is a 400 with a message, before anything is
+  read or written; any other fault is a 500 and rolls the call back.
+- **Apex:** `new AMF_ApprovalMatrixService().submitEach(recordIds)`.
+
+`TODAY` is the running user's date for every entry point (`docs/decisions.md`), and each row records
+the date it used, so an integration user should carry the business's time zone. Both permission
+sets grant both classes; authorisation is still checked per record.
 
 **Recall.** For Classic submissions, native recall applies. For Flow submissions, `recallApprovalSubmission`, `cancelApprovalSubmission`, `reassignApprovalWorkItem` and `reviewApprovalWorkItem` exist as standard invocable actions with REST endpoints, callable from Apex via `Invocable.Action.createStandardAction(...)` — but none has been executed against a live submission (Appendix A, Q4). Do not design a screen-flow-only recall path, and do not build the Apex path either, until one has been proven.
 
@@ -556,6 +600,7 @@ DateTime remains unsupported.
 | **M7** | Post-MVP §8 decision timeline LWC, Classic only, on the governed record's page | All Apex and Jest tests green; in the real UI the timeline explains a submitted, a blocked and a pending record, and shows a new submission without a page reload |
 | **M8** | Post-MVP guard integrity: recall clears the guard (§5.2); a record already in approval is refused (§6.1) | Source gate fails a template that does not clear the guard on approval, rejection and recall; all Apex and Jest tests green; in the real UI a recall unticks `Matrix_Submission__c`, and submitting a pending record is refused by name with no log row |
 | **M9** | Post-MVP full §4.1 grammar: `NOT`/`!`, word forms, `IN`/`NOT IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, paths to three hops | Every evaluator class at ≥ 95% with zero org-data dependence; each construct in the table-driven and malformed-input suites; the shipped matrix still validates; all Apex and Jest tests green |
+| **M10** | Post-MVP §7 entry points: Flow invocable and REST over a per-record engine entry; chunked, isolated submission; the log written after the platform answers | All Apex and Jest tests green, including a real 200-record submission and a real per-record platform refusal; the invocable answers through the platform's invocable framework and the REST endpoint answers a real call |
 
 ### 13.5 Repository state
 

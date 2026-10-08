@@ -2,8 +2,8 @@
  * Builds and persists Approval_Decision_Log__c rows: the immutable answer to
  * WHY a record routed where it did.
  *
- * Architecture section: 3.3 (the audit artefact), 6.1 steps 8 and 11, 8
- * (auditability), 4.6 (fail loudly).
+ * Architecture section: 3.3 (the audit artefact), 6.1 step 8 (and its M10
+ * note), 8 (auditability), 4.6 (fail loudly).
  *
  * 8 names the flaw this object exists to fix. In the prior implementation
  * re-evaluation overwrote the template field, so the mechanism that kept
@@ -41,9 +41,11 @@ public without sharing class AMF_DecisionLogWriter {
     private static final Map<String, String> LOOKUP_BY_OBJECT = new Map<String, String>();
 
     /**
-     * A row for a record the matrix routed. Written BEFORE the submission
-     * (6.1 step 8), so Execution_Ref_Id__c is still blank -- stamp() fills it
-     * at step 11 and Lock_Decision_Log permits exactly that one update.
+     * A row for a record the matrix routed. Execution_Ref_Id__c is left for the
+     * engine to fill: since M10 it saves the row only once the platform has
+     * answered (6.1's M10 note), so the reference is on the row from the moment
+     * it is written, and no second update is needed. A record the platform
+     * refuses gets a forFailure() row instead.
      *
      * @param recordId             The governed record.
      * @param objectApiName        Its object.
@@ -102,17 +104,19 @@ public without sharing class AMF_DecisionLogWriter {
     }
 
     /**
-     * A row for a record whose routing failed at runtime. 4.6 is the whole
-     * point of this method: the error marks the row Failed, lands in
-     * Failure_Detail__c and BLOCKS -- it never falls through to the next rule,
-     * and it is never caught into a boolean.
+     * A row for a record whose routing failed at runtime, or, since M10, whose
+     * submission the platform refused. 4.6 is the whole point of this method:
+     * the error marks the row Failed, lands in Failure_Detail__c and BLOCKS --
+     * it never falls through to the next rule, and it is never caught into a
+     * boolean.
      *
      * @param recordId            The governed record.
      * @param objectApiName       Its object.
      * @param rule                The rule under evaluation when it failed, or
-     *                            null if the failure preceded any rule.
+     *                            the rule whose process refused the record; null
+     *                            if the failure preceded any rule.
      * @param evaluatedValuesJson Whatever had been read by then.
-     * @param detail              The exception text.
+     * @param detail              The exception text, or the platform's reason.
      * @return The unsaved row.
      */
     public static Approval_Decision_Log__c forFailure(
@@ -148,42 +152,6 @@ public without sharing class AMF_DecisionLogWriter {
             return;
         }
         insert rows;
-    }
-
-    /**
-     * 6.1 step 11. The one update Lock_Decision_Log allows: Execution_Ref_Id__c
-     * moving blank to populated, with no other governed field changed.
-     *
-     * The rows are rebuilt from scratch rather than re-saving the inserted
-     * instances, and that is the M1.10 carried item honoured literally -- an
-     * SObject carrying only Id and Execution_Ref_Id__c cannot dirty a field the
-     * validation rule is watching, however the caller has handled it since.
-     *
-     * @param executionRefByLogId Execution reference keyed by decision log Id.
-     * @throws AMF_SubmissionException If any reference is blank, which would
-     *         trip the lock rule with a confusing message rather than this one.
-     */
-    public static void stamp(Map<Id, String> executionRefByLogId) {
-        if (executionRefByLogId == null || executionRefByLogId.isEmpty()) {
-            return;
-        }
-
-        List<Approval_Decision_Log__c> stamps = new List<Approval_Decision_Log__c>();
-
-        for (Id logId : executionRefByLogId.keySet()) {
-            String executionRefId = executionRefByLogId.get(logId);
-
-            if (String.isBlank(executionRefId)) {
-                throw new AMF_SubmissionException(
-                    'Decision log ' + logId + ' cannot be stamped with a blank execution reference'
-                );
-            }
-            stamps.add(
-                new Approval_Decision_Log__c(Id = logId, Execution_Ref_Id__c = executionRefId)
-            );
-        }
-
-        update stamps;
     }
 
     /**
