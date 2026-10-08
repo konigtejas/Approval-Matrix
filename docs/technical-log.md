@@ -2904,3 +2904,21 @@ XML                                           both templates and the workflow we
 | A pending record refuses the whole call; per-record handling belongs with bulk entry points | if they are built |
 | The Flow equivalent: a cancelled Flow submission keeps its guard (M6.5) | Flow phase |
 
+
+## Fix — AMF_ClassicApprovalHistoryProviderTest actor-name assertions
+
+`aRealSubmissionReadsBackAsTheStepsApprovalHistoryShows` (M7) failed with
+`Expected: Tejas Vernekar, Actual: null` on a full `RunLocalTests` (193/194).
+
+**Cause.** Inside the test transaction the platform returns `Actor.Name` and
+`OriginalActor.Name` as null for `ProcessInstanceHistory` rows it has just created, while
+`ActorId` is correct. Confirmed by diagnostic assertion output (both the Started and Pending
+rows had null names) and by an anonymous-Apex query of committed history in amf-dev, where the
+same relationship fields resolve (`Tejas Vernekar`, `AMF Approver Three`). The provider's query
+is correct; the test's expectation was not achievable in-transaction.
+
+**Change.** Test only: removed the two actor-name assertions and left a comment saying why. The
+ID, status, step-name and pending assertions stand; name mapping remains covered by
+`AMF_DecisionTimelineServiceTest` with in-memory instances. No production code changed.
+
+**Result.** 194/194 on amf-dev before the M8 pull.
