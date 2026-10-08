@@ -1,0 +1,169 @@
+<template>
+    <div class={itemClass}>
+        <span class="slds-assistive-text">{view.assistiveText}</span>
+        <div class="slds-media">
+            <div class="slds-media__figure">
+                <button
+                    class="slds-button slds-button_icon"
+                    title={toggleLabel}
+                    aria-expanded={ariaExpanded}
+                    onclick={handleToggle}
+                    data-id="toggle"
+                >
+                    <lightning-icon icon-name={toggleIcon} size="xx-small" class="slds-button__icon"></lightning-icon>
+                    <span class="slds-assistive-text">{toggleLabel}</span>
+                </button>
+                <lightning-icon
+                    icon-name={view.icon}
+                    variant={view.iconVariant}
+                    size="small"
+                    class="slds-timeline__icon"
+                    data-id="icon"
+                ></lightning-icon>
+            </div>
+            <div class="slds-media__body">
+                <div class="slds-grid slds-grid_align-spread slds-timeline__trigger">
+                    <div class="slds-grid slds-grid_vertical-align-center slds-truncate_container_75 slds-no-space">
+                        <h3 class="slds-truncate" title={view.title}>
+                            <strong data-id="title">{view.title}</strong>
+                        </h3>
+                    </div>
+                    <div class="slds-timeline__actions slds-timeline__actions_inline">
+                        <p class="slds-timeline__date">
+                            <lightning-formatted-date-time
+                                value={view.occurredAt}
+                                year="numeric"
+                                month="short"
+                                day="numeric"
+                                hour="2-digit"
+                                minute="2-digit"
+                                data-id="date"
+                            ></lightning-formatted-date-time>
+                        </p>
+                    </div>
+                </div>
+                <template lwc:if={view.badge}>
+                    <lightning-badge
+                        label={view.badge.label}
+                        class={view.badge.className}
+                        data-id="badge"
+                    ></lightning-badge>
+                </template>
+                <p class="slds-m-horizontal_xx-small slds-m-top_xx-small" data-id="summary">{view.summary}</p>
+
+                <template lwc:if={expanded}>
+                    <article
+                        class="slds-box slds-theme_shade slds-m-top_x-small slds-m-horizontal_xx-small slds-p-around_small"
+                        data-id="details"
+                    >
+                        <template lwc:if={view.decision}>
+                            <dl class="slds-text-body_small" data-id="decision">
+                                <template lwc:if={view.decision.rule}>
+                                    <dt class="slds-text-title">Rule</dt>
+                                    <dd class="slds-m-bottom_x-small" data-id="rule">{view.decision.rule}</dd>
+                                </template>
+                                <template lwc:if={view.decision.expression}>
+                                    <dt class="slds-text-title">Condition</dt>
+                                    <dd class="slds-m-bottom_x-small">
+                                        <code class="slds-text-font_monospace amf-timeline__text" data-id="expression"
+                                            >{view.decision.expression}</code
+                                        >
+                                    </dd>
+                                </template>
+                                <template lwc:if={view.decision.hasValues}>
+                                    <dt class="slds-text-title">Values read</dt>
+                                    <dd class="slds-m-bottom_x-small">
+                                        <ul data-id="values">
+                                            <template for:each={view.decision.values} for:item="value">
+                                                <li key={value.key} title={value.path} data-id="value">
+                                                    {value.label} = {value.display}
+                                                </li>
+                                            </template>
+                                        </ul>
+                                    </dd>
+                                </template>
+                                <template lwc:if={view.decision.rawValues}>
+                                    <dt class="slds-text-title">Values read, as recorded</dt>
+                                    <dd class="slds-m-bottom_x-small">
+                                        <code class="slds-text-font_monospace amf-timeline__text" data-id="raw-values"
+                                            >{view.decision.rawValues}</code
+                                        >
+                                    </dd>
+                                </template>
+                                <template lwc:if={view.decision.detail}>
+                                    <dt class="slds-text-title">Why it was not submitted</dt>
+                                    <dd class="slds-m-bottom_x-small amf-timeline__text" data-id="detail"
+                                        >{view.decision.detail}</dd
+                                    >
+                                </template>
+                                <dt class="slds-text-title">Submitted by</dt>
+                                <dd class="slds-m-bottom_x-small" data-id="submitter">{view.decision.submitter}</dd>
+                                <dt class="slds-text-title">Decision log</dt>
+                                <dd>
+                                    <a href={logHref} onclick={handleOpenLog} data-id="log-link"
+                                        >{view.decision.logName}</a
+                                    >
+                                </dd>
+                            </dl>
+                        </template>
+
+                        <template lwc:if={view.approval}>
+                            <div class="slds-m-top_small" data-id="approval">
+                                <h4 class="slds-text-title slds-m-bottom_x-small">
+                                    Approval history: <span data-id="process">{view.approval.processName}</span>,
+                                    <span data-id="approval-status">{view.approval.status}</span>
+                                </h4>
+                                <ol>
+                                    <template for:each={view.approval.steps} for:item="step">
+                                        <li key={step.key} class="slds-grid slds-m-bottom_x-small" data-id="step">
+                                            <lightning-icon
+                                                icon-name={step.icon}
+                                                variant={step.iconVariant}
+                                                size="x-small"
+                                                alternative-text={step.statusLabel}
+                                                class="slds-m-right_x-small"
+                                            ></lightning-icon>
+                                            <div class="slds-col">
+                                                <p>
+                                                    <span class="slds-text-title_bold" data-id="step-title"
+                                                        >{step.title}</span
+                                                    >
+                                                    <template lwc:if={step.statusText}>
+                                                        <span data-id="step-status">, {step.statusText}</span>
+                                                    </template>
+                                                </p>
+                                                <p class="slds-text-body_small slds-text-color_weak">
+                                                    <span data-id="step-actor">{step.actorLine}</span>
+                                                    <span aria-hidden="true"> · </span>
+                                                    <lightning-formatted-date-time
+                                                        value={step.occurredAt}
+                                                        month="short"
+                                                        day="numeric"
+                                                        hour="2-digit"
+                                                        minute="2-digit"
+                                                    ></lightning-formatted-date-time>
+                                                </p>
+                                                <template lwc:if={step.comments}>
+                                                    <p
+                                                        class="slds-text-body_small amf-timeline__text amf-timeline__comment"
+                                                        data-id="step-comments"
+                                                    >{step.comments}</p>
+                                                </template>
+                                            </div>
+                                        </li>
+                                    </template>
+                                </ol>
+                            </div>
+                        </template>
+
+                        <template lwc:if={view.approvalMissing}>
+                            <p class="slds-m-top_small slds-text-color_weak" data-id="approval-missing">
+                                The approval history for this submission is not available.
+                            </p>
+                        </template>
+                    </article>
+                </template>
+            </div>
+        </div>
+    </div>
+</template>

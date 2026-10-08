@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <description>One entry in amfDecisionTimeline: why a submission routed where it did, and its native approval steps (arch doc 8).</description>
+    <isExposed>false</isExposed>
+</LightningComponentBundle>

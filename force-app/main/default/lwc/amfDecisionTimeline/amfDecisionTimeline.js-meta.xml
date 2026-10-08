@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <description>Read-only timeline for a governed record: why each submission routed where it did, from the decision log, and its native approval steps (arch doc 8).</description>
+    <isExposed>true</isExposed>
+    <masterLabel>Approval Timeline</masterLabel>
+    <targets>
+        <target>lightning__RecordPage</target>
+    </targets>
+</LightningComponentBundle>

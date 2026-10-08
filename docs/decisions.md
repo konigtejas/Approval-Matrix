@@ -8,6 +8,10 @@ Format: `YYYY-MM-DD — <what changed> — <why>`
 
 ---
 
+2026-10-08 — §8's timeline names the matched rule by its **DeveloperName and version**, not by its description as §8's example sentence does ("Matched **High-value APAC** v3") — the log snapshots only `Matched_Rule__c`, and reading today's description from the live matrix into a past decision would let a later edit rewrite the explanation of an earlier one, which is the flaw §8 exists to fix; `Approval_Matrix_User` cannot read the matrix either (§11). Showing descriptions would take a new snapshot field on the log, not a timeline change.
+
+2026-10-08 — The timeline shows **native approval history to anyone who can read the record, and a decision log row only to those who can read that row** — §11 gives `Approval_Matrix_User` its own rows, and the native half follows the rule the Approval History related list already applies. An approver therefore sees every approval and its steps, but the routing reason only for submissions whose row they can read; any other approval is shown and labelled as unexplained, not hidden. Letting approvers read the reason would be a sharing decision for `Approval_Decision_Log__c`, not a timeline change.
+
 2026-10-07 — §5.3, §5.4, §12 and Appendix A **corrected to the M6 Flow spike's findings** (`docs/spike-results.md`, Round 2): the Flow template contract at API 67 (four inputs, `runInMode`, `stepBackground`, username approvers), the launch call confirmed as `Flow.Interview…start()` with a synchronous `ApprovalSubmission`, rejection not stopping later stages, recall running the recall path while cancel does not, and Apex API 67's user-mode default — because the platform moved between Round 1 (API 62) and Round 2, and §5.3 stated facts that no longer hold. No design decision changes: the Flow strategy remains unbuilt and out of scope, and unanimous group semantics remain open.
 
 2026-09-18 — §9's configuration validator is a **source gate plus a required

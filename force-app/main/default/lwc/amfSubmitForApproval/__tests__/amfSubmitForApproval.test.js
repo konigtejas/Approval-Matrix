@@ -58,6 +58,7 @@ const NO_MATCH = {
 describe('c-amf-submit-for-approval', () => {
     let element;
     let toasts;
+    let pageRefreshes;
     let openModal;
 
     beforeEach(() => {
@@ -67,6 +68,9 @@ describe('c-amf-submit-for-approval', () => {
 
         toasts = [];
         element.addEventListener('lightning__showtoast', (event) => toasts.push(event.detail));
+
+        pageRefreshes = 0;
+        element.addEventListener('lightning__refresh', () => pageRefreshes++);
 
         openModal = jest.spyOn(AmfSubmitPreview, 'open');
     });
@@ -123,6 +127,7 @@ describe('c-amf-submit-for-approval', () => {
         expect(submitRecord).not.toHaveBeenCalled();
         expect(toasts).toHaveLength(0);
         expect(notifyRecordUpdateAvailable).not.toHaveBeenCalled();
+        expect(pageRefreshes).toBe(0);
     });
 
     it.each([['Blocked_No_Match'], ['Failed']])(
@@ -205,6 +210,7 @@ describe('c-amf-submit-for-approval', () => {
         expect(toasts[0].mode).toBe('sticky');
         expect(toasts[0].message).toBe("Unexpected token ')' at position 34");
         expect(notifyRecordUpdateAvailable).not.toHaveBeenCalled();
+        expect(pageRefreshes).toBe(0);
     });
 
     it('keeps the positioned Apex message when the submission throws', async () => {
@@ -253,6 +259,23 @@ describe('c-amf-submit-for-approval', () => {
         submitRecord.mockRejectedValue({ body: { message: 'nope' } });
         await element.invoke();
         expect(notifyRecordUpdateAvailable).toHaveBeenCalledWith([{ recordId: RECORD_ID }]);
+    });
+
+    it.each([
+        ['routed', () => submitRecord.mockResolvedValue(SUBMITTED)],
+        ['blocked', () => submitRecord.mockResolvedValue(NO_MATCH)],
+        ['refused', () => submitRecord.mockRejectedValue({ body: { message: 'nope' } })]
+    ])('refreshes the record page after a submission that was %s, so the decision timeline shows it', async (_, arrange) => {
+        // M7: a routed or blocked attempt wrote a decision log row that only the
+        // page's refresh reaches; after a refused one, the refresh shows that
+        // nothing changed.
+        previewRecord.mockResolvedValue(ROUTE);
+        openModal.mockResolvedValue('submit');
+        arrange();
+
+        await element.invoke();
+
+        expect(pageRefreshes).toBe(1);
     });
 
     it('ignores a second click while the first is still in flight, then works again', async () => {

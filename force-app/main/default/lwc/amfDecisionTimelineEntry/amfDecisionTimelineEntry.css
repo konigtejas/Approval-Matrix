@@ -1,0 +1,19 @@
+/*
+ * SLDS draws a timeline item's connecting line as a pseudo-element behind the
+ * item. A stacking context per item keeps that line in front of the card's own
+ * background, whatever the page around the card does.
+ */
+.amf-timeline__item {
+    isolation: isolate;
+}
+
+/* Expressions, failure detail and comments are recorded text: keep their line
+ * breaks, and wrap long tokens instead of overflowing a narrow sidebar. */
+.amf-timeline__text {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+
+.amf-timeline__comment {
+    font-style: italic;
+}

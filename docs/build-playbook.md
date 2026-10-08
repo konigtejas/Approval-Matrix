@@ -333,6 +333,52 @@ Appendix A of the architecture match what the org did.
 
 ---
 
+### M7 — Decision timeline (post-MVP)
+
+**Goal:** on the governed record, tell the whole story of each submission in one place: why
+the matrix routed it where it did (the decision log) and what has happened to it since (the
+native approval history). This is §8's timeline, Classic half.
+
+**Build:** `AMF_DecisionTimelineService.getTimeline(recordId)`, as described in §8's M7 note.
+It checks read access to the record first, reads log rows `WITH USER_MODE`, joins each
+`Submitted` row to its `ProcessInstance` through `Execution_Ref_Id__c`, orders entries newest
+first and caps them at 50. `AMF_ApprovalHistoryProvider` isolates the `ProcessInstance` read
+and `AMF_ClassicApprovalHistoryProvider` implements it. In the UI, `amfDecisionTimeline` loads
+and refreshes the data and renders one SLDS timeline item per entry through
+`amfDecisionTimelineEntry`. It reloads when the record page refreshes, and `amfSubmitForApproval`
+now raises that refresh after every submission attempt. `Purchase_Request_Record_Page` puts the
+timeline in the record page's sidebar and is activated as the desktop org default; the page
+layout still supplies the actions and the related lists. Both permission sets grant the service
+class. No new objects or fields.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. Deploy the package.
+3. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green; the timeline
+   service and both new provider classes at ≥ 95%.
+4. Jest: `$env:PATH = "C:\Program Files\sf\client\bin;$env:PATH"; node node_modules\jest\bin\jest.js --ci`.
+5. **Manual, as the admin:**
+   - PR-00000010, the M5.7 rehearsal: one entry, *Routed to PR_Three_Level_Finance*, with the
+     values that matched, the condition, and the native steps (submitted, then pending with
+     AMF Approver Three).
+   - M3's QA records, which the *All Decisions* list view finds by outcome: the approved one
+     shows every step through to *Approved*, the rejected one ends at *Rejected*, and the
+     blocked one shows *Not submitted: no rule matched* with the values read and no native
+     steps.
+   - A Purchase Request that was never submitted: the empty state.
+   - A throwaway Purchase Request submitted through the header button: the new entry appears
+     without reloading the page. Its log row is permanent, as M5.7's was.
+6. **Manual, as an approver who can read a record but did not submit it** (M3.10's shares):
+   the approval and its steps show, and the routing reason is labelled as not visible.
+
+Acceptance: service tests prove the join, the newest-first order, the 50 cap, user-mode
+visibility of log rows, refusal without record access, and labels that survive a deleted
+field. The provider is tested once against a real submission. Jest covers loading, empty,
+error, refresh, the stale-response guard, every outcome and step status, and expanding an entry.
+
+---
+
 ## Part 4 — When Things Go Wrong
 
 - **Claude Code invents schema** (a field not in §3): stop it, point at the doc, restate

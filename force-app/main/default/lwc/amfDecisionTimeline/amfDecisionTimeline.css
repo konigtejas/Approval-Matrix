@@ -1,0 +1,4 @@
+/* Room for the spinner on the first load, before there is anything to cover. */
+.amf-timeline__body {
+    min-height: 3rem;
+}

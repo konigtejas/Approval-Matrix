@@ -11,6 +11,10 @@
         <apexClass>AMF_ApprovalMatrixService</apexClass>
         <enabled>true</enabled>
     </classAccesses>
+    <classAccesses>
+        <apexClass>AMF_DecisionTimelineService</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
     <customPermissions>
         <enabled>true</enabled>
         <name>AMF_Bypass_Log_Lock</name>

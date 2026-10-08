@@ -102,6 +102,7 @@ session needs. Update the row when a phase completes.
 | **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 166/166 Apex tests after M4.1, validator at 98% | `9893274` + M4.1 |
 | **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; manual gate run in the real UI on 2026-09-25 (M5.7) except its blocked-path check, which needs the catch-all deactivated | `5b99045` + M5.6, M5.7 |
 | **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `972352a` (mislabelled, see M6.6) |
+| **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Built; org gates owed** — 57/57 Jest, ESLint clean, Apex semantically checked with apex-ls but not yet compiled or run in `amf-dev`; deploy, RunLocalTests (expect 194) and the manual UI gate are in M7.5 | pending |
 
 ### Superseded — the v1.0 plan
 
@@ -2509,3 +2510,210 @@ says so.
 Two rules come out of it, both for this workstation's PowerShell: never discard git's error output
 on a commit, and confirm the new commit id before writing it anywhere. Keep commit messages free
 of double quotes, or pass them with `git commit -F <file>`.
+---
+
+## Phase M7 — Decision timeline
+
+**Date:** 2026-10-08 · **Commit:** pending · **Status:** built and verified locally. The org gates
+(deploy, RunLocalTests, the manual UI check) are still owed, because this session had no access to
+`amf-dev` (M7.3a).
+**Playbook goal:** on the governed record, tell the whole story of each submission in one place:
+why the matrix routed it where it did, and what has happened to it since.
+
+§8 has described "a read-only timeline LWC [that] renders both halves as one narrative" since
+v3.0, and §13.2 deferred it. `CLAUDE.md` now authorises the timeline alone, Classic only; every
+other item on the out-of-scope list stays deferred.
+
+### M7.1 File-level changes
+
+| File | Change | Notes |
+|---|---|---|
+| `classes/AMF_DecisionTimelineService.cls` | **added** | `@AuraEnabled getTimeline(recordId)`, not cacheable; `build()` authorises, reads, joins, orders and caps |
+| `classes/AMF_ApprovalHistory.cls` | **added** | value types `Instance` and `Step`, and the step-ordering rule |
+| `classes/AMF_ApprovalHistoryProvider.cls` | **added** | read seam, as `AMF_ApprovalProcessProvider` is for §9 |
+| `classes/AMF_ClassicApprovalHistoryProvider.cls` | **added** | `ProcessInstance` with `StepsAndWorkitems`, without sharing |
+| `classes/AMF_DecisionTimelineServiceTest.cls` | **added** | 12 tests on an in-memory history |
+| `classes/AMF_ApprovalHistoryTest.cls` | **added** | 4 tests on the ordering rule |
+| `classes/AMF_ClassicApprovalHistoryProviderTest.cls` | **added** | 3 tests, one of them a real submission |
+| `lwc/amfDecisionTimeline/*` | **added** | the container: loading, refresh, states; 11 Jest tests |
+| `lwc/amfDecisionTimelineEntry/*` | **added** | one SLDS timeline item per entry; 20 Jest tests |
+| `lwc/amfSubmitForApproval/*` | **modified** | dispatches `RefreshEvent` after every submission attempt; 19 Jest tests (was 16) |
+| `flexipages/Purchase_Request_Record_Page.flexipage-meta.xml` | **added** | header, Details and Related tabs, the timeline in the sidebar |
+| `objects/Purchase_Request__c/Purchase_Request__c.object-meta.xml` | **modified** | `View` override for `Large`: the page above becomes the desktop org default |
+| `permissionsets/Approval_Matrix_Admin`, `Approval_Matrix_User` | **modified** | class access to `AMF_DecisionTimelineService`, one entry in each |
+| `CLAUDE.md`, `docs/architecture.md` (§8 M7 note, §13.4 row), `docs/build-playbook.md` (M7), `docs/decisions.md` | **modified** | scope, design, gate, two decisions |
+
+No objects, fields, layouts or quick actions changed, and no engine class was touched.
+
+### M7.2 Design choices worth recording
+
+**(a) One entry per submission attempt, joined through `Execution_Ref_Id__c`.** Each decision log
+row is an entry. A `Submitted` row carries the `ProcessInstance` its `Execution_Ref_Id__c` names;
+a `Blocked_No_Match` or `Failed` row carries none, because it never entered a process. The join is
+a map lookup on the 18-character Id that §6.1 step 11 stamps, and each row claims its approval by
+removing it from the map. Whatever remains is exactly the set of approvals that have no row this
+user can read, and those become entries of their own, labelled as such, rather than being
+dropped.
+
+**(b) Two visibility rules, both borrowed from the platform.** Log rows are read
+`WITH USER_MODE`, so a row appears in the timeline exactly when the viewer could open it anywhere
+else: their own as an `Approval_Matrix_User`, every row with View All (§11). Native history is
+shown to anyone who can read the record. That is the rule the Approval History related list
+follows, and it is checked first, with the same `UserRecordAccess` query shape as the engine's
+(M3.10), because the Classic provider reads without sharing. An approver will therefore see the
+approval and its steps but not the routing reason for someone else's submission; that is
+recorded in `docs/decisions.md`.
+
+**(c) Only what was recorded.** The narrative names a rule by the DeveloperName and version the
+row snapshotted, not by today's description, which would have to come from the live matrix and
+would let a later edit rewrite an earlier explanation (`docs/decisions.md`). Field labels are
+resolved by describe when the timeline is read. They are presentation only: the recorded path is
+each value's tooltip and appears verbatim in the condition.
+
+**(d) The read path degrades where routing would fail loudly.** §4.6 governs routing, where a
+silent fallback misroutes a record. In an audit view the cost runs the other way, so: a field
+deleted since the decision shows under its recorded path; a values snapshot that is not a JSON
+object is shown whole, as recorded; a `Submitted` row whose approval the history does not return
+says that history is not available; a row with no outcome is shown rather than hidden.
+
+**(e) A window that stays honest across the join.** At most 50 entries. Both sources are read one
+row past that, merged, sorted and only then cut, with `hasMore` set when anything was cut. A row
+and its approval are written in one transaction, so a row too old to be fetched belongs to an
+approval too old to survive the cut, and the reverse holds too. An approval is therefore never
+labelled unexplained merely because its row fell outside a fetch.
+
+**(f) Step order is a rule, not whatever the database returns.** Ties to the second are normal,
+not rare: one `Approval.process()` writes the submission and the first work item, and one
+approval writes the decision and the work item it hands on to. Within one instant the submission
+comes first, open work items come last, and Id settles the rest. The rule lives in
+`AMF_ApprovalHistory`, so the provider contract carries it, and it is tested on its own.
+
+**(g) Current without a cache.** `getTimeline` is not cacheable, for §6.4's reason. The component
+reads on connect, when the record page refreshes (`registerRefreshHandler`), and from its own
+refresh button. `amfSubmitForApproval` now dispatches `RefreshEvent` after every submission
+attempt, whether it was routed, blocked or refused: `notifyRecordUpdateAvailable` only reaches the
+record cache, and a decision log row is not part of the record. Overlapping reads take a ticket
+and only the latest may write the result. That guard was mutation-checked: with it removed, the
+two race tests fail.
+
+**(h) The record page.** Placing a component on a record needs a Lightning record page, and a
+placement made only in App Builder would drift from the repo (M5.6). `Purchase_Request_Record_Page`
+follows the structure of `trailheadapps/ebikes-lwc`'s `Product_Record_Page` (M7.3d), and the
+`View` / `Large` / `Flexipage` override in the object file is what activates it as the desktop
+org default. The header's actions still come from the page layout. §6.3's removal of the
+standard Submit for Approval button lives in the layout's `platformActionList`, and switching
+this page to dynamic actions would bypass it; the page's own header comment says so. Phones keep
+the default page, and the default page's sidebar Activity panel is not carried over (the
+activity related lists remain on the Related tab).
+
+**(i) Presentation.** SLDS activity-timeline markup, newest entry open. Details are rendered only
+while an entry is open, so `aria-expanded` stays truthful without relying on SLDS to hide them.
+A number keeps the precision it was recorded with and is grouped for the viewer's locale
+(`24,00,000` in `en-IN`, §8's own example). A blank reads `(blank)`, and booleans read `TRUE` /
+`FALSE`, as in M5's modal. Recorded text keeps its line breaks and wraps in a narrow sidebar. Each
+item sets `isolation: isolate`, so SLDS's connecting line, drawn behind the item, is not lost
+behind the card's background. Every value is rendered as template text, never as markup.
+
+### M7.3 Issues encountered
+
+**(a) No org in this session.** The work ran in a cloud container with no `sf` CLI and no
+`amf-dev` credentials. Nothing was deployed, no Apex was compiled or run there, and the UI was not
+seen. The substitutes, strongest first:
+
+1. **apex-ls 6.3.0** (`io.github.apexdevtools.apexls.CheckForIssues`, the JVM build from Maven
+   Central, run from a scratch directory and not added to the project). It analyses Apex against
+   the project's metadata and the standard SObject schema. Baseline before M7: no errors and one
+   pre-existing warning. After M7: the same.
+2. **The project's own Apex parser** (`prettier-plugin-apex`): every new class parses.
+3. **Jest and ESLint**, in full.
+4. **Public, deployable Salesforce sample metadata** as a reference for the FlexiPage and its
+   activation (d).
+
+None of these proves that the SOQL runs, that the platform returns `ProcessInstanceHistory` in
+the shape the provider test asserts, that the FlexiPage deploys, or that the page looks right.
+M7.5 is the gate that does.
+
+**(b) apex-ls caught a compile error that a deploy would have hit.** `valuesOf(String json, …)`
+called `JSON.deserializeUntyped(json)`. Apex identifiers are case-insensitive, so the parameter
+`json` shadowed the `JSON` class and the call resolved against `String` (*No matching method
+found for 'deserializeUntyped' on 'System.String'*). The parameter is now `snapshot`. The checker
+also flagged `of` as a reserved identifier (now `labelOf`), the same warning that
+`AMF_ExpressionException` already carries.
+
+**(c) apex-ls does not check field names inside SOQL.** A probe query with invented fields
+passed. It does check every field access in Apex, and every field the new queries select is
+read in Apex. The fields that appear only in clauses (`TargetObjectId`, `Record_Id__c`,
+`Submitted_At__c`, `CreatedDate`) are ones deployed code already queries. It did confirm that
+`ProcessInstanceHistory` carries `ProcessNode`, `Actor`, `OriginalActor` and `IsPending`, and that
+`ProcessInstance` carries `ProcessDefinition`.
+
+**(d) A FlexiPage written without a schema, then compared.** The container had no metadata WSDL
+to validate against, so `trailheadapps/ebikes-lwc`'s `Product_Record_Page.flexipage-meta.xml` and
+`Product__c.object-meta.xml` were fetched into the scratchpad as reference data. They agree with
+this page on the template, regions, facets, tab titles and `parentFlexiPage`; they reference a
+custom LWC by its bare name (`similarProducts`), and they activate the page as `View` / `Large` /
+`Flexipage`. Two adjustments followed: `<mode>Replace</mode>` on the facets, and no
+`enablePageActionConfig` template property, which the sample does not set and which defaults to
+false.
+
+**(e) Two tests relied on a tick count.** The log link's href arrives from
+`NavigationMixin.GenerateUrl` after render, and two tests asserted it after one macrotask. They
+failed once in about ten runs, on the first instrumented run. They now wait, within a bound, for
+the expected href, and still fail if it never arrives. The first version of that helper returned
+any href other than the placeholder, which accepted the previous entry's href immediately after
+the entry was replaced; that produced a consistent failure, which exposed the helper rather than
+the component.
+
+**(f) Two small Jest and ESLint frictions.** jsdom has no `structuredClone`, so fixtures are
+cloned through JSON, which is how Apex delivers them anyway. `@lwc/lwc/no-async-operation`
+forbids `setTimeout`, so the test-only flush carries a scoped disable comment stating why.
+
+**(g) Prettier.** As M5.3d found: the repo's `.prettierrc` formats with Prettier's default
+2-space indent, while every file in the repo uses 4, and `prettier --check` fails on the M5 files
+too. The new files follow the surrounding style.
+
+### M7.4 Verification evidence (this session)
+
+```
+apex-ls CheckForIssues, whole project, -d warnings
+  AMF_ExpressionException.cls  Warning: line 48: 'of' ... reserved identifier   <- pre-existing, the only finding
+Apex parser (prettier-plugin-apex)   7/7 new classes parse
+Jest                                 57/57 in 4 suites (23 before M7, +34)
+  amfDecisionTimeline       11 tests   100% lines
+  amfDecisionTimelineEntry  20 tests   100% lines
+  amfSubmitForApproval      19 tests   100% lines   (+3: page refresh after routed, blocked, refused)
+  amfSubmitPreview           7 tests   unchanged
+ESLint                               clean: force-app/main/default/lwc, jest-mocks, jest.config.js
+Mutation check                       ticket guard removed -> both race tests fail; restored
+Stability                            57/57 on six consecutive runs, three with a cleared cache
+```
+
+### M7.5 The gate still owed, in this order
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. `sf project deploy start -o amf-dev`. If the FlexiPage or the `View` override is refused, the
+   error names the element: deploy the rest by `--source-dir` (Part 4 of the playbook) and report
+   the message.
+3. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`. Expect 194/194 (175 + 19).
+   `AMF_ClassicApprovalHistoryProviderTest` is the one org-dependent new class: like
+   `AMF_SubmissionIntegrationTest` it needs `PR_Three_Level_Finance` active, and it asserts that
+   the pending step is named `Finance Analyst`, i.e. that `ProcessNode.Name` carries the step's
+   label rather than its API name. That is the assertion most likely to need adjusting.
+4. Jest, as in the playbook.
+5. The manual checks in the playbook's M7 gate: PR-00000010, M3's approved, rejected and blocked
+   records, a never-submitted record, a throwaway live submission, and an approver's view.
+
+### M7.6 Carried into later phases
+
+| Item | Owner |
+|---|---|
+| **The org gate in M7.5**, including the first compile of the seven new classes | user |
+| Phones keep the default record page: only the `Large` form factor is overridden | post-M7 |
+| The default page's sidebar Activity panel is not on the new page | post-M7, if activities are used |
+| Approvers see an approval but not the routing reason for other people's submissions (`docs/decisions.md`); widening that is a sharing decision on the log | product decision |
+| Rule descriptions are not snapshotted, so the narrative uses DeveloperNames (`docs/decisions.md`) | post-M7 |
+| The Flow half of §8 (`ApprovalSubmission` / `ApprovalWorkItem`) plugs in through `AMF_ApprovalHistoryProvider` when Flow execution exists | Flow phase |
+| UI strings are English literals, as in M3 and M5; Custom Labels when the framework needs translation | post-M7 |
+| `messageOf` exists in both `amfSubmitForApproval` and `amfDecisionTimeline`; sharing it would refactor M5 | next change to either |
+| `.prettierrc` (2 spaces) disagrees with every file in the repo (4 spaces) | project |
+| Still open from M5.5: `AMF_ApprovalMatrixService`'s header says §9 is out of MVP scope | next change to that class |

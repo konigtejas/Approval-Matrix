@@ -347,6 +347,41 @@ A read-only timeline LWC renders both halves as one narrative: *"Matched **High-
 
 **This fixes the prior implementation's deepest flaw.** There, re-evaluation overwrote the template field, so the mechanism that kept routing current destroyed the historical record. Here every submission writes a permanent row; the current answer and the historical answer are different records.
 
+**M7 implementation (2026-10-08).** `amfDecisionTimeline` sits on the governed record's
+Lightning page and reads `AMF_DecisionTimelineService.getTimeline`. It is **Classic only**, like
+§9's validator.
+
+- **One entry per submission attempt, newest first.** Each decision log row becomes an entry.
+  A `Submitted` row is joined through `Execution_Ref_Id__c` to its `ProcessInstance`, and the
+  entry then shows that instance's native steps (`StepsAndWorkitems`) in the order they
+  happened: the submission, each decision, then the approver it is now with. A
+  `Blocked_No_Match` or `Failed` row has no native half, because it never entered a process.
+- **Two visibility rules, each one the platform already applies.** Log rows are read
+  `WITH USER_MODE`, so the timeline shows exactly the rows the viewer could open anyway: their
+  own as an `Approval_Matrix_User`, every row as an admin with View All (§11). Native history
+  is shown to anyone who can read the record, checked against `UserRecordAccess` first. That
+  is the rule the Approval History related list already follows. An approver therefore sees
+  every approval on a record they can read, but sees the routing reason only where they can
+  read the log row. An approval without a readable row is shown and labelled as such, rather
+  than hidden or explained by guesswork.
+- **Only what was recorded.** The "why" comes from the row's snapshots: rule DeveloperName,
+  version, expression, evaluated values and selected process. It never comes from the live
+  matrix, because joining today's rule would let a later edit rewrite the explanation of an
+  earlier decision, which is the flaw this section exists to fix. The narrative therefore
+  names a rule by its DeveloperName, not by its current description. Values read are shown
+  under their current field labels, which is presentation only: the recorded path is each
+  value's tooltip and appears verbatim in the condition. A path that no longer resolves is
+  shown as recorded, because a deleted field must not hide the audit trail.
+- **Bounded.** The 50 most recent entries. The two related lists hold everything.
+- **Current.** `getTimeline` is not cacheable, for §6.4's reason. The component reads on
+  load, when the record page refreshes (`lightning/refresh`, which the submit action now
+  raises after every submission attempt), and from its own refresh button.
+
+`AMF_ApprovalHistoryProvider` isolates the `ProcessInstance` read, as
+`AMF_ApprovalProcessProvider` does for §9, because a `ProcessInstance` can only exist after a
+real `Approval.process()`. The service's tests use an in-memory history, and the Classic
+provider is tested once against a real submission.
+
 ---
 
 ## 9. Config Validator
@@ -460,6 +495,7 @@ The lexer, parser and AST must be structured so these are **additive** — no sp
 | **M4** | Post-MVP configuration validator and source guard gate | Source gate, deployed-org validator and all Apex tests green |
 | **M5** | Post-MVP §6.4 preview and the submit action's confirmation modal | Preview writes nothing (proved in tests and against the org), all Apex and Jest tests green, modal opens from the real action |
 | **M6** | Post-MVP Flow approvals technical spike — research only, artefacts under `spikes/` | Round 1's open questions answered or explicitly still open, every claim labelled, product untouched (all Apex tests green) |
+| **M7** | Post-MVP §8 decision timeline LWC, Classic only, on the governed record's page | All Apex and Jest tests green; in the real UI the timeline explains a submitted, a blocked and a pending record, and shows a new submission without a page reload |
 
 ### 13.5 Repository state
 

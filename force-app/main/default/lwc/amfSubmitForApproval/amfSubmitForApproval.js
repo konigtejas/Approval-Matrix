@@ -1,6 +1,7 @@
 import { LightningElement, api } from 'lwc';
 import { ShowToastEvent } from 'lightning/platformShowToastEvent';
 import { notifyRecordUpdateAvailable } from 'lightning/uiRecordApi';
+import { RefreshEvent } from 'lightning/refresh';
 import previewRecord from '@salesforce/apex/AMF_ApprovalMatrixService.previewRecord';
 import submitRecord from '@salesforce/apex/AMF_ApprovalMatrixService.submitRecord';
 import AmfSubmitPreview from 'c/amfSubmitPreview';
@@ -30,6 +31,8 @@ const SUBMIT = 'submit';
  *   4. submitRecord re-runs the engine for real. If the record or the matrix
  *      changed in between, the route it takes can differ from the preview, and
  *      the toast then says so instead of implying the preview was followed.
+ *   5. However the submission ended, the record page is refreshed, so the
+ *      decision timeline (c/amfDecisionTimeline, M7) shows the new entry.
  *
  * WHY A BLOCKED SUBMISSION ARRIVES AS DATA RATHER THAN AS AN ERROR. The Apex
  * entry point returns an Outcome instead of throwing when a record is blocked,
@@ -123,6 +126,10 @@ export default class AmfSubmitForApproval extends LightningElement {
             // Matrix_Submission__c and the record's lock state both moved, so
             // the page the user is looking at is now stale either way.
             notifyRecordUpdateAvailable([{ recordId: this.recordId }]);
+            // A routed or blocked submission also wrote a decision log row, which
+            // the record cache knows nothing about. Only the page's refresh
+            // reaches what shows it: the decision timeline and the related lists.
+            this.dispatchEvent(new RefreshEvent());
         }
     }
 

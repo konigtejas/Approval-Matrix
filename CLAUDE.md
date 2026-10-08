@@ -8,7 +8,7 @@ name → decision log explains why.
 docs/architecture.md (v3.0) defines the full target design; its §13 is this MVP scope.
 WE ARE BUILDING THE MVP SUBSET ONLY (see MVP SCOPE). If the doc describes something
 not in MVP scope, do NOT build it. If a task seems to conflict with the doc, STOP and
-ask. docs/build-playbook.md carries the phase plan (M0–M6) and the gate for each.
+ask. docs/build-playbook.md carries the phase plan (M0–M7) and the gate for each.
 
 **Current authorised post-MVP work:** M0–M3 have passed their gates. M4 added the
 configuration validator in architecture §9, its source-metadata companion gate, and the
@@ -20,6 +20,10 @@ research only, artefacts under spikes/flow-approvals/ and never in force-app. It
 no product build — the Flow strategy, Execution_Type__c and Flow templates stay out of scope.
 Its findings (docs/spike-results.md, Round 2) bind any future Flow phase, including: keep
 engine Apex classes at API ≤ 66, because API 67 runs database operations in user mode.
+M7 adds the §8 decision timeline LWC: a read-only view on the governed record that joins
+each decision log row to its native Classic approval history (ProcessInstance and its
+steps), plus the record page that hosts it. It supersedes the MVP-only restriction for the
+timeline LWC alone; it is Classic-only, like the validator, and changes no engine behaviour.
 
 ## MVP SCOPE — build ONLY these
 - One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)
