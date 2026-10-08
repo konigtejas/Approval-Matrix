@@ -102,7 +102,7 @@ session needs. Update the row when a phase completes.
 | **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 166/166 Apex tests after M4.1, validator at 98% | `9893274` + M4.1 |
 | **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; manual gate run in the real UI on 2026-09-25 (M5.7) except its blocked-path check, which needs the catch-all deactivated | `5b99045` + M5.6, M5.7 |
 | **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `972352a` (mislabelled, see M6.6) |
-| **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Built; org gates owed** — 57/57 Jest, ESLint clean, Apex semantically checked with apex-ls but not yet compiled or run in `amf-dev`; deploy, RunLocalTests (expect 194) and the manual UI gate are in M7.5 | pending |
+| **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Built; org gates owed** — 57/57 Jest, ESLint clean, Apex semantically checked with apex-ls but not yet compiled or run in `amf-dev`; deploy, RunLocalTests (expect 194) and the manual UI gate are in M7.5 | `25e0b2d` |
 
 ### Superseded — the v1.0 plan
 
@@ -2514,7 +2514,7 @@ of double quotes, or pass them with `git commit -F <file>`.
 
 ## Phase M7 — Decision timeline
 
-**Date:** 2026-10-08 · **Commit:** pending · **Status:** built and verified locally. The org gates
+**Date:** 2026-10-08 · **Commit:** `25e0b2d` · **Status:** built and verified locally. The org gates
 (deploy, RunLocalTests, the manual UI check) are still owed, because this session had no access to
 `amf-dev` (M7.3a).
 **Playbook goal:** on the governed record, tell the whole story of each submission in one place:
