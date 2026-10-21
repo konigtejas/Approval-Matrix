@@ -1,9 +1,8 @@
 # Handoff — what's next after M10
 
-**As of 2026-10-21.** `develop` is at `8361276`: Phase M10 (`393d9d5`), the commit recording its
-SHA, and this note's first version. The M10.3b follow-up, **M10.7**, was built on 2026-10-21 on
-branch `claude/handoff-review-repo-scan-j30kbi`. It is not on `develop` yet: merge it before the
-gate below, which assumes it. M10's org gate has not been run.
+**As of 2026-10-21.** `develop` holds Phase M10 (`393d9d5`) and the M10.3b follow-up, **M10.7**
+(`548cd59`), merged on 2026-10-21 by fast-forward from `claude/handoff-review-repo-scan-j30kbi`.
+M10's org gate has not been run, and M11 has not been started: it waits on the decisions below.
 
 This is the short version. The sources are `docs/technical-log.md` (the status board, M10.5, and
 M10.7, which amends M10.5's gate and holds the current table of open items) and
@@ -118,5 +117,5 @@ across the union of an object's rules (M9.5). It is small.
 
 ## Decisions waiting on the user
 
-1. Merge M10.7 into `develop`, run M10's org gate (and M8's step 6), and report the results.
+1. Run M10's org gate (and M8's step 6) against `develop`, and report the results.
 2. Authorise M11 and choose its object (recommended: Opportunity).
