@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomPermission xmlns="http://soap.sforce.com/2006/04/metadata">
+    <isLicensed>false</isLicensed>
+    <label>AMF Test Refuse Guard</label>
+    <description>Test fixture only; no permission set grants it. AMF_SubmissionIntegrationTest grants it at runtime, so the AMF_Test_Refuse_Guard validation rule refuses the engine&apos;s guard update on one record (arch doc 6.1, technical log M10.8).</description>
+</CustomPermission>

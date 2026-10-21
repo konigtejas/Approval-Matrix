@@ -2,7 +2,9 @@
 
 **As of 2026-10-21.** `develop` holds Phase M10 (`393d9d5`) and the M10.3b follow-up, **M10.7**
 (`548cd59`), merged on 2026-10-21 by fast-forward from `claude/handoff-review-repo-scan-j30kbi`.
-M10's org gate has not been run, and M11 has not been started: it waits on the decisions below.
+**Update, 2026-10-21:** M10's org gate has now run and passed (technical log M10.8). Its two
+locked-record tests failed as section 1 warned they might, and their fixture was replaced by a
+test-only validation rule; 255/255. The user then authorised M11 for Opportunity.
 
 This is the short version. The sources are `docs/technical-log.md` (the status board, M10.5, and
 M10.7, which amends M10.5's gate and holds the current table of open items) and
@@ -13,7 +15,7 @@ first: it decides what is authorised.
 
 ## 1. Gates owed by the user — nothing to build
 
-### M10's org gate, with M10.7 — run this first
+### ~~M10's org gate, with M10.7 — run this first~~ Passed 2026-10-21 (technical log M10.8)
 
 Four of its tests depend on platform behaviour no session has run: the 200-record submission
 staying within governor limits, a submitter with no manager being refused by `PR_Two_Level_Mgmt`,

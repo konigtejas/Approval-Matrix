@@ -484,9 +484,10 @@ from sinking a batch.
   did, and its summary becomes the first line of its recorded reason, which may now be the
   platform's rather than the evaluator's.
 - **Guard staging per record** (follow-up, technical log M10.7). Step 9 sets the guard with
-  `allOrNone` false. A record the platform will not let it set (a validation rule, or the lock a
-  final approval leaves) is `Failed` with the platform's reason and is not submitted. Re-arming a
-  refused record stays all-or-nothing.
+  `allOrNone` false. A record the platform will not let it set (a validation rule, for example)
+  is `Failed` with the platform's reason and is not submitted. Re-arming a refused record stays
+  all-or-nothing. Its real-platform tests use a test-only validation rule, `AMF_Test_Refuse_Guard`,
+  because the lock a final approval leaves did not stop the update in an Apex test (M10.8).
 
 **Gate, in order:**
 
@@ -494,10 +495,9 @@ from sinking a batch.
 2. Deploy the package.
 3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
 4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green (255 since M10.7),
-   including a real 200-record submission and a record a final approval left locked failing by
-   itself. If the 200-record test fails on a governor limit, report the numbers it prints: that
-   is a finding about bulk size, not a flake. If a locked-record test fails on its first
-   assertion, report the outcome it shows: that is a finding about the approval lock.
+   including a real 200-record submission and a record whose guard a validation rule refuses
+   failing by itself. If the 200-record test fails on a governor limit, report the numbers it
+   prints: that is a finding about bulk size, not a flake.
 5. Jest, as in M5.
 6. **Manual, the invocable**, through the platform's invocable framework, with no Flow saved.
    In anonymous Apex, on a throwaway Purchase Request with `Risk_Level__c = High`, so that it
@@ -528,9 +528,13 @@ Acceptance: engine tests prove, with in-memory rules and the stub:
 - the whole-call contract is unchanged.
 
 Real-platform tests prove that one refused record leaves the others' submissions standing, that
-200 records go through in chunks within one transaction, and (M10.7) that a record a final
-approval left locked fails by itself through either entry while the other record in the call is
-submitted. The invocable and REST tests prove one answer per request, in order, and the REST 400s.
+200 records go through in chunks within one transaction, and (M10.7, fixture replaced in M10.8)
+that a record whose guard a validation rule refuses fails by itself through either entry while the
+other record in the call is submitted. The invocable and REST tests prove one answer per request,
+in order, and the REST 400s.
+
+**Gate run 2026-10-21 (technical log M10.8):** passed, after the locked-record fixture was replaced;
+255/255.
 
 ---
 
@@ -569,7 +573,7 @@ submitted. The invocable and REST tests prove one answer per request, in order, 
 |---|---|
 | M8's manual UI check: submit, submit again (refused by name, no modal, no log row), recall (*Matrix Submission* unticked), resubmit | technical log M8.7d |
 | Optional: M9's manual check, a throwaway rule using the new grammar previewed in the UI | technical log M9.4 |
-| M10's org gate: deploy, RunLocalTests (255), the invocable and REST checks | technical log M10.5, as amended in M10.7 |
+| ~~M10's org gate: deploy, RunLocalTests (255), the invocable and REST checks~~ **passed 2026-10-21** | technical log M10.8 |
 
 ### M10 — Entry points and bulk submission *(authorised and built, 2026-10-08)*
 

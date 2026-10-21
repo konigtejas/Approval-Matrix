@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ValidationRule xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>AMF_Test_Refuse_Guard</fullName>
+    <active>true</active>
+    <description>Test fixture only (technical log M10.8). Fires only for a holder of the AMF_Test_Refuse_Guard custom permission, which no permission set grants, so it is inert for real users. Lets tests make step 9&apos;s guard update fail on one record.</description>
+    <errorConditionFormula>AND(
+  $Permission.AMF_Test_Refuse_Guard,
+  ISCHANGED(Matrix_Submission__c),
+  Matrix_Submission__c,
+  ISPICKVAL(Vendor_Type__c, &apos;Strategic&apos;)
+)</errorConditionFormula>
+    <errorMessage>Test fixture: a holder of AMF Test Refuse Guard cannot set Matrix Submission on a Strategic-vendor request (technical log M10.8).</errorMessage>
+</ValidationRule>

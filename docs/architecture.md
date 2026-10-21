@@ -347,11 +347,12 @@ records the caller cannot read.
   platform refusal there now leaves a `Failed` row instead of nothing.
 - **The guard is staged record by record** (M10.3b, 2026-10-21). Step 9 sets
   `Matrix_Submission__c` without all-or-nothing. A record the platform will not let it set,
-  because it fails a validation rule or a final approval left it locked, becomes a `Failed` row
-  carrying the platform's reason and is never submitted, while the others go ahead. The header
-  button gets the same answer, where the update used to throw. Re-arming a refused record's guard
-  stays all-or-nothing: a record left with its guard set and in no process is the bypass §6.3
-  closes, so the call fails instead.
+  because it fails a validation rule for example, becomes a `Failed` row carrying the platform's
+  reason and is never submitted, while the others go ahead. The header button gets the same
+  answer, where the update used to throw. Re-arming a refused record's guard stays
+  all-or-nothing: a record left with its guard set and in no process is the bypass §6.3 closes,
+  so the call fails instead. The lock a final approval leaves is **not** a case to count on: in
+  an Apex test it did not stop a non-admin's guard update (technical log M10.8).
 - **Duplicates.** `submit()` refuses a record Id that appears twice; `submitEach()` submits it once
   and answers every request.
 

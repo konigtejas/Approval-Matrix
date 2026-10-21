@@ -618,9 +618,9 @@ public without sharing class AMF_ApprovalMatrixService {
         // fails entry criteria loudly rather than routing silently.
         //
         // Record by record (M10.3b). A record whose guard the platform will not
-        // set -- a validation rule it fails, or the lock a final approval left
-        // on it -- is one record that cannot be submitted, not a reason to fail
-        // the others. Its template would refuse it without the guard anyway.
+        // set -- a validation rule it fails, say -- is one record that cannot be
+        // submitted, not a reason to fail the others. Its template would refuse
+        // it without the guard anyway.
         Map<Id, String> unstaged = stageGuard(plan.objectApiName, routed);
         List<AMF_SubmitRequest> requests = new List<AMF_SubmitRequest>();
 
@@ -876,10 +876,11 @@ public without sharing class AMF_ApprovalMatrixService {
      * Step 9, record by record (M10.3b): sets the guard on each record and
      * answers for the ones the platform would not set it on.
      *
-     * allOrNone false, unlike rearmGuard(). A validation rule one record fails,
-     * or the lock a final approval left on it, fails that record alone. When
-     * some records fail, the platform saves the rest in a second attempt, which
-     * runs the object's triggers on them a second time.
+     * allOrNone false, unlike rearmGuard(). A validation rule one record fails
+     * fails that record alone. (The lock a final approval leaves did not stop
+     * this update in an Apex test, technical log M10.8.) When some records
+     * fail, the platform saves the rest in a second attempt, which runs the
+     * object's triggers on them a second time.
      *
      * @return The platform's reason for each record whose guard was not set.
      */

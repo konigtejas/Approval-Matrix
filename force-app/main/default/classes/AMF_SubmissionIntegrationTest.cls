@@ -17,7 +17,7 @@
  * the platform answers each record by itself -- one refusal is logged and
  * leaves the others' submissions standing -- and that 200 records go through
  * in one transaction. Since M10.3b, that a record the engine cannot set the
- * guard on -- one a final approval left locked -- fails by itself, through
+ * guard on -- one a validation rule refuses it on -- fails by itself, through
  * either entry.
  *
  * ORG DEPENDENCE IS DELIBERATE AND LOCAL. This class needs both templates
@@ -26,11 +26,12 @@
  * resolves its approvers from the SUBMITTER's manager chain and the user
  * running a test may have no manager. M10 turns that into a fixture: a user
  * created with no manager is refused by PR_Two_Level_Mgmt every time, which is
- * the real refusal a per-record test needs. M10.3b's fixture approves a record
- * through all three of PR_Three_Level_Finance's steps as the running user,
- * which needs Modify All Data, and relies on the lock that final approval
- * leaves stopping a non-admin's update. The RULES are still in-memory
- * fixtures, so CLAUDE.md's "zero dependence on org CMDT rows" holds.
+ * the real refusal a per-record test needs. M10.3b's fixture is the
+ * AMF_Test_Refuse_Guard validation rule, which refuses the guard on a
+ * Strategic-vendor request to a holder of a custom permission that no
+ * permission set grants; the tests grant it to their submitter (technical log
+ * M10.8). The RULES are still in-memory fixtures, so CLAUDE.md's "zero
+ * dependence on org CMDT rows" holds.
  */
 @IsTest
 private class AMF_SubmissionIntegrationTest {
@@ -532,27 +533,26 @@ private class AMF_SubmissionIntegrationTest {
     @IsTest
     static void aRecordWhoseGuardCannotBeSetIsLoggedFailedWhileTheOtherEntersItsProcess() {
         // Step 9 stages the guard record by record. The record that cannot take
-        // it is one a final approval left locked: PR_Three_Level_Finance keeps
-        // the record locked after final approval, and a non-admin cannot update
-        // a locked record, even from Apex running without sharing. It fails by
-        // itself, with the platform's reason, and the fresh record beside it
-        // still enters its process.
+        // it is one a validation rule refuses: AMF_Test_Refuse_Guard, which
+        // fires only for a holder of its custom permission, and only on a
+        // Strategic-vendor request. It fails by itself, with the platform's
+        // reason, and the record beside it, in the same update, still enters
+        // its process.
         requireActiveProcess(THREE_LEVEL);
 
-        User submitter = managerlessSubmitter();
-        Purchase_Request__c locked = highValueApac();
+        User submitter = guardRefusingSubmitter();
+        Purchase_Request__c refused = strategicVendor();
         Purchase_Request__c fresh = highValueApac();
 
         System.runAs(submitter) {
-            insert new List<Purchase_Request__c>{ locked, fresh };
+            insert new List<Purchase_Request__c>{ refused, fresh };
         }
-        submitAndApproveToTheEnd(locked, submitter);
 
         List<AMF_ApprovalMatrixService.Outcome> outcomes;
 
         Test.startTest();
         System.runAs(submitter) {
-            outcomes = engineRoutingTo(THREE_LEVEL).submitEach(new List<Id>{ locked.Id, fresh.Id });
+            outcomes = engineRoutingTo(THREE_LEVEL).submitEach(new List<Id>{ refused.Id, fresh.Id });
         }
         Test.stopTest();
 
@@ -570,17 +570,17 @@ private class AMF_SubmissionIntegrationTest {
         Assert.areEqual(failed.message, failedRow.Failure_Detail__c, 'The platform\'s reason is on record');
         Assert.isNull(failedRow.Execution_Ref_Id__c);
         Assert.isFalse(
-            guardOf(locked.Id),
+            guardOf(refused.Id),
             'Its guard was never set: the update that would have set it is the one that failed'
         );
         Assert.areEqual(
             0,
-            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :locked.Id AND Status = 'Pending'],
+            [SELECT COUNT() FROM ProcessInstance WHERE TargetObjectId = :refused.Id],
             'And it entered no process'
         );
 
         AMF_ApprovalMatrixService.Outcome entered = outcomes[1];
-        Assert.isTrue(entered.submitted, 'The locked record must not sink the other: ' + entered.message);
+        Assert.isTrue(entered.submitted, 'The refused record must not sink the other: ' + entered.message);
         Assert.areEqual(
             'Pending',
             [SELECT Status FROM ProcessInstance WHERE Id = :entered.executionRefId].Status
@@ -589,7 +589,7 @@ private class AMF_SubmissionIntegrationTest {
     }
 
     @IsTest
-    static void theHeaderButtonAnswersALockedRecordWithAFailedRowRatherThanAnException() {
+    static void theHeaderButtonAnswersARefusedGuardWithAFailedRowRatherThanAnException() {
         // submit()'s whole-call contract covers refusals: nothing decided,
         // nothing logged. A guard the platform will not set belongs to a record
         // the matrix did decide, so submit() answers it as it has answered a
@@ -598,84 +598,35 @@ private class AMF_SubmissionIntegrationTest {
         // with the attempt unrecorded.
         requireActiveProcess(THREE_LEVEL);
 
-        User submitter = managerlessSubmitter();
-        Purchase_Request__c locked = highValueApac();
+        User submitter = guardRefusingSubmitter();
+        Purchase_Request__c refused = strategicVendor();
 
         System.runAs(submitter) {
-            insert locked;
+            insert refused;
         }
-        submitAndApproveToTheEnd(locked, submitter);
 
         AMF_ApprovalMatrixService.Outcome outcome;
 
         Test.startTest();
         System.runAs(submitter) {
-            outcome = engineRoutingTo(THREE_LEVEL).submit(new List<Id>{ locked.Id })[0];
+            outcome = engineRoutingTo(THREE_LEVEL).submit(new List<Id>{ refused.Id })[0];
         }
         Test.stopTest();
 
         assertGuardNotStaged(outcome);
         Assert.areEqual(
-            2,
-            [SELECT COUNT() FROM Approval_Decision_Log__c WHERE Record_Id__c = :String.valueOf(locked.Id)],
-            'The approved submission\'s row, and this attempt\'s Failed row'
+            1,
+            [SELECT COUNT() FROM Approval_Decision_Log__c WHERE Record_Id__c = :String.valueOf(refused.Id)],
+            'This attempt\'s Failed row, and nothing else'
         );
-    }
-
-    /**
-     * Puts a record through PR_Three_Level_Finance and approves every step. It
-     * ends Approved, its guard cleared by the template's final approval action
-     * (5.2), and still locked (finalApprovalRecordLock), so that only an
-     * administrator can edit it.
-     *
-     * The submitter submits it through the engine, as the header button would.
-     * The approvals run as the test's running user rather than as the three
-     * named approvers: Modify All Data lets an administrator act on any work
-     * item, which keeps the fixture clear of whether those approvers can read
-     * the record (technical log M3.10). People's actions, simulated; the engine
-     * itself never approves anything (6.5).
-     */
-    private static void submitAndApproveToTheEnd(Purchase_Request__c record, User submitter) {
-        AMF_ApprovalMatrixService.Outcome submission;
-
-        System.runAs(submitter) {
-            submission = engineRoutingTo(THREE_LEVEL).submit(new List<Id>{ record.Id })[0];
-        }
-        Assert.isTrue(
-            submission.submitted,
-            'Precondition: the record entered ' + THREE_LEVEL + '. ' + submission.message
-        );
-
-        for (Integer step = 1; step <= 3; step++) {
-            // Not named "approval": Apex names are case-insensitive, and a local
-            // of that name would shadow the Approval class on the next line.
-            Approval.ProcessWorkitemRequest approve = new Approval.ProcessWorkitemRequest();
-            approve.setAction('Approve');
-            approve.setWorkitemId(
-                [SELECT Id FROM ProcessInstanceWorkitem WHERE ProcessInstanceId = :submission.executionRefId LIMIT 1]
-                .Id
-            );
-            Approval.ProcessResult approved = Approval.process(approve);
-            Assert.isTrue(
-                approved.isSuccess(),
-                'Approving step ' + step + ' as the running user, which needs Modify All Data, failed: ' +
-                approved.getErrors()
-            );
-        }
-
-        Assert.areEqual(
-            'Approved',
-            [SELECT Status FROM ProcessInstance WHERE Id = :submission.executionRefId].Status,
-            'Precondition: approved through all three steps'
-        );
-        Assert.isFalse(guardOf(record.Id), 'Precondition: the final approval action cleared the guard (5.2)');
+        Assert.isFalse(guardOf(refused.Id), 'And no guard left behind');
     }
 
     /**
      * M10.3b's answer for a record the engine could not set the guard on: Failed
-     * by itself, naming the route the matrix chose, with a row. The messages
-     * carry the fixture's assumption, because a failure here is more likely a
-     * finding about that assumption than about the engine.
+     * by itself, naming the route the matrix chose, with a row that carries the
+     * platform's reason. The fixture's validation rule is that reason, so the
+     * status code is asserted as well as the engine's sentence.
      */
     private static void assertGuardNotStaged(AMF_ApprovalMatrixService.Outcome outcome) {
         String got = outcome.outcome + ' / ' + outcome.message;
@@ -683,10 +634,7 @@ private class AMF_SubmissionIntegrationTest {
         Assert.areEqual(
             'Failed',
             outcome.outcome,
-            'A non-admin cannot update a record that a final approval left locked, so its guard ' +
-            'cannot be staged. If the record was Submitted instead, the lock did not stop a ' +
-            'non-admin\'s update from Apex in this org, and this fixture cannot make step 9 fail ' +
-            '(technical log M10.7). Got: ' + got
+            'AMF_Test_Refuse_Guard should have refused the guard update (technical log M10.8). Got: ' + got
         );
         Assert.isFalse(outcome.submitted, got);
         Assert.areEqual(THREE_LEVEL, outcome.selectedProcess, 'The matrix still chose the route');
@@ -696,12 +644,46 @@ private class AMF_SubmissionIntegrationTest {
             ),
             'The guard could not be staged, as opposed to the platform refusing the submission. Got: ' + got
         );
+        Assert.isTrue(
+            outcome.message.contains('FIELD_CUSTOM_VALIDATION_EXCEPTION: Test fixture:'),
+            'The platform\'s reason, status code first, is the fixture rule\'s. Got: ' + got
+        );
         Assert.isNotNull(outcome.decisionLogId, 'The matrix decided, so the attempt is logged');
         Assert.isNull(outcome.executionRefId);
     }
 
     private static Purchase_Request__c highValueApac() {
         return new Purchase_Request__c(Amount__c = 250000, Region__c = 'APAC', Risk_Level__c = 'High');
+    }
+
+    /** The record AMF_Test_Refuse_Guard refuses the guard on, for a holder of its permission. */
+    private static Purchase_Request__c strategicVendor() {
+        Purchase_Request__c record = highValueApac();
+        record.Vendor_Type__c = 'Strategic';
+        return record;
+    }
+
+    /**
+     * managerlessSubmitter(), also granted the AMF_Test_Refuse_Guard custom
+     * permission through a permission set made here. No shipped permission set
+     * grants it, so the rule is inert for every real user.
+     */
+    private static User guardRefusingSubmitter() {
+        User submitter = managerlessSubmitter();
+
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            PermissionSet fixture = new PermissionSet(
+                Name = 'AMF_Test_Refuse_Guard_Fixture',
+                Label = 'AMF Test Refuse Guard Fixture'
+            );
+            insert fixture;
+            insert new SetupEntityAccess(
+                ParentId = fixture.Id,
+                SetupEntityId = [SELECT Id FROM CustomPermission WHERE DeveloperName = 'AMF_Test_Refuse_Guard'].Id
+            );
+            insert new PermissionSetAssignment(AssigneeId = submitter.Id, PermissionSetId = fixture.Id);
+        }
+        return submitter;
     }
 
     /** The real Classic strategy behind an in-memory catch-all: one real route, no org CMDT. */
