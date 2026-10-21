@@ -5,7 +5,7 @@
 
 - **M10's org gate**, closed as M10.8 (`a0273e9`).
 - **The Opportunity baseline**, retrieved from the org and committed unchanged (`6e3079d`).
-- **Phase M11**, a second governed object.
+- **Phase M11**, a second governed object (`96e5692`).
 
 Only M11's manual UI check is owed.
 

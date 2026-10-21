@@ -106,7 +106,7 @@ session needs. Update the row when a phase completes.
 | **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Org gate steps 1–5 passed** 2026-10-08 (M8.7): first deploy refused on a 329-character description, fixed; 197/197 Apex; PR-00000010 repaired. **Step 6, the manual UI check, is owed** | `caeafb3` + M8.7 |
 | **M9** | Full expression grammar — `NOT`, word forms, `IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, three-hop paths | **Complete** — gate run in `amf-dev` 2026-10-08: 232/232 Apex, evaluator classes all 100%, mutation-checked, 57/57 Jest, matrix valid; optional manual UI check not run | `a79c880` |
 | **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers; since M10.7 the guard staged per record | **Complete** — org gate passed 2026-10-21 (M10.8): 255/255 Apex at 98% after the locked-record fixture was replaced by a test-only validation rule (the lock did not stop the update in an Apex test), 59/59 Jest, the invocable and REST answered in the org | `393d9d5` + M10.7, M10.8 (`a0273e9`) |
-| **M11** | A second governed object, Opportunity, by configuration alone — guard, two manager-hierarchy templates, the button off four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3, the validator runs each union query | **Complete, one manual check owed** — gate run 2026-10-21: source gate and validator green across both objects and failing broken copies, 264/264 Apex at 98%, 59/59 Jest, UI API shows the action and no standard button, an Opportunity routed, approved and recalled in the org. The relationship limit measured as not enforced (142 joined) | `6e3079d` + Phase M11 |
+| **M11** | A second governed object, Opportunity, by configuration alone — guard, two manager-hierarchy templates, the button off four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3, the validator runs each union query | **Complete, one manual check owed** — gate run 2026-10-21: source gate and validator green across both objects and failing broken copies, 264/264 Apex at 98%, 59/59 Jest, UI API shows the action and no standard button, an Opportunity routed, approved and recalled in the org. The relationship limit measured as not enforced (142 joined) | `6e3079d` + `96e5692` |
 
 ### Superseded — the v1.0 plan
 
@@ -3572,8 +3572,8 @@ This table supersedes M10.7's.
 ## Phase M11 — A second governed object: Opportunity
 
 **Date:** 2026-10-21 · **Commits:** `6e3079d`, the baseline retrieved from the org and committed
-unchanged, then Phase M11 · **Status:** complete. The gate ran in `amf-dev`, apart from its manual
-UI step, which is owed to the user.
+unchanged, then `96e5692`, Phase M11 · **Status:** complete. The gate ran in `amf-dev`, apart from
+its manual UI step, which is owed to the user.
 **Playbook goal:** prove §3.2's claim that governing an object is configuration plus conventions,
 with no engine change, on a standard object.
 
