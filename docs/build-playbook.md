@@ -58,6 +58,9 @@ phases consistent with each other. §13 of that document is the MVP scope; anyth
 - The Bash tool collapses `\\` to `\` even inside a quoted heredoc, so anonymous Apex written that
   way loses its escapes (`split('\\.')` arrives as an illegal `split('\.')`). Write such files with
   the file tools, or avoid the backslash (technical log M11.3c).
+- The session scratchpad's path is long enough that a full copy of `force-app` beneath it passes
+  Windows' 260-character limit. Copy only the folders a check needs, under short names
+  (technical log M12.3c).
 
 ---
 
@@ -626,6 +629,108 @@ layout with no action list.
 **Gate run 2026-10-21 (technical log M11.4):** steps 1–7 passed, with 264/264 Apex tests. Step 8,
 the manual UI check, is owed to the user.
 
+### M12 — Template lifecycle, queue and committee templates, portability (post-MVP)
+
+**Goal:** make §5.1's convention that a live template is never edited in place enforceable by the
+gate rather than by discipline. Add the two approver shapes the MVP did not build, a queue and a
+committee. Let the framework's source deploy to an org other than `amf-dev`. Three decisions
+(technical log M12): a fingerprint manifest, Classic committees now, and org configuration in its
+own package directory.
+
+**Build:**
+- **Template lifecycle (§5.1).** `config/template-releases.json` lists every released template with
+  a SHA-256 fingerprint of its source: the XML without `<active>`, with insignificant whitespace
+  dropped and line endings normalised. The source gate fails:
+  - a released template whose fingerprint has changed (only its active flag may change);
+  - a template in source that is not released (the message gives its fingerprint, so releasing it
+    is one deliberate line);
+  - a released template missing from source;
+  - a superseded version that is still active, where `X_v2` supersedes `X` and `X_v3` supersedes
+    both;
+  - a rule that names a superseded version.
+
+  The guard checks (entry criterion, the guard cleared on every way out) now run on every active
+  template in source, not only those a rule names.
+- **Two Classic templates on `Purchase_Request__c`** (§5.2, §5.4), each with the guard as its only
+  entry criterion and `AMF_Clear_Matrix_Submission` on approval, rejection and recall:
+  - `PR_Credit_Risk_Queue`: one step, assigned to the queue `Q_Credit_Risk`; any member decides.
+  - `PR_Finance_Committee`: `amfu1`, `amfu2` and `amfu3` unanimously, then `amfu4` or `amfu5`,
+    first response.
+
+  Classic cannot name a public group as an approver. The committee therefore lists its members as
+  users, and the seed script makes `G_Finance_Approvers` the queue's member, so that the queue
+  reaches the group.
+- **Rules:** `PR_Committee_Spend` (5, `Amount__c >= 1000000`, to the committee) and
+  `PR_Credit_Risk_Review` (30, `Risk_Level__c == 'Medium' && Amount__c >= 50000`, to the queue).
+- **Portability.**
+  - Templates name users as `<alias>@{{AMF_USERNAME_DOMAIN}}`. A `sfdx-project.json` replacement
+    fills the domain from the environment variable of that name at deploy, and the CLI refuses a
+    deploy without it. The gate refuses a literal username, and a replacement config that does not
+    cover approval processes.
+  - Opportunity's four layouts and its object settings are `amf-dev`'s own configuration, so they
+    move, unchanged, to a second package directory, `org-config/amf-dev`. The gate reads every
+    package directory, and fails a standard object's layout or object settings in `force-app`.
+- **Rider:** `New` and `MassChangeOwner` are excluded from the Approval Decisions related list on
+  all five governed layouts (M11.5).
+- **Tests:** `AMF_TemplateShapesTest`, real-platform tests of both templates:
+  - the queue's work item is with the queue, and any member decides, directly or through a group;
+  - the committee needs every member, then either leader;
+  - one committee rejection rejects the request;
+  - the bypass, and all three ways out, on both templates;
+  - the timeline names the queue and the true actor;
+  - the validator passes the new rules.
+
+No engine class, LWC or validator class changes.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`.
+   Expect 8 active rules, 6 approval processes, all 6 released and unchanged, and 5 layouts across
+   2 objects.
+2. **The gate fails broken scratch copies of the project:**
+   - a released template edited;
+   - an unreleased template, whose message gives its fingerprint;
+   - a released template deleted;
+   - a `_v2` with its predecessor still active;
+   - a rule naming the predecessor;
+   - a literal username;
+   - the replacement removed;
+   - a standard object's layout moved back into `force-app`.
+
+   The copy with `_v2` released, `X` deactivated and the rules repointed passes.
+3. **Portability, offline:**
+   - `force-app` converts with `SF_APPLY_REPLACEMENTS_ON_CONVERT=true` and another domain, and
+     every approver carries that domain;
+   - without `AMF_USERNAME_DOMAIN`, conversion is refused;
+   - `force-app` holds no `amf-dev` Id or domain.
+4. Deploy both package directories with `AMF_USERNAME_DOMAIN` set. Run the seed script, which adds
+   the queue's member.
+5. **The org holds what is released:** retrieve all six templates. Each, with its domain put back
+   to the placeholder, has its released fingerprint. For `PR_Three_Level_Finance` this proves that
+   the placeholder change was representational only.
+6. `sf apex run --file scripts/validate-config.apex -o amf-dev`: the matrix is valid.
+7. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`: all green.
+8. Jest: unchanged, because no LWC changes.
+9. **The rider, by the UI API:** `GET /ui-api/actions/record/<Id>/related-list/Approval_Decisions__r`
+   lists neither `New` nor `MassChangeOwner`, for a Purchase Request and for an Opportunity.
+10. **End to end in the org:** on throwaway Purchase Requests, a medium-risk request of 60,000
+    routes to `PR_Credit_Risk_Queue`, with its work item on the queue. A request of 1,200,000
+    routes to `PR_Finance_Committee`, with three work items. Approving those three moves it to
+    the leaders, one leader's approval completes it, and the guard clears. The queue request,
+    recalled, clears its guard.
+11. **Manual, in the real UI:** a medium-risk request's modal names `PR_Credit_Risk_Queue`. After
+    submitting, the timeline shows the step with *Credit Risk*, and the Approval Decisions list
+    offers no New button.
+
+Acceptance: the gate makes an in-place edit of a released template a release failure, and shows it
+on scratch copies. Real-platform tests prove queue and committee semantics, the guard on both new
+templates, and the timeline's account of who acted. `force-app` deploys with any org's domain, and
+`amf-dev` holds exactly the released templates.
+
+**Gate run 2026-10-22 (technical log M12.4):** steps 1–10 passed, with 274/274 Apex tests. Step 11,
+the manual UI check, is owed to the user. A second org was not used: the guardrail allows `amf-dev`
+alone, so portability is shown offline (step 3).
+
 ---
 
 ## Part 4 — When Things Go Wrong
@@ -665,6 +770,7 @@ the manual UI check, is owed to the user.
 | Optional: M9's manual check, a throwaway rule using the new grammar previewed in the UI | technical log M9.4 |
 | ~~M10's org gate: deploy, RunLocalTests (255), the invocable and REST checks~~ **passed 2026-10-21** | technical log M10.8 |
 | M11's manual UI check: on a throwaway Opportunity, one Submit for Approval button, the modal names the route, the timeline updates without a reload, *Matrix Submission* ticked | technical log M11.4 |
+| M12's manual UI check: a medium-risk request's modal names `PR_Credit_Risk_Queue`, the timeline shows the step with *Credit Risk*, and the Approval Decisions list offers no New button | technical log M12.4 |
 
 ### M10 — Entry points and bulk submission *(authorised and built, 2026-10-08)*
 
@@ -677,19 +783,14 @@ the bulk entry points, `TODAY` as the running user's date, and one shared result
 Moved to Part 3, with its gate. The user chose Opportunity over a second custom object. The
 55-relationship item below rode along, changed by measurement (technical log M11).
 
-### M12 — Template lifecycle, and queue and committee templates
+### M12 — Template lifecycle, queue and committee templates, portability *(authorised and built, 2026-10-22)*
 
-**Goal:** make §5.1's versioning convention enforceable, and add the template shapes the MVP did
-not build.
+Moved to Part 3, with its gate. The three decisions it needed were taken:
+- in-place edits are detected by a fingerprint manifest;
+- committee steps are built on Classic now;
+- the org's own configuration lives in its own package directory.
 
-**Sketch:** the source gate checks the `_v2` convention: a rule points at an active template,
-the previous version is inactive, and a template is never changed in place. That last check is the
-hard one, because it needs a baseline to compare against. Then Classic templates with queue and
-committee steps.
-
-**Decide first:** how "never edited in place" is detected. Also whether committee steps are built
-on Classic now or wait for Flow: §5.4 prefers Flow for group steps, and Flow's unanimous mode is
-still unresolved (§12 item 1).
+The related-list buttons rode along (technical log M12).
 
 ### Grammar and validator hardening *(small; can join M10 or M11)*
 
@@ -728,7 +829,7 @@ PR-00000014 to PR-00000025 and the guards they still carry (technical log M8.7c)
 | Rule descriptions are not snapshotted, so the timeline shows DeveloperNames; it would need a log field | `docs/decisions.md` |
 | Approvers cannot read the routing reason for others' submissions; a sharing decision on the log | `docs/decisions.md` |
 | Field-to-field multipicklist comparisons are refused | M9.5 |
-| The Approval Decisions related list offers New and Mass Change Owner on both objects' layouts; `excludeButtons` removes them | M11.5 |
+| ~~The Approval Decisions related list offers New and Mass Change Owner on both objects' layouts; `excludeButtons` removes them~~ **done in M12** | M11.5 |
 
 ### Not on the roadmap
 

@@ -377,8 +377,11 @@
       Why this deal routed where it did (arch doc 3.3, 8), beside the native
       who-and-when above it. Reachable because Approval_Decision_Log__c carries a
       lookup to Opportunity (M11), which the engine finds by describe.
+      The engine writes every row, so New and Mass Change Owner are excluded (M12).
     -->
     <relatedLists>
+        <excludeButtons>MassChangeOwner</excludeButtons>
+        <excludeButtons>New</excludeButtons>
         <fields>NAME</fields>
         <fields>Submitted_At__c</fields>
         <fields>Outcome__c</fields>

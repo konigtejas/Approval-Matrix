@@ -23,9 +23,6 @@
         <description>The submitter&apos;s manager, resolved from the User.Manager hierarchy field.</description>
         <label>Manager</label>
         <name>Manager</name>
-        <rejectBehavior>
-            <type>RejectRequest</type>
-        </rejectBehavior>
     </approvalStep>
     <description>One step: the submitter&apos;s manager (arch doc 5.2, M11). It names no user, so it deploys to any org, and it is the Opportunity catch-all&apos;s destination. Unlocked after final approval: an approved deal must stay editable.</description>
     <enableMobileDeviceAccess>false</enableMobileDeviceAccess>

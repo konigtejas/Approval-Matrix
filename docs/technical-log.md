@@ -107,6 +107,7 @@ session needs. Update the row when a phase completes.
 | **M9** | Full expression grammar — `NOT`, word forms, `IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, three-hop paths | **Complete** — gate run in `amf-dev` 2026-10-08: 232/232 Apex, evaluator classes all 100%, mutation-checked, 57/57 Jest, matrix valid; optional manual UI check not run | `a79c880` |
 | **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers; since M10.7 the guard staged per record | **Complete** — org gate passed 2026-10-21 (M10.8): 255/255 Apex at 98% after the locked-record fixture was replaced by a test-only validation rule (the lock did not stop the update in an Apex test), 59/59 Jest, the invocable and REST answered in the org | `393d9d5` + M10.7, M10.8 (`a0273e9`) |
 | **M11** | A second governed object, Opportunity, by configuration alone — guard, two manager-hierarchy templates, the button off four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3, the validator runs each union query | **Complete, one manual check owed** — gate run 2026-10-21: source gate and validator green across both objects and failing broken copies, 264/264 Apex at 98%, 59/59 Jest, UI API shows the action and no standard button, an Opportunity routed, approved and recalled in the org. The relationship limit measured as not enforced (142 joined) | `6e3079d` + `96e5692` |
+| **M12** | Template lifecycle, queue and committee templates, portability. A release manifest makes an in-place edit a gate failure. `PR_Credit_Risk_Queue` and `PR_Finance_Committee` each have a rule. Usernames are filled at deploy, and the org's own configuration has its own package directory. New and Mass Change Owner are off the decision-log list | **Complete, one manual check owed.** Gate run 2026-10-22. The source gate is green and failed broken copies, and a correct `_v2` passed. `force-app` converts with another org's domain. The org's six templates match the manifest. 274/274 Apex at 98%, 59/59 Jest, the related list offers no actions. Queue and committee requests routed, decided and recalled in the org | recorded below |
 
 ### Superseded — the v1.0 plan
 
@@ -122,8 +123,8 @@ Retained only as a record of what was built. Phases 2–8 of that plan were neve
 carried-forward table), then the phase prompt in `docs/build-playbook.md`. Do not rely on
 conversation history — there is none by design.
 
-**Choosing the next phase:** `docs/build-playbook.md` Part 5 holds the proposed roadmap after M11
-(M12 template lifecycle, Flow approvals, the smaller items), with the decisions each needs first.
+**Choosing the next phase:** `docs/build-playbook.md` Part 5 holds the proposed roadmap after M12
+(Flow approvals, the smaller items), with the decisions each needs first.
 It authorises nothing; `CLAUDE.md` does. `docs/handoff.md` is the short version.
 
 ---
@@ -3802,3 +3803,304 @@ This table supersedes M10.8's.
 | The playbook's optional manual M9 check | user, optional |
 | ~~M9.5's 55-relationship union~~ | **closed in M11**: not enforced; the validator runs the query |
 | M9.5's other grammar items: DateTime, the text-like field types, reserved keywords, field-to-field multipicklists | as in M9.5 |
+
+---
+
+## Phase M12 — Template lifecycle, queue and committee templates, portability
+
+**Date:** 2026-10-22 · **Commit:** recorded on the status board · **Status:** complete. The gate
+ran in `amf-dev`, apart from its manual UI step, which is owed to the user.
+**Playbook goal:** make §5.1's rule that a live template is never edited in place a gate failure;
+add the queue and committee shapes; let `force-app` deploy to an org other than `amf-dev`.
+
+The user asked this session to start "the next major build" from the handoff, which named M12.
+They took its three decisions in this session:
+
+- a fingerprint manifest, over a git diff against a release tag;
+- Classic committees now, over waiting for Flow;
+- the org's own configuration in its own package directory, over stripping `amf-dev`'s fields or
+  keeping them.
+
+Of the two riders offered, they chose the related-list buttons. `Lock_Decision_Log` stays carried.
+`CLAUDE.md` records the authorisation, and the playbook's Part 3 entry and gate were written before
+building.
+
+### M12.1 File-level changes
+
+| File | Change | Notes |
+|---|---|---|
+| `config/template-releases.json` | **new** | the six released templates, each with its fingerprint and the phase that released it |
+| `scripts/validate-approval-matrix-source.ps1` | **rewritten** | reads every package directory; guard checks on every active template; the lifecycle; usernames; the replacement config; standard objects' configuration kept out of `force-app`. `-ProjectRoot` replaces `-SourceRoot`, and XML is read as UTF-8 |
+| `sfdx-project.json` | **modified** | the package directory `org-config/amf-dev`; a replacement of `{{AMF_USERNAME_DOMAIN}}` in approval processes, from the environment variable of that name |
+| `org-config/amf-dev/main/default/layouts/Opportunity-*.layout-meta.xml` ×4 | **moved** from `force-app`, then the rider | otherwise unchanged |
+| `org-config/amf-dev/main/default/objects/Opportunity/Opportunity.object-meta.xml` | **moved** from `force-app` | unchanged |
+| `approvalProcesses/Purchase_Request__c.PR_Credit_Risk_Queue.approvalProcess-meta.xml` | **new** | one step on the queue `Q_Credit_Risk` |
+| `approvalProcesses/Purchase_Request__c.PR_Finance_Committee.approvalProcess-meta.xml` | **new** | `amfu1` to `amfu3` unanimously, then `amfu4` or `amfu5` |
+| `approvalProcesses/`, the four existing templates | **modified**, representation only | the form a retrieve returns (M12.3a); `PR_Three_Level_Finance` names its users through the placeholder |
+| `customMetadata/Approval_Matrix_Rule.PR_Committee_Spend`, `PR_Credit_Risk_Review` | **new** | priorities 5 and 30 |
+| `layouts/Purchase_Request__c-Purchase Request Layout.layout-meta.xml` | **modified** | the rider |
+| `classes/AMF_TemplateShapesTest.cls` | **new** | 10 real-platform tests |
+| `classes/AMF_CmdtRuleProviderTest.cls` | **modified** | one expectation: the shipped matrix's first rule (M12.3b) |
+| `scripts/seed-data.apex` | **modified** | `G_Finance_Approvers` as `Q_Credit_Risk`'s member; prints the deploy value of `AMF_USERNAME_DOMAIN` |
+| `CLAUDE.md`, `docs/architecture.md` (§3.2, §5.1, §5.2, §5.4, §6.3, §9, §11 notes; §13.4 row), `docs/build-playbook.md` (M12 in Part 3; Part 5), `docs/decisions.md` (6 entries), `docs/handoff.md` | **modified** | authorisation, design, decisions, the next handoff |
+
+No engine class, LWC or validator class changed. The engine routed to the two new templates as it
+routes to any other process.
+
+### M12.2 Design choices worth recording
+
+**(a) What the fingerprint covers: everything but `<active>`.** Excluding descriptions, labels or
+`processOrder` was considered and rejected:
+
+- A description is what an auditor and an approver read.
+- A strict rule is easier to state than a list of exemptions.
+- A retrieve returned all six templates exactly as source holds them, `processOrder` included,
+  once source had taken the retrieved form (a, M12.3).
+
+Line endings are normalised because git checks files out with CRLF on this workstation and with LF
+elsewhere. Whitespace-only nodes are dropped, so re-indenting does not count as an edit. The name
+is not part of the fingerprint, so a renamed copy has its original's fingerprint (case b, M12.4).
+That is harmless, because the manifest is keyed by name.
+
+**(b) Releasing is a line the gate prints, not a script.** A release script would have needed the
+normaliser in two places, or a write mode in a gate. An unreleased template fails, and its message
+carries the exact manifest line, so the gate stays read-only and releasing stays deliberate.
+
+**(c) Version chains by name.** `X_v<n>` is version n, for n ≥ 2. `_v0` and `_v1` are refused,
+because the first version has no suffix. Every lower version of a chain is superseded, and gaps
+are allowed. A rule that names a superseded version gets its own message, beside "not active".
+
+**(d) The guard checks run on every active template** (`docs/decisions.md`). Before M12 they ran
+only on templates a rule named.
+
+**(e) A placeholder rather than `amf-dev`'s domain** (`docs/decisions.md`). The replacement's glob
+covers every approval process. A deploy that includes any template therefore needs the variable,
+even for a template that names no user. Per-file entries would avoid that, at the cost of a list to
+keep beside the templates. The gate checks that the replacement exists.
+
+**(f) Where the org-configuration boundary lies.**
+
+- **Moved:** the four Opportunity layouts and `Opportunity.object-meta.xml`.
+- **Stayed:**
+  - the guard field, the templates and the quick action, which are the framework;
+  - `Opportunity_Record_Page`, which holds standard components and the timeline only, so it
+    deploys anywhere. In another org it deploys but is not activated, because the View override
+    that activates it moved with the object settings;
+  - the Purchase Request layout, whose object the framework ships.
+- **The rule, enforced on the default package:** a standard object's layouts and object settings
+  are org configuration.
+- **Measured first:** the CLI recomposes Opportunity across both package directories into one
+  object, with the override and the guard field. Converted alone, `force-app` produces an
+  `Opportunity.object` that holds the guard field and nothing else.
+
+**(g) The two shapes.**
+
+- `Q_Credit_Risk` was seeded in M0 and already supports `Purchase_Request__c`.
+- The committee is `G_Finance_Approvers`' three members, then the two finance leaders that
+  `PR_Three_Level_Finance` ends with. The same three people twice was considered and rejected.
+- The queue reaches the group by holding it as a member. That is the Classic way to route to a
+  public group, and the test in M12.4 shows it works.
+
+**(h) The rules.** `PR_Committee_Spend` (5) outranks every other rule. `PR_Credit_Risk_Review` (30)
+sits between `PR_High_Risk` (20) and the catch-all. One consequence: an APAC request of a million
+or more used to reach `PR_Three_Level_Finance` through `PR_High_Value_APAC`, and now goes to the
+committee. The M3 demo's amounts are below that.
+
+**(i) The tests act as the real approvers, with shares.**
+
+- The committee tests act as whichever seeded users the platform assigned, read from the work
+  items, so no test names a username.
+- Each approver is first given read access to the record, as §11 requires of an adopting org.
+- The queue tests add a member of their own rather than rely on the seeded membership.
+- Actor names are not asserted, after the fix following M8: in a test transaction they read back
+  null.
+
+### M12.3 Issues encountered
+
+**(a) The platform normalises a template on deploy.** The first retrieve after deploying showed all
+six templates differing from source:
+
+- `rejectBehavior` is dropped from a template's first step, where a rejection always ends the
+  request;
+- `Owner` is appended to the Purchase Request templates' approval page fields. The Opportunity
+  templates already listed it.
+
+Released as authored, the templates would have failed the gate after their next retrieve. So
+source took the retrieved form, with the placeholder put back, before anything was released. The
+deploys before (`0Afaj00000obdATCAY`) and after (`0Afaj00000obhu1CAA`) put the same templates in
+the org, which the retrieve check in M12.4 shows.
+
+**(b) `AMF_CmdtRuleProviderTest.shippedMatrixComesBackInPriorityOrder` failed in the first full
+run** (`707aj00001Mxqbv`, 273/274). It reads the org's shipped CMDT rows, and it pinned
+`PR_High_Value_APAC` as the first rule. `PR_Committee_Spend` at priority 5 now is, so the
+expectation changed. The test reads more org rows than the one pin its class header names as the
+only exception. That has departed from `CLAUDE.md`'s convention since M1, and it is carried rather
+than refactored, by scope discipline.
+
+**(c) MAX_PATH.** The session scratchpad's path is 125 characters, and `force-app`'s deepest file
+adds about 120. The broken-copy script therefore copies only the metadata folders the gate reads,
+under one-letter directory names.
+
+**(d) The broken-copy script misreported twice before it was right.** Both faults were in the
+script, not the gate, and the gate's verdicts did not change:
+
+- The child host wrapped the gate's thrown message, which split fingerprints across lines. The
+  script now catches the exception and prints its message raw.
+- A string replace inserted `Submit` 19 times into one layout, which produced 19 identical
+  findings.
+
+**(e) The end-to-end submit ran twice.** A command meant to print the first run's output started a
+second run, through a trailing `sf apex run … | head -0`. That submitted PR-00000031 and
+PR-00000032 as well. Both were recalled in the third transaction, which made them evidence of both
+templates' recall exit in the org. Their log rows stand, because rows are never deleted.
+
+**(f) The manifest's fingerprints were copied from wrapped output.** The gate then confirmed all
+six, so none was damaged.
+
+**(g) One test is slow sometimes.** `aMemberThroughAPublicGroupCanDecideAQueueStep` took 91 s in
+its first run and 16 s in the next. Each of the others took under 3 s. It creates a public group
+and nests it in a queue, which makes the platform recalculate group membership.
+
+**(h) Neither Python nor `npx` is on this workstation.** Edits went through the file tools, and
+Jest ran through the CLI's bundled Node, as in M3.4e.
+
+### M12.4 Verification evidence
+
+```
+source gate                 passed: 8 active rules, 6 approval processes guard-checked, 6 of 6 templates
+                            released and unchanged, 5 layouts of 2 governed objects
+deploy without the variable --dry-run refused: "AMF_USERNAME_DOMAIN" is in sfdx-project.json as a value
+                            for "replaceWithEnv" property, but it's not set in your environment
+deploy                      0Afaj00000obdATCAY Succeeded 128/128 (PR_Credit_Risk_Queue, PR_Finance_Committee
+                            created); after the retrieved form and the test class, 0Afaj00000obhu1CAA
+                            Succeeded 129/129
+seed                        "Queue Q_Credit_Risk members: G_Finance_Approvers (1 added)"
+post-deploy check           "Approval Matrix configuration is valid."
+M12 class                   707aj00001MxXNz: AMF_TemplateShapesTest 10/10
+RunLocalTests               707aj00001Mxqbv: 273/274 (M12.3b); after the fix 707aj00001MwtT1: 274/274,
+                            org-wide 98%. Service, timeline and history provider 100%, validator 98%;
+                            AMF_ClassicProcessStrategy 78%, its uncovered lines M3's unreachable guard
+Jest                        59/59 in 4 suites (no LWC changed)
+```
+
+**Step 2, broken scratch copies of the project.** A script in the session scratchpad copied the
+project, broke each copy one way, and ran the gate with `-ProjectRoot`. Messages are shortened
+here:
+
+```
+0  unchanged copy                         PASSED  6 of 6 released and unchanged
+a  released template edited               FAILED  PR_Two_Level_Mgmt has changed since it was released ...
+                                                  make the change in a new version, PR_Two_Level_Mgmt_v<n>
+b  unreleased template                    FAILED  PR_Credit_Risk_Desk is not released. To release it, add
+                                                  { "template": ..., "sha256": "3023d868..." }
+c  released template deleted              FAILED  OPP_Catch_All names OPP_Manager_Approval, but source does not
+                                                  contain it; OPP_Manager_Approval is released but not in source
+d1 _v2, rule repointed, X still active    FAILED  PR_Credit_Risk_Queue is superseded by PR_Credit_Risk_Queue_v2
+                                                  and must be deactivated
+d2 _v2, X deactivated, rule still on X    FAILED  ...PR_Credit_Risk_Queue is not active, but PR_Credit_Risk_Review
+                                                  names it; ... which PR_Credit_Risk_Queue_v2 supersedes; repoint it
+e  literal username                       FAILED  names the user 'amfu2@amf.00daj000012gj9b.dev' literally;
+                                                  PR_Finance_Committee has changed since it was released
+f  replacement removed                    FAILED  no replacement of {{AMF_USERNAME_DOMAIN}} ... covering
+                                                  approvalProcesses
+g  Opportunity's configuration in force-app FAILED  a standard object's layout in force-app; Opportunity.object-meta.xml
+                                                  holds a standard object's settings in force-app
+h  Submit back on an org-config layout    FAILED  Opportunity (Sales) Layout keeps the standard Submit button
+i  a _v1 suffix                           FAILED  not released; spells out a version below 2
+PASS _v2 released, X deactivated, rule repointed  PASSED  7 of 7 released and unchanged; 6 guard-checked
+```
+
+The last case is §5.1's whole procedure. The deactivated predecessor still matches its fingerprint,
+because the active flag is the one exclusion. It is no longer guard-checked, because nothing can
+enter an inactive template.
+
+**Step 3, portability offline.**
+
+```
+SF_APPLY_REPLACEMENTS_ON_CONVERT=true AMF_USERNAME_DOMAIN=acme.example.invalid
+  sf project convert source --source-dir force-app
+    user approvers   amfu1@acme.example.invalid ×1, amfu2 ×1, amfu3 ×2, amfu4 ×2, amfu5 ×2; placeholders left: 0
+    standard objects Opportunity.object, holding the guard field alone (no settings, no layout)
+without the variable  Error (ConversionError) ... "AMF_USERNAME_DOMAIN" ... not set in your environment; exit 10
+force-app             no file contains 00daj000012gj9b, 00Daj000012Gj9B or agentforce.com
+```
+
+A second org was not used. The playbook's guardrail allows `amf-dev` alone, and the only other
+aliases are two Dev Hubs that belong to other work.
+
+**Step 5, the org holds what is released.** Retrieving every `ApprovalProcess` in `amf-dev`
+returned exactly the six. Copied into a scratch project with the domain put back to the
+placeholder, they passed the gate: "6 of 6 template(s) released and unchanged".
+
+**Step 9, the rider, by the UI API.** `GET /ui-api/actions/record/<Id>/related-list/Approval_Decisions__r`
+returned, before and after:
+
+```
+PR-00000028 (a02aj00000jTA26AAG)    before: New | MassChangeOwner (StandardButton)    after: "actions": {}
+AMF M11 gate: small deal (006aj00000ffwjaAAA)                                         after: "actions": {}
+```
+
+**Step 10, end to end, through the production engine and the deployed rules.** There were three
+committed transactions of anonymous Apex, run as the admin. The admin acted on others' work items,
+as an administrator may.
+
+```
+1 submit      PR-00000029 (a02aj00000jVQp7AAG) Submitted by PR_Credit_Risk_Review to PR_Credit_Risk_Queue,
+              instance 04gaj000001ygmzAAA, log a03aj00002Wp7ATAAZ, guard true
+                  work item with Credit Risk (Queue 00Gaj00000V8jvlEAB)
+              PR-00000030 (a02aj00000jVQp8AAG) Submitted by PR_Committee_Spend to PR_Finance_Committee,
+              instance 04gaj000001ygn0AAA, log a03aj00002Wp7AUAAZ, guard true
+                  work items with AMF Approver One, Three, Two
+              (PR-00000031 and PR-00000032, the same again: M12.3e)
+2 committee   after One approves: Pending, open with Three, Two
+              after Three approves: Pending, open with Two
+              after Two approves: Pending, open with Five, Four
+3 finish      PR-00000030: Five approves -> Approved, open work items 0, guard false
+              PR-00000029, -31 (queue), -32 (committee): recalled -> Removed, open work items 0, guard false
+              PR-00000030 history (actor / original actor): Started; Approved by the admin for One, Three,
+              Two and Five; NoResponse for Four
+```
+
+**What the real-platform tests add to that** (`AMF_TemplateShapesTest`):
+
+- a queue member decides the queue's step, and the timeline shows the member as actor and the
+  queue as original actor;
+- a member of a public group that the queue holds can decide it, so the seed's configuration
+  works;
+- a user outside the queue cannot decide it, whatever their access to the record;
+- two committee approvals of three leave the request pending, and one rejection ends it;
+- both templates refuse a submission that bypasses the engine;
+- a recall from either re-arms the guard.
+
+**Owed to the user: the manual UI check (step 11), on a fresh medium-risk request of at least
+50,000:**
+
+1. The modal names `PR_Credit_Risk_Queue`.
+2. After submitting, the timeline shows the step with *Credit Risk*.
+3. The Approval Decisions list offers no New button.
+
+### M12.5 Carried into later phases
+
+This table supersedes M11.5's.
+
+| Item | Owner |
+|---|---|
+| M12's manual UI check (step 11, above) | user |
+| M11's manual UI check (playbook M11, step 8) | user |
+| Still open from M8.7: the manual UI check (step 6). PR-00000027 serves it from its second step | user |
+| `AMF_CmdtRuleProviderTest.shippedMatrixComesBackInPriorityOrder` reads the org's shipped rules, not only the pin (M12.3b); a new lowest-priority rule changes it again | a hardening pass |
+| Portability is shown offline only: no second org has deployed `force-app`. In one, the admin also removes the standard Submit button from its own layouts of each governed standard object (§6.3) | whoever sets up CI or a second org |
+| Every deploy that includes approval processes needs `AMF_USERNAME_DOMAIN`, `amf-dev`'s included (`CLAUDE.md`'s deploy line). A retrieve writes real usernames back, which the gate refuses: put the placeholder back | everyone who deploys or retrieves |
+| The gate's fingerprints govern source only. A template edited in Setup is found only by the retrieve-and-compare of M12.4 step 5, which is not scripted | a later hardening pass |
+| `aMemberThroughAPublicGroupCanDecideAQueueStep` takes 16 to 91 s (M12.3g) | if suite time matters |
+| `Lock_Decision_Log` still permits one post-insert stamp of `Execution_Ref_Id__c`, which nothing performs since M10 (M10.6). Test it against deleting a governed record (M3.12) | a later hardening pass |
+| The seeded approvers cannot approve Opportunities (Platform licenses) | if a demo needs it |
+| Whether the lock a final approval leaves stops a real non-admin's Apex update outside a test is unmeasured (M10.8a) | if a need appears |
+| The preview cannot foresee a guard failure (M10.7h) | if a need appears |
+| A record-triggered Flow on a governed object that calls the action is re-triggered by the engine's guard update and by the templates' clearing update; its entry conditions must exclude those | whoever builds such a Flow |
+| husky's pre-commit would rewrite every file a commit touches (M10.7); commits here run with `HUSKY=0` | a tooling decision |
+| Still open from M8.7c: PR-00000014 to PR-00000025 carry the guard; they go with M6's teardown | M6 teardown |
+| The playbook's optional manual M9 check | user, optional |
+| M9.5's grammar items: DateTime, the text-like field types, reserved keywords, field-to-field multipicklists | as in M9.5 |
+| ~~The Approval Decisions related list offers New and Mass Change Owner (M11.5)~~ | **closed in M12** |
+| ~~The source deploys only to `amf-dev` (M11.5)~~ | **closed in M12**, offline; see the portability row |

@@ -6,6 +6,7 @@
  *   - the framework service user (§5.1 Group Work Item pattern)
  *   - queue        Q_Credit_Risk       (route target of sample rule (b), §3.1)
  *   - public group G_Finance_Approvers with 3 members (U1, U2, U3)
+ *   - that group as Q_Credit_Risk's member, so the queue reaches it (M12)
  *
  * Idempotent: re-running only creates what is missing and re-points the manager
  * chain if it drifted. Safe to run again after Phase 1 adds Purchase_Request__c —
@@ -192,7 +193,20 @@ if (!newMembers.isEmpty()) {
 }
 report.add('Group members: ' + newMembers.size() + ' added (target: amfu1, amfu2, amfu3)');
 
+// ── 4b. The group as the queue's member (M12) ────────────────────────────────
+// PR_Credit_Risk_Queue assigns its step to Q_Credit_Risk, where any member decides.
+// Classic cannot assign a step to a public group, but a queue can hold one, so the
+// finance approvers reach the queue's work through the group.
+Integer queueMembersAdded = 0;
+if ([SELECT COUNT() FROM GroupMember WHERE GroupId = :creditRiskQueue.Id AND UserOrGroupId = :financeApprovers.Id] == 0) {
+    insert new GroupMember(GroupId = creditRiskQueue.Id, UserOrGroupId = financeApprovers.Id);
+    queueMembersAdded = 1;
+}
+report.add('Queue Q_Credit_Risk members: G_Finance_Approvers (' + queueMembersAdded + ' added)');
+
 // ── 5. Report ────────────────────────────────────────────────────────────────
 report.add('Service user (§5.1): ' + userByAlias.get('amfsvc').Username);
 report.add('Username domain: ' + userDomain);
+// The templates name these users as <alias>@{{AMF_USERNAME_DOMAIN}} (M12); deploy with this value.
+report.add('Deploy with AMF_USERNAME_DOMAIN=' + userDomain.substring(1));
 System.debug(LoggingLevel.ERROR, '=== AMF SEED COMPLETE ===\n' + String.join(report, '\n'));

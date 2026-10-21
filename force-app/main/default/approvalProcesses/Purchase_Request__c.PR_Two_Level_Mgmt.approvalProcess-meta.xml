@@ -10,6 +10,7 @@
         <field>Amount__c</field>
         <field>Region__c</field>
         <field>Risk_Level__c</field>
+        <field>Owner</field>
     </approvalPageFields>
     <approvalStep>
         <allowDelegate>false</allowDelegate>
@@ -21,9 +22,6 @@
         <description>The submitter&apos;s manager, resolved from the User.Manager hierarchy field.</description>
         <label>Manager</label>
         <name>Manager_Level_1</name>
-        <rejectBehavior>
-            <type>RejectRequest</type>
-        </rejectBehavior>
     </approvalStep>
     <approvalStep>
         <allowDelegate>false</allowDelegate>

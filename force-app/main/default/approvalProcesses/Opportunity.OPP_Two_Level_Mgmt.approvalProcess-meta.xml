@@ -23,9 +23,6 @@
         <description>The submitter&apos;s manager, resolved from the User.Manager hierarchy field.</description>
         <label>Manager</label>
         <name>Manager_Level_1</name>
-        <rejectBehavior>
-            <type>RejectRequest</type>
-        </rejectBehavior>
     </approvalStep>
     <approvalStep>
         <allowDelegate>false</allowDelegate>

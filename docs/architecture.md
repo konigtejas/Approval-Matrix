@@ -105,7 +105,8 @@ and a standard one, took configuration and conventions alone, with no engine or 
 What surfaced lay outside the engine, as expected:
 
 - A standard object's layouts already list the standard Submit button. They are org-owned
-  metadata, and they tie the source to the org they came from.
+  metadata, and they tie the source to the org they came from. M12 moved them to an org package
+  directory (§6.3).
 - Approvers need a license that includes the object, and the platform does not check that when it
   assigns them (§11).
 - SOQL does not enforce the relationship limit the validator was going to count against (§4.4).
@@ -281,6 +282,26 @@ A live template is never edited in place. Changes clone to `_v2`, the rule's `Pr
 
 Naming: `<OBJ>_<Shape>`, e.g. `PR_Three_Level_Finance`.
 
+**M12 implementation (2026-10-22): the convention is enforced.** `config/template-releases.json`
+lists every released template with a fingerprint. The fingerprint is the SHA-256 of the
+template's XML, without `<active>`, with insignificant whitespace dropped and line endings
+normalised. The source gate (§9) fails:
+
+- a released template whose fingerprint has changed;
+- a template in source that is not released;
+- a released template missing from source;
+- a superseded version that is still active (`X_v2` supersedes `X`, and `X_v3` supersedes both);
+- a rule that names a superseded version.
+
+Activation is the one change a released template may undergo. Releasing a template is one
+deliberate line in the manifest, which the gate prints, fingerprint included.
+
+Source is kept in the form a retrieve returns, so that a retrieve does not disturb a fingerprint.
+On deploy, the platform drops `rejectBehavior` from a template's first step, and appends `Owner`
+to a custom object's approval page fields. All six templates now carry those forms (technical log
+M12). The gate reads source, not the org. M12's gate also retrieved every template once and
+matched each against the manifest.
+
 ### 5.2 Classic templates
 
 Native Approval Processes as metadata XML.
@@ -292,6 +313,18 @@ Native Approval Processes as metadata XML.
   so a submission bypassing the engine passed entry criteria (technical log M7.8). The source gate
   now requires the clearing action on all three.
 - Steps, approvers, parallel approvers and static queue steps are configured natively.
+
+**M12 implementation (2026-10-22): queue and committee shapes.**
+
+- `PR_Credit_Risk_Queue` assigns its one step to the queue `Q_Credit_Risk`. Any member decides,
+  including a member of a public group that the queue holds. Someone outside the queue cannot,
+  whatever their access to the record.
+- `PR_Finance_Committee` lists `amfu1` to `amfu3` in one step, `Unanimous`, then `amfu4` and
+  `amfu5`, `FirstResponse`. Classic cannot name a public group as an approver, so a committee
+  names its members as users, and a group reaches a step only through a queue.
+  - Unanimous gives each member a work item, and one rejection ends the request.
+  - First response withdraws the other work items, which history records as `NoResponse`.
+- Templates name users as `<alias>@{{AMF_USERNAME_DOMAIN}}` (§11).
 
 ### 5.3 Flow templates
 
@@ -318,6 +351,12 @@ Launch is via `AMF_FlowApprovalStrategy`, and the Apex call is now **confirmed**
 | Fewer moving parts (no companion screen flows) | Platform direction; no automation-credit consumption |
 
 **Open risk:** the case for routing every group step to Flow rests on native group semantics. **Any-member is now confirmed** for groups and queues (Appendix A, Q3); **unanimous is not**, because the metadata value for "Require unanimous approval" is unknown. Do not commit committee templates to Flow until it is tested.
+
+**M12 (2026-10-22): committees on Classic now.** Classic carries queue and committee steps until
+Flow's unanimous value is known. A committee rule can then move to Flow one row at a time
+(§12 item 5). The case for Flow on group steps is also narrower than the table suggests, because
+Classic history records the true actor too. On a queue step, `ProcessInstanceStep.ActorId` is the
+member who decided and `OriginalActorId` is the queue, and the timeline shows both (§8).
 
 ### 5.5 The shape-count trade
 
@@ -415,6 +454,14 @@ object with no layout in source, because a layout that exists only in the org ca
 The UI API confirmed the result on the record page. It also showed that the Approval History
 related list offers no submit action, so the layout's action list is the only place to remove the
 button.
+
+**M12 (2026-10-22): a standard object's layouts are the org's.** They reference the org's own
+fields, and deploying them overwrites the adopting org's pages. So they live in an org package
+directory, `org-config/amf-dev`, which is deployed only to that org, together with the object's
+own settings. The framework package, `force-app`, holds neither, and the source gate fails either
+there. In another org, removing the standard button from a governed standard object's layouts is
+a deployment step for that org's admin. The gate can show it only once those layouts are in that
+org's own package directory.
 
 ### 6.4 Preview
 
@@ -570,6 +617,16 @@ implementation is Classic-only; the Flow-template checks above join it when Flow
   `UNION_QUERY_INVALID` with the platform's reason. This replaces counting relationships against
   SOQL's documented limit, which `amf-dev` does not enforce.
 
+**M12 implementation (2026-10-22): the template lifecycle, and portability.** The source gate
+reads every package directory `sfdx-project.json` lists. It adds:
+
+- guard checks on every active template, not only on those a rule names, because an active
+  template the matrix does not use can still be entered;
+- §5.1's lifecycle, against `config/template-releases.json`;
+- no literal username in a template, and a `sfdx-project.json` replacement that fills the
+  placeholder (§11);
+- no layout or object settings of a standard object in the framework package (§6.3).
+
 ---
 
 ## 10. Testability
@@ -600,6 +657,11 @@ implementation is Classic-only; the Flow-template checks above join it when Flow
   The engine would then report the object as one it cannot govern. So both permission sets grant
   read on every governed object's guard (M11). Apex tests cannot show this, because `System.runAs`
   does not enforce field-level security.
+- **Usernames are per org** (M12, 2026-10-22). A username is unique across all of Salesforce, so
+  a template that names one deploys to one org. Templates write `<alias>@{{AMF_USERNAME_DOMAIN}}`,
+  and a `sfdx-project.json` replacement fills the domain from the environment variable of that
+  name at deploy. The CLI refuses a deploy without it. Queues, groups and roles are named by
+  DeveloperName and travel unchanged.
 
 ---
 
@@ -667,6 +729,7 @@ DateTime remains unsupported.
 | **M9** | Post-MVP full §4.1 grammar: `NOT`/`!`, word forms, `IN`/`NOT IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, paths to three hops | Every evaluator class at ≥ 95% with zero org-data dependence; each construct in the table-driven and malformed-input suites; the shipped matrix still validates; all Apex and Jest tests green |
 | **M10** | Post-MVP §7 entry points: Flow invocable and REST over a per-record engine entry; chunked, isolated submission; the log written after the platform answers | All Apex and Jest tests green, including a real 200-record submission and a real per-record platform refusal; the invocable answers through the platform's invocable framework and the REST endpoint answers a real call |
 | **M11** | Post-MVP second governed object, Opportunity, by configuration and conventions alone (§3.2): guard, two manager-hierarchy templates, the button removed from four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3 and the validator runs each object's union query | Source gate and validator green across both objects and shown to fail broken copies; all Apex and Jest tests green; the UI API shows the framework's action and no standard button; an Opportunity routes, approves and recalls end to end in the org |
+| **M12** | Post-MVP §5.1 template lifecycle enforced by a release manifest; Classic queue and committee templates with a rule each; the source portable (usernames by placeholder, the org's own configuration in its own package directory); New and Mass Change Owner off the decision-log related list | Source gate green and shown to fail broken copies, and a correct `_v2` passes; `force-app` converts with another org's domain and holds no `amf-dev` value; the org's templates match the manifest; all Apex and Jest tests green; queue and committee requests route, decide and recall end to end in the org |
 
 ### 13.5 Repository state
 

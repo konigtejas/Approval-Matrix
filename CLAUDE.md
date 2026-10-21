@@ -50,6 +50,20 @@ engine class or LWC. Two gate checks join it: the source gate fails a governed o
 that keeps the standard Submit for Approval button (§6.3), and the validator runs each governed
 object's union query, in place of M9.5's 55-relationship count, which the platform does not
 enforce (technical log M11).
+M12 (authorised 2026-10-22) has three parts and one rider. Template lifecycle (§5.1): the source
+gate compares every released template with its fingerprint in config/template-releases.json, and
+only its active flag may change. A superseded version must be inactive, and no rule may name one.
+Guard checks run on every active template, not only those a rule names. Queue and committee
+templates, on Classic: PR_Credit_Risk_Queue (the Q_Credit_Risk queue, any member decides) and
+PR_Finance_Committee (amfu1 to amfu3 unanimously, then amfu4 or amfu5), each with one rule.
+Portability: templates name users as <alias>@{{AMF_USERNAME_DOMAIN}}, which a sfdx-project.json
+replacement fills from that environment variable at deploy, and the gate refuses a literal
+username. Opportunity's layouts and object settings are amf-dev's own configuration, so they move
+to a second package directory, org-config/amf-dev, and force-app keeps no layout or object settings
+of a standard object. The rider: New and Mass Change Owner leave the Approval Decisions related
+list on every layout. M12 supersedes "queue or committee templates" and "_v2 template cloning" on
+the out-of-scope list and changes no engine class or LWC. The template registry stays out
+(§12 item 4), and committee steps on Flow wait for the unanimous value (§12 item 1).
 
 ## MVP SCOPE — build ONLY these
 - One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)
@@ -90,7 +104,10 @@ DateTime fields and literals.
 - Naming: AMF_ on Apex classes, amf on LWC. ApexDoc header cites its § section.
 
 ## Environment
-- Org alias: amf-dev. Deploy: sf project deploy start -o amf-dev
+- Org alias: amf-dev. Deploy: sf project deploy start -o amf-dev, which deploys both package
+  directories (force-app, org-config/amf-dev). It needs AMF_USERNAME_DOMAIN set first, to
+  amf.00daj000012gj9b.dev for amf-dev (PowerShell: $env:AMF_USERNAME_DOMAIN = '...'); without it
+  the CLI refuses the deploy. Another org: deploy --source-dir force-app only, with that org's domain.
 - Tests: sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human
 - API 62.0. LWC only.
 

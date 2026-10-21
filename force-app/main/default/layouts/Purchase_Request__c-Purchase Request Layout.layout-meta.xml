@@ -188,8 +188,11 @@
       who-and-when above it. Reachable only because Approval_Decision_Log__c carries
       a lookup to this object; Record_Id__c alone cannot produce a related list,
       being object-agnostic Text. The engine populates both.
+      The engine writes every row, so New and Mass Change Owner are excluded (M12).
     -->
     <relatedLists>
+        <excludeButtons>MassChangeOwner</excludeButtons>
+        <excludeButtons>New</excludeButtons>
         <fields>NAME</fields>
         <fields>Submitted_At__c</fields>
         <fields>Outcome__c</fields>

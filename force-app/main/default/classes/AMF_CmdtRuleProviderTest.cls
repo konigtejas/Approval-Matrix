@@ -205,9 +205,9 @@ private class AMF_CmdtRuleProviderTest {
             'The priority-9999 catch-all must sort last, or it would shadow every specific rule'
         );
         Assert.areEqual(
-            'PR_High_Value_APAC',
+            'PR_Committee_Spend',
             names[0],
-            'The priority-10 rule must be evaluated first'
+            'The priority-5 rule must be evaluated first'
         );
     }
 

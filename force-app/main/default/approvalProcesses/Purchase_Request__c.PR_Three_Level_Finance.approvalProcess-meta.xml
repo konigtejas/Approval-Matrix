@@ -10,12 +10,13 @@
         <field>Amount__c</field>
         <field>Region__c</field>
         <field>Risk_Level__c</field>
+        <field>Owner</field>
     </approvalPageFields>
     <approvalStep>
         <allowDelegate>false</allowDelegate>
         <assignedApprover>
             <approver>
-                <name>amfu3@amf.00daj000012gj9b.dev</name>
+                <name>amfu3@{{AMF_USERNAME_DOMAIN}}</name>
                 <type>user</type>
             </approver>
             <whenMultipleApprovers>Unanimous</whenMultipleApprovers>
@@ -23,15 +24,12 @@
         <description>Finance analyst. A named user, not a hierarchy lookup.</description>
         <label>Finance Analyst</label>
         <name>Finance_Analyst</name>
-        <rejectBehavior>
-            <type>RejectRequest</type>
-        </rejectBehavior>
     </approvalStep>
     <approvalStep>
         <allowDelegate>false</allowDelegate>
         <assignedApprover>
             <approver>
-                <name>amfu4@amf.00daj000012gj9b.dev</name>
+                <name>amfu4@{{AMF_USERNAME_DOMAIN}}</name>
                 <type>user</type>
             </approver>
             <whenMultipleApprovers>Unanimous</whenMultipleApprovers>
@@ -47,7 +45,7 @@
         <allowDelegate>false</allowDelegate>
         <assignedApprover>
             <approver>
-                <name>amfu5@amf.00daj000012gj9b.dev</name>
+                <name>amfu5@{{AMF_USERNAME_DOMAIN}}</name>
                 <type>user</type>
             </approver>
             <whenMultipleApprovers>Unanimous</whenMultipleApprovers>
