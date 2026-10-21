@@ -105,7 +105,7 @@ session needs. Update the row when a phase completes.
 | **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Complete** — org gate passed 2026-10-08 (M7.7): deploy, post-deploy check, RunLocalTests and every manual timeline check; 57/57 Jest. The gate's recall check confirmed that a Classic recall leaves the guard set (M7.8), owed to M8 | `25e0b2d` + M7.7 |
 | **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Org gate steps 1–5 passed** 2026-10-08 (M8.7): first deploy refused on a 329-character description, fixed; 197/197 Apex; PR-00000010 repaired. **Step 6, the manual UI check, is owed** | `caeafb3` + M8.7 |
 | **M9** | Full expression grammar — `NOT`, word forms, `IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, three-hop paths | **Complete** — gate run in `amf-dev` 2026-10-08: 232/232 Apex, evaluator classes all 100%, mutation-checked, 57/57 Jest, matrix valid; optional manual UI check not run | `a79c880` |
-| **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers | **Built, org gate owed** (M10.5) — verified locally: apex-ls clean, 59/59 Jest, source gate green; expect 253/253 Apex | `393d9d5` |
+| **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers; since M10.7 the guard staged per record | **Built, org gate owed** (M10.5, amended in M10.7) — verified locally: apex-ls clean, 59/59 Jest, source gate green; expect 255/255 Apex | `393d9d5` + M10.7 |
 
 ### Superseded — the v1.0 plan
 
@@ -3309,6 +3309,147 @@ Still owed from M8.7: the manual UI check, step 6.
 | ~~M8.6: a pending record refuses the whole call; per-record handling belongs with bulk entry points~~ | **closed in M10**, for `submitEach()` |
 | ~~M3.8: a bulk submission's rows are rolled back if any record's submission fails~~ | **closed in M10** |
 | ~~M9.5: `TODAY` for an integration user~~ | **closed by decision**, 2026-10-08 |
+| Still open from M8.7: the manual UI check (step 6) | user |
+| Still open from M8.7c: PR-00000014 to PR-00000025 carry the guard; they go with M6's teardown | M6 teardown |
+| The playbook's optional manual M9 check | user, optional |
+| M9.5's grammar items: DateTime, the text-like field types, the 55-relationship union, reserved keywords, field-to-field multipicklists | as in M9.5 |
+
+### M10.7 Follow-up: the guard staged record by record (2026-10-21)
+
+**Status:** built and verified locally, in a cloud container with no `sf` CLI and no `amf-dev`
+credentials. Nothing was deployed or run in the org. The org gate, amended below, is owed.
+
+The user gave the go-ahead on 2026-10-21 ("implement what's next in line", after a review of
+`docs/handoff.md`). The handoff placed M10.3b under M10's authorisation in `CLAUDE.md` (a record
+that cannot be submitted gets its own outcome while the rest still go through) and ahead of M11,
+because validation rules are common on Opportunity. `CLAUDE.md` is unchanged.
+
+| File | Change | Notes |
+|---|---|---|
+| `classes/AMF_ApprovalMatrixService.cls` | **modified** | `stageGuard()` sets the guard with `Database.update(…, false)`; `fail()` now writes both kinds of `Failed`; `setGuard()` split into `stageGuard()`, `rearmGuard()` and `guardRows()`; `reasonOf()` |
+| `classes/AMF_SubmissionIntegrationTest.cls` | **modified** | +2 real-platform tests over a record a final approval left locked, a fixture helper and a shared assertion |
+| `docs/architecture.md` (§6.1 M10 note), `docs/decisions.md` (1 entry), `docs/build-playbook.md` (M10 build, gate and acceptance; Part 5), `docs/handoff.md` | **modified** | design, decision, gate |
+
+No object, field, layout, validation rule, approval process, permission set, CMDT row or LWC
+changed.
+
+**(a) Per record, like the platform's own answer.** Before this, step 9's one `update` threw if
+any record refused it, and `execute()` rolled the call back, so one record sank the call. Now a
+record whose guard the platform will not set gets a `Failed` outcome and row, with the message
+"`Matrix_Submission__c` could not be set, so the record was not submitted to `<process>`:
+`<STATUS_CODE>`: `<message>`". The reason is in the same `STATUS_CODE: message` form the
+Classic strategy gives a refused submission. The row names the rule and process the matrix chose.
+The record never reaches the strategy: without the guard its template's entry criteria would
+refuse it anyway, and submitting it would trade the real reason for an entry-criteria one.
+
+**(b) One bookkeeping path.** `fail()` writes the outcome and the `Failed` row for both cases, a
+guard the platform would not set and a submission it refused. The stub tests of the refusal path
+(M10.4) therefore also prove the half the two cases share.
+
+**(c) Re-arming stays all-or-nothing.** A refused record left with its guard set is in no process
+yet passes its template's entry criteria, which is the bypass §6.3 closes. If re-arming fails, the
+call fails and `execute()` rolls it back; leaving the guard set would be worse. Re-arming touches
+only records whose guard was set moments earlier in the same transaction, so this path should not
+be reached in practice.
+
+**(d) The header button.** `submit()` shares `execute()`, so a locked record now answers `Failed`
+with a row and a toast message where the update used to throw, as a platform refusal has since M10.
+Its whole-call contract covers refusals, where nothing was decided; this record was decided.
+Recorded in `docs/decisions.md`.
+
+**(e) The fixture and its one unproven assumption.** As the handoff proposed: a non-admin submits a
+record to `PR_Three_Level_Finance` through the engine, all three steps are approved, and the
+record stays locked (`finalApprovalRecordLock` is true in both templates' source). The same user
+then resubmits it. The approvals run as the test's running user, because Modify All Data lets an
+administrator act on any work item (a Salesforce knowledge article quoted on the Trailblazer
+Community, and Veeva's support documentation). That keeps the approvers' record access (M3.10)
+out of the fixture. The unproven part is that the lock stops a non-admin's update from Apex
+running without sharing. The Approval class reference says only administrators, and depending on
+the process the current approver, can edit a locked record. Record locking is not sharing, so
+`without sharing` should not lift it, and `ENTITY_IS_LOCKED` is the expected code. The tests
+assert the message's prefix, not the code. If the gate shows the lock does not stop the update,
+both tests fail on their first assertion, whose message says so. The engine change stands; only
+the fixture would need replacing.
+
+**(f) No stub test makes the update fail.** Making a guard update fail needs either metadata only a
+test would use (a validation rule), a test-only seam in the engine, or an org setting
+(`Approval.lock()`), the same constraint M10.3b recorded. `stageGuard()`'s failure branch is
+therefore covered only by the two integration tests. Every existing test still passes through
+its success branch.
+
+**(g) Partial success runs triggers twice.** With `allOrNone` false, if any record fails, the
+platform saves the rest in a second attempt and runs their triggers again, without resetting
+static variables. `Purchase_Request__c` has no trigger. Opportunity usually has several, which
+matters for M11 (carried).
+
+**(h) The preview cannot foresee it.** The preview stages nothing, so a locked or invalid record
+previews as routable and fails at submit, with its row. `Approval.isLocked()` needs an org
+preference (M6.5), and a validation rule cannot be asked without writing (carried).
+
+**(i) Two corrections to the gate, from the same review.** Step 7 passed its JSON inline, and Windows
+PowerShell 5.1 strips the double quotes inside an argument it passes to `sf` (M6.6). The endpoint
+would have received `{recordIds:[…]}` and answered 400, a false failure. The quotes are now
+escaped, Workbench is the alternative, and the 400 check sends `{}`, because PowerShell drops an
+empty-string argument. Steps 6 and 7 also now say to give the throwaway records
+`Risk_Level__c = High`. The admin has no manager (M3.7), so a record reaching the catch-all's
+`PR_Two_Level_Mgmt` would answer `Failed` (`MANAGER_NOT_DEFINED`). That is correct behaviour
+since M10, but not what those steps check.
+
+**Issues encountered.** apex-ls's Maven group is `io.github.apex-dev-tools`, hyphenated, unlike its
+Java package. Coursier resolved it, and Maven Central answered 429 intermittently through the
+container's proxy. The fixture's first draft named a local `approval`, and since Apex names are
+case-insensitive it shadowed the `Approval` class: the M7.3b trap. It was renamed before apex-ls
+ran, and a planted copy confirmed that apex-ls reports it. `npm install` wires husky's pre-commit
+hook, whose lint-staged step runs `prettier --write` and would rewrite whole files (carried), so
+this commit skipped it with `HUSKY=0`.
+
+**Verification evidence (this session):**
+
+```
+apex-ls 6.3.0 CheckForIssues, whole project, -d warnings
+  before   AMF_ExpressionException.cls  'of' reserved identifier   <- pre-existing, the only finding
+  after    the same, and nothing else
+  planted errors, each in a scratch copy, each reported as Missing:
+    saves[i].isSucess()                        no matching method on Database.SaveResult
+    fail(result, plan, ...)                    wrong argument types for fail(Plan, Outcome, String)
+    a local named approval, Approval.process   no method 'process' on Approval.ProcessWorkitemRequest
+Apex parser (prettier-plugin-apex)  51/51 classes parse; 49 carry the pre-existing style warnings
+Jest                                59/59 in 4 suites (unchanged)
+ESLint (lwc, jest-mocks)            clean
+source gate, PowerShell 7.4.6       passed: 3 active rules, 2 approval processes
+metadata XML                        104 files well-formed (none changed)
+Apex test methods                   253 -> 255: +2 integration
+```
+
+**The gate still owed, as amended** (the playbook's M10 gate, Part 3):
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. `sf project deploy start -o amf-dev`
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`. Expect 255/255. Four tests rest
+   on platform behaviour no session has run: the 200-record submission (on a governor limit,
+   report which), the manager-less refusal, and this entry's two locked-record tests (on their
+   first assertion, report the outcome shown: a finding about the lock, per (e)).
+5. Jest, as in M5.
+6. The invocable (playbook step 6), on a throwaway with `Risk_Level__c = High`.
+7. REST (playbook step 7), with escaped quotes or Workbench, and `{}` for the 400.
+
+Record the results as M10.8.
+
+### M10.7 Carried into later phases
+
+This table supersedes M10.6's.
+
+| Item | Owner |
+|---|---|
+| **The org gate above** | user |
+| ~~M10.6: guard staging is all-or-nothing within an object (M10.3b)~~ | **closed in M10.7** |
+| The preview cannot foresee a guard failure: a locked or invalid record previews as routable, then fails at submit with its row (h) | if a need appears |
+| A partial guard failure saves the other records in a second attempt that runs their triggers again (g). Any trigger on a governed object must tolerate that; check Opportunity's before M11 | M11 |
+| `Lock_Decision_Log` still permits one post-insert stamp of `Execution_Ref_Id__c`, which nothing performs since M10. Forbidding every update would also close M1.10's residual long-text hole, but it changes M1's rule and `AMF_DecisionLogLockTest`. Test it against deleting a Purchase Request (M3.12) | a later hardening pass |
+| A record-triggered Flow on a governed object that calls the action is re-triggered by the engine's guard update and by the templates' clearing update. Its entry conditions must exclude those, for example "only when a record is updated to meet the condition requirements" | whoever builds such a Flow |
+| The source deploys only to `amf-dev`: `PR_Three_Level_Finance` names its approvers by username, and the domain (`@amf.00daj000012gj9b.dev`) is this org's. The seed script derives the domain per org, the template does not, against §1.5. A `replacements` entry in `sfdx-project.json` is one fix | M12, or any CI or second org |
+| husky's pre-commit runs lint-staged's `prettier --write`, and about 175 files do not match Prettier's output (`.prettierrc` indents 2, the code 4), so wherever `npm install` has wired husky, a commit rewrites every file it touches. Align `.prettierrc` and reformat once, or drop the step | a tooling decision |
 | Still open from M8.7: the manual UI check (step 6) | user |
 | Still open from M8.7c: PR-00000014 to PR-00000025 carry the guard; they go with M6's teardown | M6 teardown |
 | The playbook's optional manual M9 check | user, optional |

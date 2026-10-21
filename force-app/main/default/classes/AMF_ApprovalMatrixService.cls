@@ -35,7 +35,9 @@
  * and 10, then 8: each decision log row is written once the platform has
  * answered for its record, so step 11's reference goes onto the row as it is
  * written. A record the platform refuses is therefore one Failed row, with its
- * guard re-armed, rather than a rollback of every record in the call.
+ * guard re-armed, rather than a rollback of every record in the call. So is a
+ * record the platform will not let step 9 set the guard on (M10.3b): it is
+ * Failed by itself and never submitted.
  *
  * TWO CONTRACTS ON THAT ONE PATH (M10). submit() and preview() answer for the
  * whole call, which is what the header button relies on. submitEach() is what
@@ -593,20 +595,20 @@ public without sharing class AMF_ApprovalMatrixService {
     /**
      * Steps 9, 10 and 11 for every record the matrix routed. Each outcome and
      * row is settled by the platform's answer: the execution reference on a
-     * success, or a Failed row carrying the platform's reason on a refusal.
+     * success, or a Failed row carrying the platform's reason on a refusal. A
+     * record whose guard the platform would not set is Failed the same way, and
+     * never reaches the strategy (M10.3b).
      */
     private void submitRouted(Plan plan) {
-        List<AMF_SubmitRequest> requests = new List<AMF_SubmitRequest>();
         Set<Id> routed = new Set<Id>();
 
         for (Outcome result : plan.outcomes) {
             if (result.outcome == SUBMITTED) {
-                requests.add(new AMF_SubmitRequest(result.recordId, result.selectedProcess));
                 routed.add(result.recordId);
             }
         }
 
-        if (requests.isEmpty()) {
+        if (routed.isEmpty()) {
             return;
         }
 
@@ -614,7 +616,34 @@ public without sharing class AMF_ApprovalMatrixService {
         // engine is the only thing that sets it, the templates require it as
         // entry criteria, and a submission that bypassed the matrix therefore
         // fails entry criteria loudly rather than routing silently.
-        setGuard(plan.objectApiName, routed, true);
+        //
+        // Record by record (M10.3b). A record whose guard the platform will not
+        // set -- a validation rule it fails, or the lock a final approval left
+        // on it -- is one record that cannot be submitted, not a reason to fail
+        // the others. Its template would refuse it without the guard anyway.
+        Map<Id, String> unstaged = stageGuard(plan.objectApiName, routed);
+        List<AMF_SubmitRequest> requests = new List<AMF_SubmitRequest>();
+
+        for (Outcome result : plan.outcomes) {
+            if (unstaged.containsKey(result.recordId)) {
+                fail(
+                    plan,
+                    result,
+                    GUARD_FIELD +
+                    ' could not be set, so the record was not submitted to ' +
+                    result.selectedProcess +
+                    ': ' +
+                    unstaged.get(result.recordId)
+                );
+                routed.remove(result.recordId);
+            } else if (routed.contains(result.recordId)) {
+                requests.add(new AMF_SubmitRequest(result.recordId, result.selectedProcess));
+            }
+        }
+
+        if (requests.isEmpty()) {
+            return;
+        }
 
         // Step 10. The only route to Approval.process(), through the interface.
         Map<Id, AMF_SubmitResult> answers = answersFor(requests, strategy.submit(requests));
@@ -649,21 +678,13 @@ public without sharing class AMF_ApprovalMatrixService {
             } else {
                 // The matrix decided, and the platform refused. The row says
                 // both: the rule and process it chose, and the platform's reason.
-                result.outcome = FAILED;
-                result.message =
+                fail(
+                    plan,
+                    result,
                     'Approval process ' +
                     result.selectedProcess +
                     ' refused the submission: ' +
-                    answer.errorMessage;
-                plan.rowByRecord.put(
-                    result.recordId,
-                    AMF_DecisionLogWriter.forFailure(
-                        result.recordId,
-                        plan.objectApiName,
-                        plan.ruleByName.get(result.matchedRule),
-                        result.evaluatedValuesJson,
-                        result.message
-                    )
+                    answer.errorMessage
                 );
                 refused.add(result.recordId);
             }
@@ -673,8 +694,28 @@ public without sharing class AMF_ApprovalMatrixService {
         // same transaction (6.3). Left set, it would let a submission that
         // bypasses the engine pass entry criteria.
         if (!refused.isEmpty()) {
-            setGuard(plan.objectApiName, refused, false);
+            rearmGuard(plan.objectApiName, refused);
         }
+    }
+
+    /**
+     * A record the matrix routed that did not enter its process. The matrix
+     * still decided, so its row says both: the rule and process it chose, and
+     * why the record did not go.
+     */
+    private static void fail(Plan plan, Outcome result, String message) {
+        result.outcome = FAILED;
+        result.message = message;
+        plan.rowByRecord.put(
+            result.recordId,
+            AMF_DecisionLogWriter.forFailure(
+                result.recordId,
+                plan.objectApiName,
+                plan.ruleByName.get(result.matchedRule),
+                result.evaluatedValuesJson,
+                message
+            )
+        );
     }
 
     /**
@@ -832,15 +873,51 @@ public without sharing class AMF_ApprovalMatrixService {
     }
 
     /**
-     * Steps 9 and, for a refused record, its undoing: writes the guard on each
-     * record.
+     * Step 9, record by record (M10.3b): sets the guard on each record and
+     * answers for the ones the platform would not set it on.
+     *
+     * allOrNone false, unlike rearmGuard(). A validation rule one record fails,
+     * or the lock a final approval left on it, fails that record alone. When
+     * some records fail, the platform saves the rest in a second attempt, which
+     * runs the object's triggers on them a second time.
+     *
+     * @return The platform's reason for each record whose guard was not set.
+     */
+    private Map<Id, String> stageGuard(String objectApiName, Set<Id> recordIds) {
+        List<SObject> records = guardRows(objectApiName, recordIds, true);
+        List<Database.SaveResult> saves = Database.update(records, false);
+        Map<Id, String> unstaged = new Map<Id, String>();
+
+        for (Integer i = 0; i < records.size(); i++) {
+            if (!saves[i].isSuccess()) {
+                unstaged.put(records[i].Id, reasonOf(saves[i].getErrors()));
+            }
+        }
+        return unstaged;
+    }
+
+    /**
+     * Clears the guard on records the platform refused, in the transaction
+     * that set it (6.3).
+     *
+     * All or nothing, unlike stageGuard(). A refused record left with its guard
+     * set is in no process yet passes its template's entry criteria, which is
+     * the bypass 6.3 exists to close. So a record that cannot be re-armed fails
+     * the whole call, and execute() rolls it back, rather than being left set.
+     */
+    private void rearmGuard(String objectApiName, Set<Id> recordIds) {
+        update guardRows(objectApiName, recordIds, false);
+    }
+
+    /**
+     * One update row per record, carrying the guard and nothing else.
      *
      * Written through newSObject/put rather than a typed field so the engine
      * stays object-agnostic -- 3.2 makes Matrix_Submission__c a convention on
      * every governed object, and hardcoding Purchase_Request__c here would make
      * the second object a code change.
      */
-    private void setGuard(String objectApiName, Set<Id> recordIds, Boolean value) {
+    private List<SObject> guardRows(String objectApiName, Set<Id> recordIds, Boolean value) {
         Schema.SObjectType sobjectType = Schema.getGlobalDescribe().get(objectApiName);
         List<SObject> records = new List<SObject>();
 
@@ -849,8 +926,24 @@ public without sharing class AMF_ApprovalMatrixService {
             record.put(GUARD_FIELD, value);
             records.add(record);
         }
+        return records;
+    }
 
-        update records;
+    /**
+     * The platform's reason as it gave it, status code first, in the form the
+     * Classic strategy reports a refused submission: the code is what an admin
+     * searches for, and the message is what a submitter can act on.
+     */
+    private static String reasonOf(List<Database.Error> errors) {
+        List<String> reasons = new List<String>();
+
+        if (errors != null) {
+            for (Database.Error error : errors) {
+                reasons.add(String.valueOf(error.getStatusCode()) + ': ' + error.getMessage());
+            }
+        }
+
+        return reasons.isEmpty() ? 'The platform refused it without giving a reason' : String.join(reasons, '; ');
     }
 
     /**

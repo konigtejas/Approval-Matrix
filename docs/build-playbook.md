@@ -483,18 +483,27 @@ from sinking a batch.
 - **Timeline wording.** A `Failed` entry's title says the attempt failed rather than that routing
   did, and its summary becomes the first line of its recorded reason, which may now be the
   platform's rather than the evaluator's.
+- **Guard staging per record** (follow-up, technical log M10.7). Step 9 sets the guard with
+  `allOrNone` false. A record the platform will not let it set (a validation rule, or the lock a
+  final approval leaves) is `Failed` with the platform's reason and is not submitted. Re-arming a
+  refused record stays all-or-nothing.
 
 **Gate, in order:**
 
 1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
 2. Deploy the package.
 3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
-4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green, including a real
-   200-record submission. If that one fails on a governor limit, report the numbers it prints:
-   that is a finding about bulk size, not a flake.
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green (255 since M10.7),
+   including a real 200-record submission and a record a final approval left locked failing by
+   itself. If the 200-record test fails on a governor limit, report the numbers it prints: that
+   is a finding about bulk size, not a flake. If a locked-record test fails on its first
+   assertion, report the outcome it shows: that is a finding about the approval lock.
 5. Jest, as in M5.
 6. **Manual, the invocable**, through the platform's invocable framework, with no Flow saved.
-   In anonymous Apex, on a throwaway Purchase Request:
+   In anonymous Apex, on a throwaway Purchase Request with `Risk_Level__c = High`, so that it
+   routes to the named-user template. The admin running these steps has no manager (M3.7), so a
+   record that reaches the catch-all's `PR_Two_Level_Mgmt` would answer `Failed`
+   (`MANAGER_NOT_DEFINED`), which is correct behaviour but not what this step checks:
    ```
    Invocable.Action action = Invocable.Action.createCustomAction('apex', 'AMF_SubmitForMatrixApproval');
    action.setInvocationParameter('recordId', '<throwaway Id>');
@@ -502,10 +511,13 @@ from sinking a batch.
    ```
    The first run returns `submitted` true with a decision log row Id. A second run on the same
    record returns `Refused`, naming the process it is already in.
-7. **Manual, REST:**
-   `sf api request rest /services/apexrest/approval-matrix/v1/submissions --method POST --body '{"recordIds":["<pending Id>","<another throwaway Id>"]}' -o amf-dev`
-   (or Workbench's REST Explorer). It answers 200 with one result per Id: `Refused` for the
-   pending one, `Submitted` for the other. An empty body answers 400.
+7. **Manual, REST**, with another `Risk_Level__c = High` throwaway. Windows PowerShell strips
+   the double quotes inside an argument it passes to `sf` (technical log M6.6), which would send
+   `{recordIds:[…]}` and earn a 400, so escape them:
+   `sf api request rest /services/apexrest/approval-matrix/v1/submissions --method POST --body '{\"recordIds\":[\"<pending Id>\",\"<another throwaway Id>\"]}' -o amf-dev`
+   (or use Workbench's REST Explorer). It answers 200 with one result per Id: `Refused` for the
+   pending one, `Submitted` for the other. A body without `recordIds`, such as `--body '{}'`,
+   answers 400. Do not test with `''`: PowerShell drops an empty-string argument.
 
 Acceptance: engine tests prove, with in-memory rules and the stub:
 - a platform refusal becomes a `Failed` row with the guard re-armed, while the others submit;
@@ -515,9 +527,10 @@ Acceptance: engine tests prove, with in-memory rules and the stub:
 - duplicates are submitted once;
 - the whole-call contract is unchanged.
 
-Real-platform tests prove that one refused record leaves the others' submissions standing, and that
-200 records go through in chunks within one transaction. The invocable and REST tests prove one
-answer per request, in order, and the REST 400s.
+Real-platform tests prove that one refused record leaves the others' submissions standing, that
+200 records go through in chunks within one transaction, and (M10.7) that a record a final
+approval left locked fails by itself through either entry while the other record in the call is
+submitted. The invocable and REST tests prove one answer per request, in order, and the REST 400s.
 
 ---
 
@@ -556,7 +569,7 @@ answer per request, in order, and the REST 400s.
 |---|---|
 | M8's manual UI check: submit, submit again (refused by name, no modal, no log row), recall (*Matrix Submission* unticked), resubmit | technical log M8.7d |
 | Optional: M9's manual check, a throwaway rule using the new grammar previewed in the UI | technical log M9.4 |
-| M10's org gate: deploy, RunLocalTests (253), the invocable and REST checks | technical log M10.5 |
+| M10's org gate: deploy, RunLocalTests (255), the invocable and REST checks | technical log M10.5, as amended in M10.7 |
 
 ### M10 — Entry points and bulk submission *(authorised and built, 2026-10-08)*
 

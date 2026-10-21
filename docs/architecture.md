@@ -345,6 +345,13 @@ records the caller cannot read.
   re-armed in the same transaction. Before M10 the row came first, so a refusal had to roll back
   the whole call, and every other record's row with it. This also changes the header button: a
   platform refusal there now leaves a `Failed` row instead of nothing.
+- **The guard is staged record by record** (M10.3b, 2026-10-21). Step 9 sets
+  `Matrix_Submission__c` without all-or-nothing. A record the platform will not let it set,
+  because it fails a validation rule or a final approval left it locked, becomes a `Failed` row
+  carrying the platform's reason and is never submitted, while the others go ahead. The header
+  button gets the same answer, where the update used to throw. Re-arming a refused record's guard
+  stays all-or-nothing: a record left with its guard set and in no process is the bypass §6.3
+  closes, so the call fails instead.
 - **Duplicates.** `submit()` refuses a record Id that appears twice; `submitEach()` submits it once
   and answers every request.
 
