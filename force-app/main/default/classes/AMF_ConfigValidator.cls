@@ -1,10 +1,16 @@
 /**
  * Validates the active Approval Matrix configuration before it is used.
  *
- * Architecture section: 9 (configuration validator), 4.6 (fail loudly), 10
- * (testability). A metadata deploy cannot execute Apex itself, so the release
- * pipeline runs scripts/validate-config.apex immediately after deployment.
- * This class is also an invocable action for an admin-owned post-deploy flow.
+ * Architecture section: 9 (configuration validator), 4.4 (the union query),
+ * 4.6 (fail loudly), 10 (testability). A metadata deploy cannot execute Apex
+ * itself, so the release pipeline runs scripts/validate-config.apex
+ * immediately after deployment. This class is also an invocable action for an
+ * admin-owned post-deploy flow.
+ *
+ * Per governed object it compiles every active rule, rejects duplicate
+ * priorities, requires the Checkbox guard, requires every named Classic
+ * process to be active for that object, and, since M11, runs the one query the
+ * engine will run for the object's rules (validateUnionQuery).
  *
  * CURRENT SCOPE: the MVP has Classic execution only, so this implementation
  * checks active Classic ProcessDefinition records. Flow validation joins this
@@ -176,7 +182,7 @@ public without sharing class AMF_ConfigValidator {
      */
     @InvocableMethod(
         label='Validate Approval Matrix Configuration'
-        description='Checks active matrix rules, their expressions, guard fields and active Classic approval processes.'
+        description='Checks active matrix rules, their expressions and each object\'s query, guard fields and active Classic approval processes.'
     )
     public static List<InvocationResult> validateFromFlow(List<InvocationRequest> requests) {
         List<InvocationResult> results = new List<InvocationResult>();
@@ -235,6 +241,7 @@ public without sharing class AMF_ConfigValidator {
         List<Finding> findings
     ) {
         Map<Integer, List<String>> namesByPriority = new Map<Integer, List<String>>();
+        List<AMF_ExprCompiler.CompiledExpression> compiled = new List<AMF_ExprCompiler.CompiledExpression>();
 
         for (AMF_RuleDefinition rule : rules) {
             if (rule.priority == null) {
@@ -250,13 +257,19 @@ public without sharing class AMF_ConfigValidator {
             }
 
             try {
-                AMF_ExprCompiler.compile(objectApiName, rule.expression);
+                compiled.add(AMF_ExprCompiler.compile(objectApiName, rule.expression));
             } catch (AMF_ExpressionException e) {
                 findings.add(new Finding(
                     'EXPRESSION_INVALID',
                     'Rule ' + nameOf(rule) + ' on ' + objectApiName + ' does not compile: ' + e.getMessage()
                 ));
             }
+        }
+
+        // The engine builds this object's query only when every rule compiles: one
+        // that does not refuses the whole object first (4.6). So does this check.
+        if (compiled.size() == rules.size()) {
+            validateUnionQuery(objectApiName, compiled, findings);
         }
 
         List<Integer> priorities = new List<Integer>(namesByPriority.keySet());
@@ -271,6 +284,42 @@ public without sharing class AMF_ConfigValidator {
                     ' share Priority__c ' + priority + '. Active priorities must be unique.'
                 ));
             }
+        }
+    }
+
+    /**
+     * 4.4, M11: runs the one query the engine runs for this object's rules, the
+     * union of their field paths as AMF_FieldPathResolver builds it, against no
+     * records. A query the platform refuses is then a release finding rather
+     * than a failure at submit, whatever limit it hit.
+     *
+     * Asking the platform replaces counting against a number. M9.5 proposed
+     * checking SOQL's documented limit of 55 child-to-parent relationships, but
+     * amf-dev does not enforce it: one Apex query at API 62 joined 142 distinct
+     * relationships and returned its row (technical log M11). A count would have
+     * refused matrices the platform runs; the query itself cannot be wrong about
+     * the platform. With no records bound, it reads nothing.
+     */
+    private static void validateUnionQuery(
+        String objectApiName,
+        List<AMF_ExprCompiler.CompiledExpression> compiled,
+        List<Finding> findings
+    ) {
+        Set<String> paths = AMF_FieldPathResolver.unionPaths(compiled);
+        String soql = AMF_FieldPathResolver.buildQuery(objectApiName, paths);
+
+        // The bind buildQuery's text names. Empty, so the query returns nothing,
+        // but the platform still parses and checks it.
+        Set<Id> recordIds = new Set<Id>();
+
+        try {
+            Database.query(soql);
+        } catch (QueryException e) {
+            findings.add(new Finding(
+                'UNION_QUERY_INVALID',
+                'The query the engine runs for the active rules on ' + objectApiName + ', over ' +
+                paths.size() + ' field path(s), is refused by the platform: ' + e.getMessage()
+            ));
         }
     }
 

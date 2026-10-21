@@ -132,8 +132,11 @@
     </actionOverrides>
     <actionOverrides>
         <actionName>View</actionName>
+        <comment>Desktop record page carrying the decision timeline (arch doc 8, M11). The rest of this file is the org&apos;s own settings, as retrieved.</comment>
+        <content>Opportunity_Record_Page</content>
         <formFactor>Large</formFactor>
-        <type>Default</type>
+        <skipRecordTypeSelect>false</skipRecordTypeSelect>
+        <type>Flexipage</type>
     </actionOverrides>
     <actionOverrides>
         <actionName>View</actionName>

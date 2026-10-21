@@ -279,6 +279,115 @@ private class AMF_ConfigValidatorTest {
         Assert.areEqual(0, Limits.getQueries(), 'Construction must be free; queries belong to validate().');
     }
 
+    // ---------------------------------------------------------------------
+    // M11 -- each object's union query, run rather than counted (4.4).
+    // ---------------------------------------------------------------------
+
+    @IsTest
+    static void aUnionQueryThePlatformRefusesIsReportedWithThePlatformsReason() {
+        // A rule that compiles, over a query the platform will not run. TRUE reads
+        // no field, so the engine's query is SELECT Id FROM ContentDocumentLink
+        // WHERE Id IN :recordIds, and the platform refuses a query on that object
+        // that does not filter on a document or an entity: a real refusal, the
+        // same in every org. The engine would otherwise meet it at submit.
+        Set<Id> recordIds = new Set<Id>();
+        String platformReason;
+        try {
+            Database.query('SELECT Id FROM ContentDocumentLink WHERE Id IN :recordIds');
+        } catch (QueryException e) {
+            platformReason = e.getMessage();
+        }
+        Assert.isNotNull(platformReason, 'Precondition: the platform refuses this query.');
+
+        List<AMF_ConfigValidator.Finding> findings = validator(
+            new List<AMF_RuleDefinition>{
+                new AMF_RuleBuilder()
+                    .named('CDL_Catch_All')
+                    .forObject('ContentDocumentLink')
+                    .withExpression('TRUE')
+                    .routingTo('CDL_Approval')
+                    .build()
+            },
+            activeProcesses('ContentDocumentLink', new Set<String>{ 'CDL_Approval' })
+        ).validate();
+
+        AMF_ConfigValidator.Finding finding = findingWithCode(findings, 'UNION_QUERY_INVALID');
+        Assert.isNotNull(finding, render(findings));
+        Assert.isTrue(finding.message.contains('ContentDocumentLink'), finding.message);
+        Assert.isTrue(
+            finding.message.endsWith('is refused by the platform: ' + platformReason),
+            'The platform\'s own reason, verbatim. Got: ' + finding.message
+        );
+    }
+
+    @IsTest
+    static void theUnionQueryRunsOncePerObjectAndOnlyWhenEveryRuleCompiles() {
+        AMF_ConfigValidator validator = new AMF_ConfigValidator(
+            new AMF_RuleBuilder.Stub(
+                new List<AMF_RuleDefinition>{
+                    // Two rules on one object, one through a relationship: one query.
+                    new AMF_RuleBuilder()
+                        .named('PR_Account')
+                        .withPriority(10)
+                        .withExpression('Account__r.Name == \'Acme\'')
+                        .routingTo(VALID_PROCESS)
+                        .build(),
+                    new AMF_RuleBuilder()
+                        .named('PR_Catch_All')
+                        .withPriority(9999)
+                        .withExpression('TRUE')
+                        .routingTo(VALID_PROCESS)
+                        .build(),
+                    // A standard object over a standard relationship (M11): one query.
+                    new AMF_RuleBuilder()
+                        .named('OPP_Key_Industry')
+                        .forObject('Opportunity')
+                        .withPriority(20)
+                        .withExpression('Account.Industry IN (\'Energy\', \'Banking\')')
+                        .routingTo('OPP_Two_Level_Mgmt')
+                        .build(),
+                    // One of Account's two rules does not compile, so the engine
+                    // would build no query for Account, and neither does this.
+                    new AMF_RuleBuilder()
+                        .named('Account_Good')
+                        .forObject('Account')
+                        .withPriority(10)
+                        .withExpression('Name == \'Acme\'')
+                        .routingTo('Account_Approval')
+                        .build(),
+                    new AMF_RuleBuilder()
+                        .named('Account_Broken')
+                        .forObject('Account')
+                        .withPriority(20)
+                        .withExpression('Not_A_Field__c == 1')
+                        .routingTo('Account_Approval')
+                        .build()
+                }
+            ),
+            new ApprovalProcessStub(
+                new Map<String, Set<String>>{
+                    OBJECT_NAME => new Set<String>{ VALID_PROCESS },
+                    'Opportunity' => new Set<String>{ 'OPP_Two_Level_Mgmt' },
+                    'Account' => new Set<String>{ 'Account_Approval' }
+                }
+            )
+        );
+
+        Test.startTest();
+        List<AMF_ConfigValidator.Finding> findings = validator.validate();
+        Integer queries = Limits.getQueries();
+        Test.stopTest();
+
+        // The process catalog is a stub, so every query spent is a union query.
+        Assert.areEqual(
+            2,
+            queries,
+            'One each for Opportunity and Purchase_Request__c, none for Account. ' + render(findings)
+        );
+        Assert.isNull(findingWithCode(findings, 'UNION_QUERY_INVALID'), render(findings));
+        Assert.isNotNull(findingWithCode(findings, 'EXPRESSION_INVALID'), render(findings));
+    }
+
     private static AMF_ConfigValidator validMatrix() {
         return validator(
             new List<AMF_RuleDefinition>{

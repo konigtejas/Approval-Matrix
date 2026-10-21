@@ -105,7 +105,8 @@ session needs. Update the row when a phase completes.
 | **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Complete** — org gate passed 2026-10-08 (M7.7): deploy, post-deploy check, RunLocalTests and every manual timeline check; 57/57 Jest. The gate's recall check confirmed that a Classic recall leaves the guard set (M7.8), owed to M8 | `25e0b2d` + M7.7 |
 | **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Org gate steps 1–5 passed** 2026-10-08 (M8.7): first deploy refused on a 329-character description, fixed; 197/197 Apex; PR-00000010 repaired. **Step 6, the manual UI check, is owed** | `caeafb3` + M8.7 |
 | **M9** | Full expression grammar — `NOT`, word forms, `IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, three-hop paths | **Complete** — gate run in `amf-dev` 2026-10-08: 232/232 Apex, evaluator classes all 100%, mutation-checked, 57/57 Jest, matrix valid; optional manual UI check not run | `a79c880` |
-| **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers; since M10.7 the guard staged per record | **Complete** — org gate passed 2026-10-21 (M10.8): 255/255 Apex at 98% after the locked-record fixture was replaced by a test-only validation rule (the lock did not stop the update in an Apex test), 59/59 Jest, the invocable and REST answered in the org | `393d9d5` + M10.7, M10.8 |
+| **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers; since M10.7 the guard staged per record | **Complete** — org gate passed 2026-10-21 (M10.8): 255/255 Apex at 98% after the locked-record fixture was replaced by a test-only validation rule (the lock did not stop the update in an Apex test), 59/59 Jest, the invocable and REST answered in the org | `393d9d5` + M10.7, M10.8 (`a0273e9`) |
+| **M11** | A second governed object, Opportunity, by configuration alone — guard, two manager-hierarchy templates, the button off four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3, the validator runs each union query | **Complete, one manual check owed** — gate run 2026-10-21: source gate and validator green across both objects and failing broken copies, 264/264 Apex at 98%, 59/59 Jest, UI API shows the action and no standard button, an Opportunity routed, approved and recalled in the org. The relationship limit measured as not enforced (142 joined) | `6e3079d` + Phase M11 |
 
 ### Superseded — the v1.0 plan
 
@@ -121,9 +122,9 @@ Retained only as a record of what was built. Phases 2–8 of that plan were neve
 carried-forward table), then the phase prompt in `docs/build-playbook.md`. Do not rely on
 conversation history — there is none by design.
 
-**Choosing the next phase:** `docs/build-playbook.md` Part 5 holds the proposed roadmap after M10
-(M11 second object, M12 template lifecycle, validator hardening, Flow approvals), with the
-decisions each needs first. It authorises nothing; `CLAUDE.md` does.
+**Choosing the next phase:** `docs/build-playbook.md` Part 5 holds the proposed roadmap after M11
+(M12 template lifecycle, Flow approvals, the smaller items), with the decisions each needs first.
+It authorises nothing; `CLAUDE.md` does. `docs/handoff.md` is the short version.
 
 ---
 
@@ -3565,3 +3566,239 @@ This table supersedes M10.7's.
 | Still open from M8.7c: PR-00000014 to PR-00000025 carry the guard; they go with M6's teardown | M6 teardown |
 | The playbook's optional manual M9 check | user, optional |
 | M9.5's grammar items: DateTime, the text-like field types, the 55-relationship union, reserved keywords, field-to-field multipicklists | as in M9.5; the union check is in M11 |
+
+---
+
+## Phase M11 — A second governed object: Opportunity
+
+**Date:** 2026-10-21 · **Commits:** `6e3079d`, the baseline retrieved from the org and committed
+unchanged, then Phase M11 · **Status:** complete. The gate ran in `amf-dev`, apart from its manual
+UI step, which is owed to the user.
+**Playbook goal:** prove §3.2's claim that governing an object is configuration plus conventions,
+with no engine change, on a standard object.
+
+The user authorised M11 in this session. They chose Opportunity, the handoff's recommendation, over
+a second custom object, and asked for the M9.5 relationship check to ride along. Measurement then
+changed that check (d), and the user chose to have the validator run the real query. `CLAUDE.md`
+records the authorisation; the playbook's Part 3 entry and gate were written before building.
+
+### M11.1 File-level changes
+
+`6e3079d` brought the four Opportunity layouts and Opportunity's object-level settings into source
+**exactly as retrieved**, so that this phase's diff shows only what it changes in org-owned files.
+
+| File | Change | Notes |
+|---|---|---|
+| `objects/Opportunity/Opportunity.object-meta.xml` | **new** (as retrieved), then one override | View, Large: `Opportunity_Record_Page`. Every other setting is the org's own; standard fields, list views and web links stay out of source |
+| `objects/Opportunity/fields/Matrix_Submission__c.field-meta.xml` | **new** | the guard (§3.4) |
+| `objects/Approval_Decision_Log__c/fields/Opportunity__c.field-meta.xml` | **new** | SetNull lookup; relationship `Approval_Decisions` |
+| `workflows/Opportunity.workflow-meta.xml` | **new** | Opportunity's own `AMF_Clear_Matrix_Submission`; the org's file was empty |
+| `approvalProcesses/Opportunity.OPP_Manager_Approval.approvalProcess-meta.xml` | **new** | one step: the submitter's manager |
+| `approvalProcesses/Opportunity.OPP_Two_Level_Mgmt.approvalProcess-meta.xml` | **new** | two steps up the same hierarchy |
+| `quickActions/Opportunity.AMF_Submit_For_Approval.quickAction-meta.xml` | **new** | over the unchanged `amfSubmitForApproval` |
+| `layouts/Opportunity-*.layout-meta.xml` ×4 | **new** (as retrieved), then edited | `Submit` out of `platformActionList`, the framework's action first, renumbered; the guard read-only; Approval History and Approval Decisions related lists |
+| `flexipages/Opportunity_Record_Page.flexipage-meta.xml` | **new** | highlights; Details, Related, Activity and Chatter tabs; the timeline in the sidebar |
+| `customMetadata/Approval_Matrix_Rule.OPP_*.md-meta.xml` ×3 | **new** | `OPP_Large_Deal` (10), `OPP_Key_Industry` (20), `OPP_Catch_All` (9999) |
+| `layouts/Approval_Decision_Log__c-Approval Decision Log Layout.layout-meta.xml` | **modified** | `Opportunity__c` beside `Purchase_Request__c` |
+| `permissionsets/Approval_Matrix_User`, `Approval_Matrix_Admin` | **modified** | FLS on the guard (User read-only, Admin edit) and on the lookup; no Opportunity object permissions (e) |
+| `classes/AMF_ConfigValidator.cls` | **modified** | `validateUnionQuery()`; header and invocable description |
+| `classes/AMF_ConfigValidatorTest.cls` | **modified** | +2 tests |
+| `classes/AMF_OpportunityGovernanceTest.cls` | **new** | 7 real-platform tests |
+| `scripts/validate-approval-matrix-source.ps1` | **modified** | `Test-StandardSubmitRemoved`: §6.3 on every governed object's layouts |
+| `CLAUDE.md`, `docs/architecture.md` (§3.2, §4.4, §6.3, §9, §11 notes; §13.4 row), `docs/build-playbook.md` (M11 in Part 3; Part 5), `docs/decisions.md` (3 entries), `docs/handoff.md` | **modified** | authorisation, design, corrections, decisions |
+
+No engine class, LWC or `Purchase_Request__c` metadata changed. The engine, the strategy, the log
+writer and the timeline served Opportunity as they were. The validator gained one check, and the
+source gate one rule.
+
+### M11.2 Design choices worth recording
+
+**(a) Templates on the manager hierarchy, by necessity as much as by choice.** The seeded approvers
+`amfu1` to `amfu5` hold the Standard Platform User profile. The Salesforce Platform license grants
+no Opportunity access: no profile object permission exists for it. The only full-license users are
+three System Administrators, and one Salesforce license is spare. A named-user template would have
+to name an administrator, or spend that license on a seeded approver. Hierarchy templates name no
+user, which also keeps them out of the org-bound-username debt that `PR_Three_Level_Finance`
+carries. The two shapes still differ visibly (§5.5): one step, or two.
+
+**(b) Unlocked after final approval.** `finalApprovalRecordLock` is false on both. A locked approved
+deal could not be moved to its next stage by its owner. The Purchase Request templates lock,
+because an approved request is finished.
+
+**(c) Rules that use what a standard object offers:**
+
+- `Amount >= 250000`: a standard Currency field;
+- `Account.Industry IN ('Energy', 'Banking')`: a standard relationship, so no `__r`, with M9's
+  `IN`;
+- the visible catch-all.
+
+Priorities 10, 20 and 9999 repeat the Purchase Request matrix's, which is legal because the
+validator checks uniqueness per object. The compiler needed nothing new: it resolves relationships
+by describe, and Opportunity's `Owner` points only at User, so it is even traversable, which the
+Purchase Request's is not (polymorphic, User or Group).
+
+**(d) The validator runs the union query instead of counting relationships.** Before building the
+count M9.5 proposed, its premise was measured in anonymous Apex, read-only or rolled back:
+
+| Root | Relationships in one query | API | Result |
+|---|---|---|---|
+| Opportunity | 54, 55, 56 prefix-closed paths | 68 | all accepted |
+| Opportunity | 400 distinct paths, over 34 distinct `object.relationship` pairs and 7 target objects | 68 | accepted |
+| Opportunity, Case, Contract | every reachable distinct pair, one at a time: 54, 54, 45 | 68 | all accepted |
+| WorkOrder | 95 distinct pairs, then 142 in one query | 68 and 62 | accepted |
+| WorkOrder, a row inserted and rolled back | 142 distinct pairs, `WHERE Id = :row` | 62 | accepted, 1 row |
+
+So Apex does not enforce the documented 55, by any unit tried. A count against 55 would refuse
+matrices the platform runs. `validateUnionQuery()` instead builds the engine's own query
+(`AMF_FieldPathResolver.buildQuery` over the compiled rules' union) and runs it with an empty
+`recordIds` bind.
+
+A probe established three things first:
+
+- such a query still executes (one SOQL spent, zero rows);
+- a malformed path throws at parse time;
+- `ContentDocumentLink` refuses `WHERE Id IN :recordIds` with "Implementation restriction". That
+  is a deterministic platform refusal of a query whose rule compiles, which gives the check's
+  failure branch a test.
+
+`Database.queryWithBinds` with `SYSTEM_MODE` is refused in anonymous Apex, so the check binds a
+local, as the resolver does. It runs only when every rule for the object compiles, because that is
+the only case in which the engine builds the query.
+
+**(e) Field-level access only.** Opportunity access comes from the user's profile and license. An
+object permission in `Approval_Matrix_User`, which five Platform-license users hold, is the kind of
+grant the platform refuses for that license. Field permissions on Opportunity fields deployed
+without complaint.
+
+**(f) The source gate learned §6.3** (`docs/decisions.md`). On Lightning, the standard button is the
+`Submit` / `StandardButton` entry in a layout's `platformActionList`, and all four Opportunity layouts
+listed it. Before M11 nothing enforced its removal: M3.9 found the Purchase Request layout still
+showing it after M3 shipped. The gate now fails three things:
+
+- a governed object's layout that keeps the entry;
+- a layout with no list, which shows the platform's defaults;
+- a governed object with no layout in source.
+
+**(g) The record page keeps Opportunity's own panels.** Activity and Chatter join the Purchase
+Request page's Details and Related tabs, so activating it as the desktop default takes nothing
+away from sales users. There is no Path component: `amf-dev` has no Sales Path
+(`sf org list metadata -m PathAssistant` is empty).
+
+**(h) The tests' approver is the running user.** Each test creates one Standard User who reports
+to the running user, so both templates' first step resolves to a full-license user with
+Opportunity access, in any org. One user per test is also all the license count allows: inserting
+a user needs a free license even in a test.
+
+### M11.3 Issues encountered
+
+**(a) The first two deploys failed on the record page alone** (`0Afaj00000oZ819CAC`,
+`0Afaj00000oZatSCAS`), and nothing landed, because deploys are atomic.
+
+1. "Facet activityTabContent has already been declared by another component". The parent
+   template, `flexipage__default_rec_L`, already has that facet, which its sidebar's Activity
+   panel uses.
+2. Renamed `amfActivityTabContent` and `amfChatterTabContent`, the error became "'mode REPLACE'
+   but a parent region enabling that mode doesn't exist". `mode Replace` replaces a parent's region
+   of the same name; a new facet carries no mode.
+
+A dry run of the page alone (`--dry-run`) then validated it before the full deploy.
+
+**(b) One new test failed on its own assertion,** in the first full run, `707aj00001MvbU1`: 263/264.
+`Assert.isTrue(outcomes[1].submitted, outcomes[1].message)` threw `NullPointerException: Message
+parameter cannot be null`. A successful outcome's message is null, and Apex's `Assert` refuses a
+null message even when the assertion holds. The record had been submitted. The message is now
+built, and no other assertion in the suite passes a bare outcome message.
+
+**(c) Two tool traps.**
+
+- The Bash tool collapses `\\` inside a quoted heredoc, so an Apex `split('\\.')` reached the
+  file as `split('\.')` and failed to compile. The probes count dots with `countMatches('.')`
+  instead.
+- A PowerShell harness with `$ErrorActionPreference = 'Stop'` turns a native command's stderr
+  into a terminating error. The gate's expected failures crashed the harness until it relaxed the
+  setting around the call.
+
+**(d) A stale claim.** M3.7 and M10.7 say the admin has no manager. The admin reports to `amfu1`
+(Platform license), presumably set during M3's QA as M3.7 suggested. So `PR_Two_Level_Mgmt` does
+route an admin's submission, to `amfu1` then `amfu2`.
+
+### M11.4 Verification evidence
+
+```
+source gate                 passed: 6 active rules, 4 approval processes, 5 layouts of 2 governed objects
+  broken copy A             failed: OPP_Manager_Approval does not clear the guard on recall;
+                            the Sales layout keeps Submit; the Support layout has no platformActionList
+  broken copy B             failed: no layout of Opportunity is in source
+  broken copy C             failed: both OPP templates, all three exits (no Opportunity field update;
+                            Purchase Request's does not count)
+deploy                      0Afaj00000oZiRBCA0 Succeeded (after the two record-page failures above);
+                            test-class fix 0Afaj00000oZFtrCAG
+post-deploy check           "Approval Matrix configuration is valid." Both objects: 6 rules compiled,
+                            both union queries run, 4 processes active for their objects
+ProcessDefinition           OPP_Manager_Approval, OPP_Two_Level_Mgmt: Opportunity, Active
+FieldPermissions            User: guard R, lookup R. Admin: guard RW, lookup RW
+RunLocalTests               707aj00001Mtchi: 264/264, org-wide 98%. AMF_ConfigValidator 98% (its
+                            uncovered lines are M4's wrong-type branch); service, log writer,
+                            resolver and timeline 100%
+M11 classes                 707aj00001MtF8g: AMF_OpportunityGovernanceTest 7/7, AMF_ConfigValidatorTest 18/18
+Jest                        59/59 in 4 suites (no LWC changed)
+```
+
+**The action bar, by the UI API** (`/ui-api/actions/record/006aj00000arfTmAAI?formFactor=Large&sections=Page`,
+the admin's *Opportunity Layout*):
+
+```
+0 Follow  1 FollowInStream  2 Opportunity.AMF_Submit_For_Approval  3 FeedItem.TextPost ... 19 Share
+20 actions, Submit absent
+```
+
+The two Follow buttons are the platform's, ahead of every layout's list. The same API, asked about
+each related list, showed:
+
+- **Approval History** (`ProcessSteps`) offers nothing on a record never submitted, so the standard
+  submit lives only in the layout's action list. On the pending PR-00000027 it offers Approve,
+  Reject, Reassign and Recall.
+- **Approval Decisions** offers New and Mass Change Owner (carried).
+
+**End to end, through the invocable, as the admin:**
+
+| Throwaway | Route | Decision log row | After |
+|---|---|---|---|
+| *AMF M11 gate: large deal*, `006aj00000ffwjZAAQ`, 300,000 | `OPP_Large_Deal` v1 to `OPP_Two_Level_Mgmt`, instance `04gaj000001ybXBAAY`, with `amfu1` | ADL-00000015, `Opportunity__c` set, `{"Amount":300000.00}` | recalled by the admin: `Removed`, guard false |
+| *AMF M11 gate: small deal*, `006aj00000ffwjaAAA`, 5,000 | `OPP_Catch_All` v1 to `OPP_Manager_Approval`, instance `04gaj000001ybXCAAY`, with `amfu1` | ADL-00000016, `Opportunity__c` set, `{}` | approved by the admin acting for `amfu1`: `Approved`, guard false |
+
+The timeline returned each entry joined to its instance (Started > Removed, and Started > Approved),
+the large deal's with its one value.
+
+**Finding: the platform assigned both work items to `amfu1`,** whose license grants no Opportunity
+access. It checks neither sharing (M3.10) nor license when it resolves an approver. §11 now says
+approvers must hold a license that includes the object.
+
+**Owed: the manual UI check** (playbook gate step 8). On a throwaway Opportunity, as the admin:
+
+- the header's first button is Submit for Approval, and there is no second one;
+- the modal names the route;
+- after submitting, the timeline shows the entry without a reload;
+- *Matrix Submission* is ticked.
+
+### M11.5 Carried into later phases
+
+This table supersedes M10.8's.
+
+| Item | Owner |
+|---|---|
+| The M11 gate's manual UI check (step 8, above) | user |
+| Still open from M8.7: the manual UI check (step 6). PR-00000027 serves it from its second step | user |
+| The Approval Decisions related list offers New and Mass Change Owner, on both objects' layouts, to anyone who may create log rows (administrators). `excludeButtons` on each layout's related list removes them; the Purchase Request layout is outside M11's scope, so both wait together | a hardening pass |
+| The source deploys only to `amf-dev`, for two reasons now: `PR_Three_Level_Finance` names its approvers by username, and the four Opportunity layouts reference this org's own fields (`OrderNumber__c` and others) | M12, or any CI or second org |
+| The seeded approvers cannot approve Opportunities (Platform licenses). A demo that needs a non-admin Opportunity approver must spend the org's last Salesforce license on one | if a demo needs it |
+| Whether the lock a final approval leaves stops a real non-admin's Apex update outside a test is unmeasured (M10.8a) | if a need appears |
+| The preview cannot foresee a guard failure (M10.7h) | if a need appears |
+| ~~Check Opportunity's triggers before M11 (M10.7g)~~ | **closed**: `amf-dev` has no Apex triggers, validation rules or record-triggered flows on Opportunity. In an org that has them, a partial guard failure re-runs their triggers on the other records |
+| `Lock_Decision_Log` still permits one post-insert stamp of `Execution_Ref_Id__c`, which nothing performs since M10 (M10.6). Test it against deleting a governed record (M3.12) | a later hardening pass |
+| A record-triggered Flow on a governed object that calls the action is re-triggered by the engine's guard update and by the templates' clearing update; its entry conditions must exclude those | whoever builds such a Flow |
+| husky's pre-commit would rewrite every file a commit touches (M10.7); commits here run with `HUSKY=0` | a tooling decision |
+| Still open from M8.7c: PR-00000014 to PR-00000025 carry the guard; they go with M6's teardown | M6 teardown |
+| The playbook's optional manual M9 check | user, optional |
+| ~~M9.5's 55-relationship union~~ | **closed in M11**: not enforced; the validator runs the query |
+| M9.5's other grammar items: DateTime, the text-like field types, reserved keywords, field-to-field multipicklists | as in M9.5 |

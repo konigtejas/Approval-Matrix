@@ -55,6 +55,9 @@ phases consistent with each other. §13 of that document is the MVP scope; anyth
   `sf org list metadata`, `sf project deploy` and `sf apex run` all work under Bash.
 - `sf data query -t` is `--use-tooling-api`, not a table-format flag. Querying a `__mdt`
   through Tooling reports fields as missing that are present.
+- The Bash tool collapses `\\` to `\` even inside a quoted heredoc, so anonymous Apex written that
+  way loses its escapes (`split('\\.')` arrives as an illegal `split('\.')`). Write such files with
+  the file tools, or avoid the backslash (technical log M11.3c).
 
 ---
 
@@ -538,6 +541,93 @@ in order, and the REST 400s.
 
 ---
 
+### M11 — A second governed object: Opportunity (post-MVP)
+
+**Goal:** prove §3.2's claim that governing an object is configuration plus conventions, with no
+engine change, on the hardest kind of object to get right: a standard one. Opportunity has no
+`__c`, required fields, standard relationships (`Account.Industry`), four layouts tied to
+different profiles, and its own Submit for Approval button. The surprises were expected in
+metadata, the gates and the tests, and finding them is the point (technical log M11).
+
+**Build:**
+- **The guard.** `Opportunity.Matrix_Submission__c`, Checkbox, default false. Read-only in
+  `Approval_Matrix_User`, editable in `Approval_Matrix_Admin` (§3.4, §6.3).
+- **Two Classic templates** (§5.2), both on the submitter's manager hierarchy, so neither names a
+  user and both deploy to any org:
+  - `OPP_Manager_Approval`: one step.
+  - `OPP_Two_Level_Mgmt`: two steps.
+
+  Each has entry criterion `Matrix_Submission__c = TRUE`, and Opportunity's own
+  `AMF_Clear_Matrix_Submission` runs on final approval, final rejection and recall. Neither locks
+  the record after final approval: an approved deal must stay editable. The seeded approvers hold
+  Salesforce Platform licenses, which grant no Opportunity access, so named-user templates would
+  need a full-license approver this org cannot spare.
+- **The standard button removed (§6.3)** from all four Opportunity layouts, each of which listed
+  `Submit` explicitly. `Opportunity.AMF_Submit_For_Approval` goes first in its place, over the
+  unchanged `amfSubmitForApproval`. Each layout also gains the guard (read-only), Approval
+  History, and the Approval Decisions related list.
+- **Rules**, as CMDT rows:
+
+  | Rule | Priority | Expression | Routes to |
+  |---|---|---|---|
+  | `OPP_Large_Deal` | 10 | `Amount >= 250000` | `OPP_Two_Level_Mgmt` |
+  | `OPP_Key_Industry` | 20 | `Account.Industry IN ('Energy', 'Banking')` | `OPP_Two_Level_Mgmt` |
+  | `OPP_Catch_All` | 9999 | `TRUE` | `OPP_Manager_Approval` |
+- **Navigation.** `Approval_Decision_Log__c.Opportunity__c` is a SetNull lookup the log writer
+  finds by describe (M3.12), so it needs no Apex. It is in both permission sets and on the log's
+  layout.
+- **The timeline** on `Opportunity_Record_Page`, which keeps Activity and Chatter. It is activated
+  as the desktop org default through Opportunity's View override. The object file is the org's own
+  settings with that one change.
+- **The source gate** also fails any layout of a governed object that keeps the standard `Submit`
+  button or has no explicit action list. Without one, the platform shows its default set, which
+  includes `Submit` once an approval process exists.
+- **The validator** runs each governed object's union query, exactly as the engine builds it,
+  against no records. A query the platform refuses is then a release finding rather than a failure
+  at submit. This replaces M9.5's count against 55 relationships: in `amf-dev` one Apex query
+  joined 142 and returned its row.
+- **Tests.**
+  - `AMF_OpportunityGovernanceTest`, against both templates: the join, the routing, the bypass,
+    all three ways out, a call across both objects, the timeline and the validator.
+  - Validator unit tests for the union query.
+
+No engine class, LWC, or `Purchase_Request__c` metadata changes.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`.
+   Expect 6 active rules, 4 approval processes, and 5 layouts across 2 objects.
+2. Deploy the package.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev`. Expect the Opportunity rules
+   compiled, their processes active for Opportunity, and both union queries run.
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`: all green.
+5. Jest, as in M5: unchanged, because no LWC changes.
+6. **The action bar, by the UI API.** `GET /ui-api/actions/record/<Opportunity Id>?formFactor=Large`
+   lists `Opportunity.AMF_Submit_For_Approval` and no `Submit`. This automates M3.9's lesson, a
+   claim about a UI verified only by deploy status. The API answers for the caller's layout only,
+   the admin's *Opportunity Layout*; the source gate covers all four.
+7. **End to end in the org, through the invocable,** on throwaway Opportunities:
+   - a large deal routes to `OPP_Two_Level_Mgmt`;
+   - a small one routes to `OPP_Manager_Approval`;
+   - each has a decision log row whose `Opportunity__c` is set and the guard set;
+   - approval and recall each clear the guard;
+   - the timeline returns each entry with its native steps.
+8. **Manual, in the real UI, as the admin:** on a throwaway Opportunity, the header's first button
+   is Submit for Approval and there is no second one. The modal names the route. After
+   submitting, the timeline shows the entry without a reload, and *Matrix Submission* is ticked.
+
+Acceptance: the real-platform tests prove that an Opportunity enters both templates only through
+the engine, that every way out re-arms the guard, that one call answers a Purchase Request and an
+Opportunity each by its own matrix, and that the timeline explains an Opportunity. The validator
+tests prove that a refused union query is reported, and that the query runs only when every rule
+compiles. The source gate is shown, on scratch copies, to fail a layout with `Submit` and a
+layout with no action list.
+
+**Gate run 2026-10-21 (technical log M11.4):** steps 1–7 passed, with 264/264 Apex tests. Step 8,
+the manual UI check, is owed to the user.
+
+---
+
 ## Part 4 — When Things Go Wrong
 
 - **Claude Code invents schema** (a field not in §3): stop it, point at the doc, restate
@@ -574,6 +664,7 @@ in order, and the REST 400s.
 | M8's manual UI check: submit, submit again (refused by name, no modal, no log row), recall (*Matrix Submission* unticked), resubmit | technical log M8.7d |
 | Optional: M9's manual check, a throwaway rule using the new grammar previewed in the UI | technical log M9.4 |
 | ~~M10's org gate: deploy, RunLocalTests (255), the invocable and REST checks~~ **passed 2026-10-21** | technical log M10.8 |
+| M11's manual UI check: on a throwaway Opportunity, one Submit for Approval button, the modal names the route, the timeline updates without a reload, *Matrix Submission* ticked | technical log M11.4 |
 
 ### M10 — Entry points and bulk submission *(authorised and built, 2026-10-08)*
 
@@ -581,18 +672,10 @@ Moved to Part 3, with its gate. The three decisions it needed were taken: per-re
 the bulk entry points, `TODAY` as the running user's date, and one shared result shape
 (`docs/decisions.md`, 2026-10-08).
 
-### M11 — A second governed object
+### M11 — A second governed object *(authorised and built, 2026-10-21)*
 
-**Goal:** prove §3.2's claim that governing an object is configuration plus conventions, with no
-engine change: a guard field, templates with the entry criterion and three clearing actions, the
-standard button removed (§6.3), rules, permission-set entries, and the timeline on its record page.
-
-**Why here:** after M10, because per-record handling is part of what a second object exercises.
-Before M12, because lifecycle rules should be written against more than one object's templates.
-
-**Decide first:** which object, a standard one such as Opportunity or a second custom object.
-**Expect** object-specific assumptions to surface in the source gate, the validator, the timeline
-page or the tests; finding them is the point of the phase.
+Moved to Part 3, with its gate. The user chose Opportunity over a second custom object. The
+55-relationship item below rode along, changed by measurement (technical log M11).
 
 ### M12 — Template lifecycle, and queue and committee templates
 
@@ -610,9 +693,10 @@ still unresolved (§12 item 1).
 
 ### Grammar and validator hardening *(small; can join M10 or M11)*
 
-- **The 55-relationship limit.** SOQL allows 55 child-to-parent relationships per query, across
-  the union of an object's rules. With three-hop paths that is reachable, and today it would fail
-  at submit. `AMF_ConfigValidator` should check the union at deploy time (M9.5).
+- ~~**The 55-relationship limit.**~~ **Done in M11, differently.** The documented limit of 55
+  child-to-parent relationships is not enforced in `amf-dev`: one Apex query at API 62 joined 142
+  distinct relationships and returned its row. So `AMF_ConfigValidator` runs each object's real
+  union query rather than counting against a number (technical log M11).
 - **Field types still refused:** DateTime (it needs a time-zone decision), Email, Phone, URL, Text
   Area. Each is a type-map entry plus tests.
 
@@ -644,6 +728,7 @@ PR-00000014 to PR-00000025 and the guards they still carry (technical log M8.7c)
 | Rule descriptions are not snapshotted, so the timeline shows DeveloperNames; it would need a log field | `docs/decisions.md` |
 | Approvers cannot read the routing reason for others' submissions; a sharing decision on the log | `docs/decisions.md` |
 | Field-to-field multipicklist comparisons are refused | M9.5 |
+| The Approval Decisions related list offers New and Mass Change Owner on both objects' layouts; `excludeButtons` removes them | M11.5 |
 
 ### Not on the roadmap
 

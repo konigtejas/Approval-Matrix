@@ -8,7 +8,7 @@ name → decision log explains why.
 docs/architecture.md (v3.0) defines the full target design; its §13 is this MVP scope.
 WE ARE BUILDING THE MVP SUBSET ONLY (see MVP SCOPE). If the doc describes something
 not in MVP scope, do NOT build it. If a task seems to conflict with the doc, STOP and
-ask. docs/build-playbook.md carries the phase plan (M0–M10) and the gate for each. Its Part 5
+ask. docs/build-playbook.md carries the phase plan (M0–M11) and the gate for each. Its Part 5
 is a PROPOSED roadmap only: a phase there is not authorised until the paragraph below names it.
 
 **Current authorised post-MVP work:** M0–M3 have passed their gates. M4 added the
@@ -40,6 +40,16 @@ govern) gets its own outcome while the rest still go through. The engine now wri
 log after the platform answers, and the Classic strategy submits in chunks of at most 100 without
 all-or-nothing. It supersedes "bulk chunking" on the out-of-scope list. The header button keeps
 its whole-call contract.
+M11 governs a second object, Opportunity, by configuration and conventions alone (§3.2): its
+Matrix_Submission__c guard; two Classic templates on the submitter's manager hierarchy that clear
+the guard on approval, rejection and recall; the framework's submit action in place of the
+standard button on all four of its layouts; its matrix rules; an Opportunity__c lookup on the
+decision log; field-level access in both permission sets; and a record page with the timeline.
+It supersedes "second object" on the out-of-scope list for Opportunity alone and changes no
+engine class or LWC. Two gate checks join it: the source gate fails a governed object's layout
+that keeps the standard Submit for Approval button (§6.3), and the validator runs each governed
+object's union query, in place of M9.5's 55-relationship count, which the platform does not
+enforce (technical log M11).
 
 ## MVP SCOPE — build ONLY these
 - One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)

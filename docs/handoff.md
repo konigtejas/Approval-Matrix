@@ -1,123 +1,91 @@
-# Handoff — what's next after M10
+# Handoff — what's next after M11
 
-**As of 2026-10-21.** `develop` holds Phase M10 (`393d9d5`) and the M10.3b follow-up, **M10.7**
-(`548cd59`), merged on 2026-10-21 by fast-forward from `claude/handoff-review-repo-scan-j30kbi`.
-**Update, 2026-10-21:** M10's org gate has now run and passed (technical log M10.8). Its two
-locked-record tests failed as section 1 warned they might, and their fixture was replaced by a
-test-only validation rule; 255/255. The user then authorised M11 for Opportunity.
+**As of 2026-10-21.** `develop` holds three changes from one session, all with their gates run in
+`amf-dev`:
 
-This is the short version. The sources are `docs/technical-log.md` (the status board, M10.5, and
-M10.7, which amends M10.5's gate and holds the current table of open items) and
-`docs/build-playbook.md` (Part 3's M10 gate, Part 5's roadmap). A fresh session reads `CLAUDE.md`
-first: it decides what is authorised.
+- **M10's org gate**, closed as M10.8 (`a0273e9`).
+- **The Opportunity baseline**, retrieved from the org and committed unchanged (`6e3079d`).
+- **Phase M11**, a second governed object.
+
+Only M11's manual UI check is owed.
+
+This is the short version. The sources are `docs/technical-log.md` (the status board, M10.8, M11
+and M11.5's table of open items) and `docs/build-playbook.md` (Part 3's M11 gate, Part 5's
+roadmap). A fresh session reads `CLAUDE.md` first: it decides what is authorised.
 
 ---
 
-## 1. Gates owed by the user — nothing to build
+## 1. Owed by the user — nothing to build
 
-### ~~M10's org gate, with M10.7 — run this first~~ Passed 2026-10-21 (technical log M10.8)
+### M11's manual UI check (playbook M11 gate, step 8)
 
-Four of its tests depend on platform behaviour no session has run: the 200-record submission
-staying within governor limits, a submitter with no manager being refused by `PR_Two_Level_Mgmt`,
-and M10.7's two tests, which assume that the lock a final approval leaves stops a non-admin's
-update from Apex running without sharing.
+As the admin, on a throwaway Opportunity:
 
-1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
-2. `sf project deploy start -o amf-dev`
-3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
-4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — expect **255/255**. If the
-   200-record test fails on a governor limit, report which limit it names: that is a finding
-   about bulk size, not a flake. If a locked-record test fails on its first assertion, report the
-   outcome it shows: that is a finding about the approval lock, and the engine change stands.
-5. Jest: `$env:PATH = "C:\Program Files\sf\client\bin;$env:PATH"; node node_modules\jest\bin\jest.js --ci`
-   — expect 59/59.
-6. **The Flow action**, through the platform's invocable framework, in anonymous Apex on a
-   throwaway Purchase Request with **`Risk_Level__c = High`**, so it routes to the named-user
-   template. Your user has no manager (M3.7), so a record reaching the catch-all's
-   `PR_Two_Level_Mgmt` would answer `Failed` (`MANAGER_NOT_DEFINED`): correct, but not what this
-   step checks.
-   ```apex
-   Invocable.Action action = Invocable.Action.createCustomAction('apex', 'AMF_SubmitForMatrixApproval');
-   action.setInvocationParameter('recordId', '<throwaway Id>');
-   System.debug(action.invoke()[0].getOutputParameters());
-   ```
-   The first run returns `submitted` true with a decision log row Id. A second run on the same
-   record returns `Refused`, naming the process it is already in.
-7. **REST**, with a second `Risk_Level__c = High` throwaway. Windows PowerShell strips the double
-   quotes inside an argument it passes to `sf` (the M6.6 trap), so escape them:
-   `sf api request rest /services/apexrest/approval-matrix/v1/submissions --method POST --body '{\"recordIds\":[\"<pending Id>\",\"<another throwaway Id>\"]}' -o amf-dev`
-   or use Workbench's REST Explorer. It answers 200 with `{"results": [...]}`, one result per Id:
-   `Refused` for the pending one, `Submitted` for the other. `--body '{}'` answers 400; do not
-   test with `''`, which PowerShell drops.
+1. The record page's first header button is **Submit for Approval**, and there is no second one.
+2. Choose it. The modal names the route: a 5,000 deal goes to `OPP_Manager_Approval` by
+   `OPP_Catch_All`; a deal of 250,000 or more goes to `OPP_Two_Level_Mgmt` by `OPP_Large_Deal`.
+3. Submit. The timeline in the sidebar shows the entry without a reload, and *Matrix Submission*
+   is ticked.
+4. The approval is with `amfu1`, your manager. That user's Platform license cannot open
+   Opportunities, so approve or recall it yourself from Approval History. *Matrix Submission*
+   unticks.
 
-Record the results in the technical log as **M10.8**, the way M7.7 and M8.7 record theirs.
+Record the result in the technical log as **M11.6**.
 
 ### Also open
 
-- **M8's manual UI check (step 6):** on a throwaway record, submit; submit again (refused by
-  name, no modal, no new log row); recall (*Matrix Submission* unticks); resubmit (it routes).
-  Technical log M8.7d. Step 6's throwaway, pending after the gate, can serve for everything after
-  the first submit.
+- **M8's manual UI check (step 6), technical log M8.7d.** PR-00000027, pending since M10.8, serves
+  it from its second step: submit again (refused by name, no modal, no new log row), recall
+  (*Matrix Submission* unticks), resubmit (it routes).
 - **Optional, M9's manual check:** a throwaway rule using the new grammar, previewed in the UI.
   Technical log M9.4.
 
 ---
 
-## 2. Done: per-record guard staging (M10.3b, built as M10.7)
+## 2. What M11 found
 
-Step 9 now sets `Matrix_Submission__c` with `Database.update(records, false)`. A record the
-platform will not let it set (a validation rule it fails, or the lock a final approval left)
-gets a `Failed` outcome and decision log row carrying the platform's reason, and is not
-submitted; the rest go ahead. The header button gets the same answer instead of an exception.
-Re-arming a refused record stays all-or-nothing. Two real-platform tests cover it, over a record
-approved through `PR_Three_Level_Finance` and resubmitted by a non-admin. Technical log M10.7 has
-the design, the fixture's assumption, and the evidence.
+Governing Opportunity took configuration only; no engine class or LWC changed. The surprises were
+where the playbook expected them:
 
----
+- **Opportunity's four stock layouts listed the standard Submit button.** The source gate now
+  fails any governed object's layout that keeps it, or that has no explicit action list (§6.3).
+- **The platform assigns an approval to a user whose license excludes the object.** It sent both
+  Opportunity work items to `amfu1`. So both Opportunity templates follow the submitter's manager
+  hierarchy, and §11 now requires approvers to be licensed for the object.
+- **SOQL's documented limit of 55 child-to-parent relationships is not enforced in Apex.** One
+  query joined 142 and returned its row. The validator therefore runs each object's real union
+  query, instead of the count M9.5 proposed.
+- **The source is now tied to `amf-dev` twice over.** `PR_Three_Level_Finance` names this org's
+  usernames, and the Opportunity layouts reference this org's sample fields.
 
-## 3. The next phase — M11, a second governed object
-
-**Goal** (playbook Part 5): prove §3.2's claim that governing a new object is configuration and
-conventions only, with no engine change. That means a guard field; templates with the entry
-criterion and the three clearing actions; the standard Submit for Approval button removed (§6.3);
-rules; permission-set entries; and the timeline on the object's record page.
-
-**Needs from the user:** authorisation in `CLAUDE.md`, and one decision — which object.
-
-**Recommendation: Opportunity.** A standard object has no `__c`, has required fields (StageName,
-CloseDate), record types, its own Submit for Approval button and its own sharing. That exposes
-more hidden `Purchase_Request__c` assumptions in the source gate, the validator, the timeline page
-and the tests, and finding them is the point of the phase. A second custom object would mostly
-repeat what M3 already proved. Production Apex and LWC hard-code no object, so expect the
-surprises in metadata, the gates and the tests. Opportunity usually carries triggers: since M10.7
-a partial guard failure saves the other records in a second attempt that runs their triggers
-again, so check that they tolerate it.
-
-**Can ride along:** the validator check for SOQL's limit of 55 child-to-parent relationships
-across the union of an object's rules (M9.5). It is small.
-
-**Before building:** write M11's entry in playbook Part 3, with its gate, as M10 did.
+The M10.8 fixture finding still stands: under `System.runAs`, the lock a final approval leaves did
+not stop the guard update.
 
 ---
 
-## 4. After M11
+## 3. The next phase — the user's choice
+
+Playbook Part 5 is a proposal; `CLAUDE.md` authorises nothing beyond M11.
 
 - **M12 — template lifecycle, and queue and committee templates.** The source gate enforces §5.1's
-  `_v2` versioning convention. Decide first how "never edited in place" is detected, and whether
-  committee steps go on Classic now or wait for Flow. The templates' org-bound approver usernames
-  (M10.7 carried) belong here too: the source deploys only to `amf-dev`.
+  `_v2` convention. Decide first:
+  - how "never edited in place" is detected;
+  - whether committee steps go on Classic now or wait for Flow.
+
+  The source-portability items belong here too, because a second org or CI needs both fixed: a
+  `replacements` entry for the approver usernames, and a decision on standard-object layouts.
 - **Flow approvals** — the second execution strategy, and the largest item. It is partly blocked
   on the unanimous-approval metadata value (§12 item 1), bound by `docs/spike-results.md` Round 2
   and by engine classes staying at API ≤ 66, and it owns the M6 teardown.
-- **Smaller items:** playbook Part 5's "Smaller items, not phases" table, and the technical log's
-  M10.7 carried table. That table includes tightening `Lock_Decision_Log`, husky's pre-commit hook
-  (it would reformat whole files), and a caution for any record-triggered Flow that calls the
-  action: the engine's guard update re-triggers it, so its entry conditions must exclude that
-  update.
+- **Smaller items** (Part 5's table, M11.5's carried table):
+  - the Approval Decisions related list's New and Mass Change Owner buttons;
+  - tightening `Lock_Decision_Log`;
+  - husky's pre-commit hook;
+  - the remaining field types (DateTime, Email, Phone, URL, Text Area).
 
 ---
 
 ## Decisions waiting on the user
 
-1. Run M10's org gate (and M8's step 6) against `develop`, and report the results.
-2. Authorise M11 and choose its object (recommended: Opportunity).
+1. Run M11's manual UI check, and M8's, and report the results.
+2. Choose the next phase and authorise it in `CLAUDE.md`.

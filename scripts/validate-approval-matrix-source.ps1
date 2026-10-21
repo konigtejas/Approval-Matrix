@@ -14,6 +14,13 @@
         allowed, its recall actions: every way a request leaves the process
         must re-arm the guard (arch doc 5.2, M8).
 
+    For every object an active rule governs, it requires (arch doc 6.3, M11):
+      - at least one of its layouts in source;
+      - an explicit platformActionList on each, without the standard Submit for
+        Approval button (Submit / StandardButton). A layout with no list shows
+        the platform's default actions, which include that button once an
+        approval process exists (technical log M3.9).
+
     Run from the repository root:
 
       powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1
@@ -38,11 +45,14 @@ $resolvedSourceRoot = (Resolve-Path -LiteralPath $SourceRoot).Path
 $rulesDirectory = Join-Path $resolvedSourceRoot 'customMetadata'
 $approvalProcessesDirectory = Join-Path $resolvedSourceRoot 'approvalProcesses'
 $workflowsDirectory = Join-Path $resolvedSourceRoot 'workflows'
+$layoutsDirectory = Join-Path $resolvedSourceRoot 'layouts'
 $errors = New-Object System.Collections.Generic.List[string]
 $activeRuleCount = 0
+$checkedLayoutCount = 0
 
 # Several rules may route to one template; each template is checked once.
 $checkedProcesses = New-Object 'System.Collections.Generic.HashSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
+$governedObjects = New-Object 'System.Collections.Generic.SortedSet[string]' ([System.StringComparer]::OrdinalIgnoreCase)
 $guardClearingUpdatesByObject = @{}
 
 if (-not (Test-Path -LiteralPath $rulesDirectory -PathType Container)) {
@@ -165,6 +175,52 @@ function Test-GuardClearing {
     }
 }
 
+<#
+    Arch doc 6.3: the standard Submit for Approval button is removed from every
+    governed object's layouts, so that every submission goes through the engine.
+    In Lightning it is the platformActionList entry Submit / StandardButton, and
+    a layout with no list shows the platform's default set, which includes it
+    once an approval process exists (technical log M3.9). Opportunity's layouts
+    listed it explicitly until M11. A layout that exists only in the org cannot
+    be checked here, which is why a governed object with none in source fails.
+
+    Returns how many layouts were checked.
+#>
+function Test-StandardSubmitRemoved {
+    param([string]$ObjectApiName)
+
+    $layouts = @()
+    if (Test-Path -LiteralPath $layoutsDirectory -PathType Container) {
+        $layouts = @(Get-ChildItem -LiteralPath $layoutsDirectory -Filter "$ObjectApiName-*.layout-meta.xml" -File)
+    }
+
+    if ($layouts.Count -eq 0) {
+        $errors.Add("No layout of $ObjectApiName is in source, so this gate cannot show that the standard Submit for Approval button is removed from it (arch doc 6.3). Retrieve its layouts into source.")
+        return 0
+    }
+
+    foreach ($layout in $layouts) {
+        [xml]$layoutDocument = Get-Content -LiteralPath $layout.FullName -Raw
+        $namespace = New-MetadataNamespaceManager -Document $layoutDocument
+        $actionList = $layoutDocument.SelectSingleNode('/m:Layout/m:platformActionList', $namespace)
+
+        if ($null -eq $actionList) {
+            $errors.Add("$($layout.Name) has no platformActionList, so its record page shows the platform's default actions, which include the standard Submit for Approval button (arch doc 6.3). Give it an explicit list without Submit.")
+            continue
+        }
+
+        foreach ($item in $actionList.SelectNodes('m:platformActionListItems', $namespace)) {
+            $name = Get-ChildText -Node $item -Name 'actionName' -Namespace $namespace
+            $type = Get-ChildText -Node $item -Name 'actionType' -Namespace $namespace
+            if ($name -eq 'Submit' -and $type -eq 'StandardButton') {
+                $errors.Add("$($layout.Name) keeps the standard Submit for Approval button (Submit / StandardButton) in its platformActionList; remove it, so that every submission goes through the engine (arch doc 6.3).")
+            }
+        }
+    }
+
+    return $layouts.Count
+}
+
 foreach ($rulePath in Get-ChildItem -LiteralPath $rulesDirectory -Filter 'Approval_Matrix_Rule.*.md-meta.xml' -File) {
     [xml]$ruleDocument = Get-Content -LiteralPath $rulePath.FullName -Raw
     $activeValue = Get-CmdtValue -Document $ruleDocument -FieldApiName 'Active__c'
@@ -201,6 +257,8 @@ foreach ($rulePath in Get-ChildItem -LiteralPath $rulesDirectory -Filter 'Approv
         continue
     }
 
+    [void]$governedObjects.Add($objectApiName)
+
     $processFileName = "$objectApiName.$processApiName.approvalProcess-meta.xml"
     $processPath = Join-Path $approvalProcessesDirectory $processFileName
     if (-not (Test-Path -LiteralPath $processPath -PathType Leaf)) {
@@ -226,8 +284,12 @@ foreach ($rulePath in Get-ChildItem -LiteralPath $rulesDirectory -Filter 'Approv
     Test-GuardClearing -ProcessDocument $processDocument -ProcessFileName $processFileName -ObjectApiName $objectApiName
 }
 
+foreach ($governedObject in $governedObjects) {
+    $checkedLayoutCount += Test-StandardSubmitRemoved -ObjectApiName $governedObject
+}
+
 if ($errors.Count -gt 0) {
     throw "Approval Matrix source validation failed:`n - $($errors -join "`n - ")"
 }
 
-Write-Host "Approval Matrix source guard validation passed for $activeRuleCount active rule(s) and $($checkedProcesses.Count) approval process(es): entry criteria, and the guard cleared on every way out."
+Write-Host "Approval Matrix source guard validation passed for $activeRuleCount active rule(s), $($checkedProcesses.Count) approval process(es) and $checkedLayoutCount layout(s) of $($governedObjects.Count) governed object(s): entry criteria, the guard cleared on every way out, and no standard Submit for Approval button."

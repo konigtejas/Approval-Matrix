@@ -69,6 +69,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Opportunity.Matrix_Submission__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Approval_Decision_Log__c.Evaluated_Values__c</field>
         <readable>true</readable>
     </fieldPermissions>
@@ -95,6 +100,11 @@
     <fieldPermissions>
         <editable>false</editable>
         <field>Approval_Decision_Log__c.Object_API_Name__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
+        <field>Approval_Decision_Log__c.Opportunity__c</field>
         <readable>true</readable>
     </fieldPermissions>
     <fieldPermissions>

@@ -90,6 +90,28 @@ There is no object-config metadata type. Three conventions replace it:
 - **No-match** blocks and writes a `Blocked_No_Match` log row. An org wanting default routing adds a visible catch-all rule: priority 9999, expression `TRUE`. The default path then appears *in the matrix*, in priority order, where an auditor reads it — better than a hidden config switch.
 - **Governed** ⇔ the object has active rules. Deactivating an object's rules is the kill switch.
 
+**M11 implementation (2026-10-21): the claim, tested on Opportunity.** Governing a second object,
+and a standard one, took configuration and conventions alone, with no engine or LWC change:
+
+- the guard field, with field-level access to it in both permission sets;
+- Classic templates whose only entry criterion is the guard, with the object's own clearing field
+  update on all three exits (§5.2);
+- the framework's quick action in place of the standard button on every layout of the object
+  (§6.3);
+- the rules;
+- a lookup on the decision log for the related list, which the log writer finds by describe;
+- a record page carrying the timeline (§8).
+
+What surfaced lay outside the engine, as expected:
+
+- A standard object's layouts already list the standard Submit button. They are org-owned
+  metadata, and they tie the source to the org they came from.
+- Approvers need a license that includes the object, and the platform does not check that when it
+  assigns them (§11).
+- SOQL does not enforce the relationship limit the validator was going to count against (§4.4).
+
+Technical log M11 has the details.
+
 ### 3.3 `Approval_Decision_Log__c` — the audit artefact
 
 | Field | Type | Purpose |
@@ -221,9 +243,14 @@ relationship hops, such as `Account__r.Owner.Profile.Name`. That reads "4 hops" 
 uses, where `Account__r.Region__c` is two. "Platform limit" was wrong: SOQL allows **five**
 relationship hops (six segments) and refuses a sixth ("cannot query foreign key relationships
 more than 5 levels away from the root SObject", measured in `amf-dev`). The cap is one constant,
-`AMF_ExprCompiler.MAX_PATH_SEGMENTS`, which the resolver also enforces. A separate platform limit
-then matters: a query may name at most 55 child-to-parent relationships, across the union of an
-object's rules.
+`AMF_ExprCompiler.MAX_PATH_SEGMENTS`, which the resolver also enforces.
+
+**Corrected in M11 (2026-10-21).** This note went on to say that a query may name at most 55
+child-to-parent relationships across the union of an object's rules, the limit Salesforce
+documents. Measured in `amf-dev`, Apex does not enforce it. One dynamic query at API 62 joined 142
+distinct relationships from `WorkOrder` and returned its row; another joined 400 relationship paths
+from Opportunity. The validator therefore runs each object's union query rather than counting
+against a number (§9).
 
 ### 4.5 Caching
 
@@ -379,6 +406,16 @@ The standard **Submit for Approval** button is removed from every governed objec
 
 Flow templates need no entry-criteria dance — an autolaunched orchestration runs only when explicitly launched — but the guard field is still set, for uniform decision-log semantics and as defence against a record-triggered orchestration someone adds later.
 
+**M11 implementation (2026-10-21): the removal is enforced.** On Lightning layouts the standard
+button is the action-list entry `Submit` / `StandardButton`. A layout with no action list shows the
+platform's default set, which includes the button once an approval process exists (technical log
+M3.9). All four of Opportunity's stock layouts listed it explicitly. The source gate (§9) now
+fails any layout of a governed object that keeps it or has no explicit list, and fails a governed
+object with no layout in source, because a layout that exists only in the org cannot be checked.
+The UI API confirmed the result on the record page. It also showed that the Approval History
+related list offers no submit action, so the layout's action list is the only place to remove the
+button.
+
 ### 6.4 Preview
 
 `preview(List<Id>)` runs steps 1–7 and returns matched rule, description and template name **without** writing a log row or submitting. Same code path, `commit = false`. This drives the submit action's confirmation modal.
@@ -523,6 +560,16 @@ is deliberately source-based rather than an unreliable Apex inference. The curre
 implementation is Classic-only; the Flow-template checks above join it when Flow execution and
 `Execution_Type__c` are introduced.
 
+**M11 implementation (2026-10-21): two more checks.**
+
+- **The source gate** fails a governed object's layout that keeps the standard Submit for Approval
+  button, and a governed object with no layout in source (§6.3).
+- **`AMF_ConfigValidator`** runs each governed object's union query (§4.4), exactly as
+  `AMF_FieldPathResolver` builds it for the engine, against no records. It runs only when every
+  rule for the object compiles, as the engine does. A query the platform refuses is reported as
+  `UNION_QUERY_INVALID` with the platform's reason. This replaces counting relationships against
+  SOQL's documented limit, which `amf-dev` does not enforce.
+
 ---
 
 ## 10. Testability
@@ -543,6 +590,16 @@ implementation is Classic-only; the Flow-template checks above join it when Flow
   role hierarchy, a sharing rule, or Apex sharing. Assigning a Classic approval work item does
   not create a record share; the framework intentionally does not alter an adopting org's
   sharing model.
+- **Approvers must also hold a license that includes the governed object** (M11, 2026-10-21). The
+  platform assigned an Opportunity approval to a Salesforce Platform user, whose license grants no
+  Opportunity access, without complaint. It checks neither sharing nor license when it resolves
+  an approver. That is why the Opportunity templates follow the submitter's manager hierarchy:
+  managers of sales users hold sales licenses.
+- **Submitters need read access to the guard field.** The engine finds the guard through describe,
+  and in a user's context describe leaves out a field the user has no FLS on (technical log M1.4d).
+  The engine would then report the object as one it cannot govern. So both permission sets grant
+  read on every governed object's guard (M11). Apex tests cannot show this, because `System.runAs`
+  does not enforce field-level security.
 
 ---
 
@@ -609,6 +666,7 @@ DateTime remains unsupported.
 | **M8** | Post-MVP guard integrity: recall clears the guard (§5.2); a record already in approval is refused (§6.1) | Source gate fails a template that does not clear the guard on approval, rejection and recall; all Apex and Jest tests green; in the real UI a recall unticks `Matrix_Submission__c`, and submitting a pending record is refused by name with no log row |
 | **M9** | Post-MVP full §4.1 grammar: `NOT`/`!`, word forms, `IN`/`NOT IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, paths to three hops | Every evaluator class at ≥ 95% with zero org-data dependence; each construct in the table-driven and malformed-input suites; the shipped matrix still validates; all Apex and Jest tests green |
 | **M10** | Post-MVP §7 entry points: Flow invocable and REST over a per-record engine entry; chunked, isolated submission; the log written after the platform answers | All Apex and Jest tests green, including a real 200-record submission and a real per-record platform refusal; the invocable answers through the platform's invocable framework and the REST endpoint answers a real call |
+| **M11** | Post-MVP second governed object, Opportunity, by configuration and conventions alone (§3.2): guard, two manager-hierarchy templates, the button removed from four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3 and the validator runs each object's union query | Source gate and validator green across both objects and shown to fail broken copies; all Apex and Jest tests green; the UI API shows the framework's action and no standard button; an Opportunity routes, approves and recalls end to end in the org |
 
 ### 13.5 Repository state
 
