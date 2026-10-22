@@ -102,12 +102,12 @@ session needs. Update the row when a phase completes.
 | **M4** | Configuration validator, source guard gate, post-deploy check | **Complete** — source and live-org gates green; 166/166 Apex tests after M4.1, validator at 98% | `9893274` + M4.1 |
 | **M5** | Preview modal — §6.4 preview, confirmation `LightningModal` | **Complete** — 175/175 Apex, 23/23 Jest, service at 100%; preview proved write-free in the org; manual gate run in the real UI on 2026-09-25 (M5.7) except its blocked-path check, which needs the catch-all deactivated | `5b99045` + M5.6, M5.7 |
 | **M6** | Flow approvals technical spike — research only, `spikes/flow-approvals/` | **Complete, one item needs a person** — launch (Q1) and recall/cancel (Q4) confirmed by execution; group/queue any-member confirmed; unanimous metadata value still open; product untouched, 175/175 Apex | `972352a` (mislabelled, see M6.6) |
-| **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Complete** — org gate passed 2026-10-08 (M7.7): deploy, post-deploy check, RunLocalTests and every manual timeline check; 57/57 Jest. The gate's recall check confirmed that a Classic recall leaves the guard set (M7.8), owed to M8 | `25e0b2d` + M7.7 |
-| **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Org gate steps 1–5 passed** 2026-10-08 (M8.7): first deploy refused on a 329-character description, fixed; 197/197 Apex; PR-00000010 repaired. **Step 6, the manual UI check, is owed** | `caeafb3` + M8.7 |
+| **M7** | Decision timeline — §8's LWC, Classic half, on the Purchase Request record page | **Complete** — org gate passed 2026-10-08 (M7.7): deploy, post-deploy check, RunLocalTests and every manual timeline check; 57/57 Jest. The gate's recall check confirmed that a Classic recall leaves the guard set (M7.8), owed to M8. Two display defects, found by the first UI test run, fixed in M12.6: the browser's time zone, and a lost space | `25e0b2d` + M7.7, M12.6 |
+| **M8** | Guard integrity — recall clears the guard; a record already in approval is refused | **Complete** — org gate steps 1–5 passed 2026-10-08 (M8.7): first deploy refused on a 329-character description, fixed; 197/197 Apex; PR-00000010 repaired. Step 6, the manual UI check, passed in the first UI test run, 2026-10-22 (M12.6) | `caeafb3` + M8.7, M12.6 |
 | **M9** | Full expression grammar — `NOT`, word forms, `IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, three-hop paths | **Complete** — gate run in `amf-dev` 2026-10-08: 232/232 Apex, evaluator classes all 100%, mutation-checked, 57/57 Jest, matrix valid; optional manual UI check not run | `a79c880` |
 | **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers; since M10.7 the guard staged per record | **Complete** — org gate passed 2026-10-21 (M10.8): 255/255 Apex at 98% after the locked-record fixture was replaced by a test-only validation rule (the lock did not stop the update in an Apex test), 59/59 Jest, the invocable and REST answered in the org | `393d9d5` + M10.7, M10.8 (`a0273e9`) |
-| **M11** | A second governed object, Opportunity, by configuration alone — guard, two manager-hierarchy templates, the button off four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3, the validator runs each union query | **Complete, one manual check owed** — gate run 2026-10-21: source gate and validator green across both objects and failing broken copies, 264/264 Apex at 98%, 59/59 Jest, UI API shows the action and no standard button, an Opportunity routed, approved and recalled in the org. The relationship limit measured as not enforced (142 joined) | `6e3079d` + `96e5692` |
-| **M12** | Template lifecycle, queue and committee templates, portability. A release manifest makes an in-place edit a gate failure. `PR_Credit_Risk_Queue` and `PR_Finance_Committee` each have a rule. Usernames are filled at deploy, and the org's own configuration has its own package directory. New and Mass Change Owner are off the decision-log list | **Complete, one manual check owed.** Gate run 2026-10-22. The source gate is green and failed broken copies, and a correct `_v2` passed. `force-app` converts with another org's domain. The org's six templates match the manifest. 274/274 Apex at 98%, 59/59 Jest, the related list offers no actions. Queue and committee requests routed, decided and recalled in the org | `bcedf6f` |
+| **M11** | A second governed object, Opportunity, by configuration alone — guard, two manager-hierarchy templates, the button off four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3, the validator runs each union query | **Complete** — gate run 2026-10-21: source gate and validator green across both objects and failing broken copies, 264/264 Apex at 98%, 59/59 Jest, UI API shows the action and no standard button, an Opportunity routed, approved and recalled in the org. The relationship limit measured as not enforced (142 joined). The manual check, step 8, passed in the first UI test run, 2026-10-22 (M12.6) | `6e3079d` + `96e5692`, M12.6 |
+| **M12** | Template lifecycle, queue and committee templates, portability. A release manifest makes an in-place edit a gate failure. `PR_Credit_Risk_Queue` and `PR_Finance_Committee` each have a rule. Usernames are filled at deploy, and the org's own configuration has its own package directory. New and Mass Change Owner are off the decision-log list | **Complete; the UI suite's re-run owed.** Gate run 2026-10-22. The source gate is green and failed broken copies, and a correct `_v2` passed. `force-app` converts with another org's domain. The org's six templates match the manifest. 274/274 Apex at 98%, 59/59 Jest, the related list offers no actions. Queue and committee requests routed, decided and recalled in the org. The manual check, step 11, passed in the first UI test run that day. M12.6 fixed the two timeline defects that run found: 60/60 Jest, 274/274 Apex, deployed | `bcedf6f` + M12.6 |
 
 ### Superseded — the v1.0 plan
 
@@ -4104,3 +4104,186 @@ This table supersedes M11.5's.
 | M9.5's grammar items: DateTime, the text-like field types, reserved keywords, field-to-field multipicklists | as in M9.5 |
 | ~~The Approval Decisions related list offers New and Mass Change Owner (M11.5)~~ | **closed in M12** |
 | ~~The source deploys only to `amf-dev` (M11.5)~~ | **closed in M12**, offline; see the portability row |
+
+### M12.6 Follow-up: the first UI test run, and two timeline fixes (2026-10-22)
+
+**Status:** complete. The fixes are deployed to `amf-dev` and passed every automated check. The UI
+suite's re-run against them is owed to the user.
+
+The user asked for test scripts that an AI agent could run in the browser, to hand over the manual
+UI checks that M8, M11 and M12 owed. The agent runs as its own Salesforce user, Grok Bot. The user
+ran it once, as R20261022-1412. They then asked for its report to be checked, and for the necessary
+fixes. `CLAUDE.md` records the authorisation: `amfDecisionTimelineEntry` and its Jest test alone,
+plus the suite.
+
+| File | Change | Notes |
+|---|---|---|
+| `docs/ui-tests/ui-test-scripts.md` | **new** | 16 test cases and 75 steps, each with a PASS and a FAIL condition the agent can observe; corrected after the first run (f) |
+| `docs/ui-tests/README.md` | **new** | for the person who runs the agent: its user, the login link, the parameters, the coverage, reading a report |
+| `lwc/amfDecisionTimelineEntry/amfDecisionTimelineEntry.js` | **modified** | imports the viewer's time zone, `@salesforce/i18n/timeZone` |
+| `lwc/amfDecisionTimelineEntry/amfDecisionTimelineEntry.html` | **modified** | `time-zone` on both date components; the heading's comma in a span of its own; `data-id="approval-heading"` |
+| `lwc/amfDecisionTimelineEntry/__tests__/amfDecisionTimelineEntry.test.js` | **modified** | one test of the time zone, with the import mocked to `Asia/Kolkata`; one assertion of the whole heading |
+| `CLAUDE.md`, `docs/build-playbook.md` (the gate notes of M8, M11 and M12; the M12.6 follow-up; Part 5), `docs/handoff.md` | **modified** | authorisation, gate, handoff |
+
+No Apex class, object, layout, approval process, permission set or CMDT row changed.
+
+**(a) The suite.** Every expected value was read from the build, not written from memory:
+
+- the LWC templates and their Jest tests;
+- the shipped CMDT rows;
+- the UI API in `amf-dev`;
+- the approval history of M12's gate requests;
+- a REST call that changes nothing.
+
+The agent creates its own records and judges each step by what it can see. It reports a failure
+rather than working around it. Two tests are optional: TC-15 changes Setup (M9's optional check),
+and TC-16 opens Flow Builder.
+
+**(b) The agent's user.** The expected values were read as Tejas Vernekar, the CLI's user. Grok Bot
+(`tejas.vernekar@wissen.com.grokbot`) was made that user's equal by anonymous Apex:
+
+- profile System Administrator;
+- permission set `Approval_Matrix_Admin`;
+- manager AMF Approver One.
+
+Its locale (en_US) and time zone (America/Los_Angeles) already matched, and the licence count stayed
+at 4 of 4. The suite takes the user's name as a parameter, `TESTER`. Grok Bot can now do anything an
+administrator can, editing decision log rows included, so the README says to deactivate it between
+runs.
+
+**(c) The run.** R20261022-1412, 08:42 to 09:29 UTC, without the optional tests:
+
+```
+records     PR-00000039 (D1), -40 (D2), -41 (D3); accounts UITEST R20261022-1412 Energy Co and
+            Hotels Ltd; its Energy deal (D5), Hotels deal (D7) and Large deal (D8);
+            log rows ADL-00000021 to -25
+tests       14 PASS, 3 FAIL (TC-03, TC-09, TC-14), 2 NOT RUN
+steps       64 PASS, 3 FAIL (TC-03.6, TC-09.5, TC-14.5), 8 NOT RUN, 0 BLOCKED
+afterwards  the guard false on all six governed records; no open work item from the run; every log row
+            unchanged since written (CreatedDate = LastModifiedDate, both by Grok Bot)
+```
+
+It closed three owed checks:
+
+- **M12's, step 11.** TC-03.1's modal named `PR_Credit_Risk_Queue`. TC-03.4 showed the step waiting
+  on *Credit Risk*. TC-01.4 and TC-03.6 found no New or Change Owner on Approval Decisions.
+- **M11's, step 8.** TC-11.1 found one Submit for Approval. TC-14 previewed and submitted, the
+  timeline updated without a reload, and the guard ticked. The header shows Follow first, so the run
+  counted the action rather than taking its position, which step 8 names.
+- **M8's, step 6.** TC-05 refused the pending request by name, with no modal and no new log row.
+  TC-06 recalled it, and the guard cleared. TC-07 routed it again.
+
+**(d) The report, item by item.** Each item was checked against the source and the org first:
+
+| Report item | Verdict | Evidence |
+|---|---|---|
+| TC-03.6, TC-09.5, TC-14.5: no Rule Version or Selected Process column | the script's error | the card shows the first four of the layout's six columns, Lightning's limit for the Related Lists component. The script took its columns from the layout |
+| Timeline times 3 hours ahead of the related lists | **defect 1** | (e) |
+| "PR_Credit_Risk_Queue,In approval", passed with a flag | **defect 2** | (e). The script's matching rule was loose enough to let it pass |
+| Outcome stays "Submitted" after approval | by design | the log records the route, not the approval's result (§3.3); TC-08.4 now asserts it |
+| ADL-00000021's Submitted At "reads 2:10 AM", not 2:19 | a misread | stored as 09:19:46 UTC, and its approval created at 09:19:47 UTC: both 2:19 AM Pacific |
+| The log link "opens in a new console tab" | the agent's browser | `UserAppInfo` shows the Sales app all run, which has standard navigation. The link navigates in place |
+| `$60,000.00` on the record, `60,000` in the modal | the script's error | a currency field. TD-01 now expects the currency form |
+| Recall sits only in the card's drop-down | the script's error | section 0.6 now explains a card's drop-down |
+| Stage set before the Account lookup; a browser crash; a 4.5-second watch; a late toast; a missing screenshot | the agent | no duplicate: 3 test opportunities and 2 accounts exist. TC-12.3 proved the cancelled preview wrote nothing |
+| "Instead of Tejas Vernekar" in the report's header | the agent's copy | it may predate `TESTER`. The current file names no user |
+
+**(e) The two defects.**
+
+1. **Times followed the browser's time zone.**
+   - Grok Bot, Tejas and the org are all on America/Los_Angeles.
+   - ADL-00000021 was stamped 09:19:46 UTC, which the related lists showed as 2:19 AM. The timeline
+     showed 05:19 AM, which is UTC−4 and matches no Salesforce setting, so it came from the agent's
+     browser.
+   - Given no `time-zone`, `lightning-formatted-date-time` uses the device's zone. The entry now
+     passes `@salesforce/i18n/timeZone`, the viewer's Salesforce zone, to both of its date
+     components, the entry's and each step's.
+   - Nothing caught it before. M7.7's manual check compared no times, and the Jest stub of the date
+     component renders nothing, so no test saw a zone.
+   - The new test mocks the import to a zone that is neither the Jest default nor `amf-dev`'s, so
+     the value must come from the import.
+2. **The heading lost a space.**
+   - Where HTML renders a line break between text and a tag as one space, the LWC compiler drops
+     it, with its indentation.
+   - The template broke the line after `</span>,`, so the compiled fragment read
+     `</span>,<span data-id="approval-status">`.
+   - The comma and its space now sit in a span of their own, and the fragment reads
+     `</span><span>, </span><span data-id="approval-status">`.
+   - A scan of all four templates' compiled output found no other text touching an inline element.
+   - The tests asserted the process and status spans separately, so they missed it. The new
+     assertion reads the whole heading.
+
+**(f) The script's corrections**, from the run:
+
+- TC-03.6, TC-09.5 and TC-14.5 check only the columns the card shows.
+- Section 0.6 explains a card's drop-down and its four columns. A card "offers" an action in either
+  place.
+- A missing space is now a difference (0.4). TC-03.4 keeps the exact heading, and TC-06.3, TC-08.3
+  and TC-10.6 check only its names, so one defect fails one step.
+- TC-03.6 compares the timeline's time with Approval History's, to the minute.
+- TC-08.4 asserts that both of D1's log rows still read Submitted.
+- TD-01 expects currency amounts, and fills an Opportunity's Account Name last.
+- TC-04.1 accepts the log opening in a new tab, and TC-05.1 takes its screenshot before the toast
+  closes.
+
+**Issues encountered.**
+
+- **The first queries of the run's records went through the Bash tool,** where `sf` fails (Part 1's
+  machine notes). One held `>=`, which cmd.exe took as a redirect. It left an empty file named
+  `'ADL-00000021'` in the project root, deleted at once. The queries then went through PowerShell.
+- **`@lwc/template-compiler` 8.28's `compile()` takes the file name second and the options third.**
+  Passing the options second fails with LWC1028.
+
+**Verification evidence:**
+
+```
+Jest, before the fix  the entry's suite 2 failed, 21 passed:
+                        time zone  Expected 4 x "Asia/Kolkata"; Received 4 x undefined
+                        heading    Received "Approval history: PR_Three_Level_Finance,In approval"
+Jest, after           60/60 in 4 suites (59 before, plus the time-zone test)
+ESLint                0 findings on the entry and its test
+compiled heading      Approval history: <span data-id="process">…</span><span>, </span><span
+                      data-id="approval-status">…</span>
+source gate           passed: 8 active rules, 6 approval processes guard-checked, 6 of 6 templates
+                      released and unchanged, 5 layouts of 2 governed objects
+deploy                0Afaj00000ohxZVCAY Succeeded 129/129, 0 errors. It marked as changed the same
+                      eleven components as M12's deploy (0Afaj00000obhu1CAA); only the entry's
+                      source differs
+the org's copy        retrieved: time-zone={timeZone} on both date components, the comma's span,
+                      the import
+post-deploy check     "Approval Matrix configuration is valid."
+RunLocalTests         707aj00001N5wUj: 274/274, in 489 s (no Apex changed)
+```
+
+**Owed: the UI suite's re-run** against this build, as `docs/ui-tests/README.md` describes. TC-03.4
+checks the heading, and TC-03.6 the time zone. TC-03.6's check only bites when the agent's browser
+is not on Pacific time.
+
+### M12.6 Carried into later phases
+
+This table supersedes M12.5's.
+
+| Item | Owner |
+|---|---|
+| The UI suite's re-run against M12.6 | user |
+| Grok Bot holds System Administrator in `amf-dev`. Deactivate it, or return it to Standard User, between runs | user |
+| PR-00000027 has been pending since M10.8 to serve M8's check, which M12.6 closed. It can be recalled | user |
+| The Approval Decisions card shows four of its six columns. Reordering them, or an enhanced list, would bring Selected Process onto it | if wanted |
+| The decision log's page offers Submit for Approval, Edit and Delete. An explicit action list on its layout would remove them (`docs/ui-tests/README.md`) | a later hardening pass |
+| `AMF_CmdtRuleProviderTest.shippedMatrixComesBackInPriorityOrder` reads the org's shipped rules, not only the pin (M12.3b); a new lowest-priority rule changes it again | a hardening pass |
+| Portability is shown offline only: no second org has deployed `force-app`. In one, the admin also removes the standard Submit button from its own layouts of each governed standard object (§6.3) | whoever sets up CI or a second org |
+| Every deploy that includes approval processes needs `AMF_USERNAME_DOMAIN`, `amf-dev`'s included (`CLAUDE.md`'s deploy line). A retrieve writes real usernames back, which the gate refuses: put the placeholder back | everyone who deploys or retrieves |
+| The gate's fingerprints govern source only. A template edited in Setup is found only by the retrieve-and-compare of M12.4 step 5, which is not scripted | a later hardening pass |
+| Six tests take 21 to 88 s each, and RunLocalTests 489 s. `aMemberThroughAPublicGroupCanDecideAQueueStep` (M12.3g) and the 200-record test are among them | if suite time matters |
+| `Lock_Decision_Log` still permits one post-insert stamp of `Execution_Ref_Id__c`, which nothing performs since M10 (M10.6). Test it against deleting a governed record (M3.12) | a later hardening pass |
+| The seeded approvers cannot approve Opportunities (Platform licenses) | if a demo needs it |
+| Whether the lock a final approval leaves stops a real non-admin's Apex update outside a test is unmeasured (M10.8a) | if a need appears |
+| The preview cannot foresee a guard failure (M10.7h) | if a need appears |
+| A record-triggered Flow on a governed object that calls the action is re-triggered by the engine's guard update and by the templates' clearing update; its entry conditions must exclude those | whoever builds such a Flow |
+| husky's pre-commit would rewrite every file a commit touches (M10.7); commits here run with `HUSKY=0` | a tooling decision |
+| Still open from M8.7c: PR-00000014 to PR-00000025 carry the guard; they go with M6's teardown | M6 teardown |
+| The playbook's optional manual M9 check. The UI suite's TC-15 runs it when `RUN_OPTIONAL` is `yes` | user, optional |
+| M9.5's grammar items: DateTime, the text-like field types, reserved keywords, field-to-field multipicklists | as in M9.5 |
+| ~~M12's manual UI check (step 11)~~ | **closed in M12.6** |
+| ~~M11's manual UI check (playbook M11, step 8)~~ | **closed in M12.6** |
+| ~~Still open from M8.7: the manual UI check (step 6)~~ | **closed in M12.6** |

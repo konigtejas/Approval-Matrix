@@ -1,11 +1,16 @@
 # Handoff — what's next after M12
 
-**As of 2026-10-22.** `develop` holds Phase M12, with its gate run in `amf-dev`. Only its manual UI
-check is owed. M11's and M8's manual checks are also still open.
+**As of 2026-10-22.** `develop` holds Phase M12 and its follow-up M12.6, with every gate run in
+`amf-dev`:
+- M8's, M11's and M12's owed manual UI checks passed in the first run of the UI test suite, which an
+  AI agent ran in the browser.
+- That run found two display defects in the timeline, which M12.6 fixed.
+- What is owed is the suite's re-run against the fix.
 
 This is the short version. The sources are:
 
-- `docs/technical-log.md`: the status board, M12, and M12.5's table of open items;
+- `docs/technical-log.md`: the status board, M12, M12.6, and M12.6's table of open items;
+- `docs/ui-tests/`: the UI test suite, and the guide for whoever runs it;
 - `docs/build-playbook.md`: Part 3's gates, Part 5's roadmap;
 - `docs/architecture.md`: v3.0, the target design this document measures progress against.
 
@@ -26,32 +31,23 @@ org's own configuration.
 
 ## 1. Owed by the user — nothing to build
 
-### M12's manual UI check (playbook M12 gate, step 11)
+### The UI suite's re-run (M12.6's manual gate)
 
-As the admin, on a new Purchase Request, Risk Level *Medium*, Amount 60,000:
+Run the whole suite again, as `docs/ui-tests/README.md` describes, with a fresh `RUN`. It makes its
+own records and took the agent 47 minutes the first time. Two steps check the fixes:
 
-1. Choose **Submit for Approval**. The modal names `PR_Credit_Risk_Queue`, by
-   `PR_Credit_Risk_Review`.
-2. Submit. The timeline shows the pending step with *Credit Risk*, the queue.
-3. The **Approval Decisions** related list offers no New button and no Change Owner.
-4. Recall it, or approve it from Approval History. *Matrix Submission* unticks.
+- TC-03.4: the line reads "Approval history: PR_Credit_Risk_Queue, In approval", with the space;
+- TC-03.6: the timeline's time equals Approval History's. This check only bites when the agent's
+  browser is not on Pacific time, Grok Bot's Salesforce time zone.
 
-Record the result in the technical log as **M12.6**.
+The first run's three FAILs were the script's errors, now corrected, so a clean run is all PASS.
+Record it as a sub-entry after M12.6. With `RUN_OPTIONAL` set to `yes`, the same run also answers
+M9's optional check (TC-15) and lists the Flow actions (TC-16).
 
 ### Also open
 
-- **M11's manual UI check (playbook M11, step 8).** On a throwaway Opportunity:
-  1. There is one Submit for Approval button.
-  2. The modal names the route.
-  3. The timeline updates without a reload, and *Matrix Submission* is ticked.
-
-  The handoff after M11 has the detail. Record it as M11.6.
-- **M8's manual UI check (step 6), technical log M8.7d.** PR-00000027, pending since M10.8, serves
-  it from its second step:
-  1. Submit again: it is refused by name, with no modal and no new log row.
-  2. Recall: *Matrix Submission* unticks.
-  3. Resubmit: it routes.
-- **Optional, M9's manual check:** a throwaway rule using the new grammar, previewed in the UI.
+- **Grok Bot holds System Administrator in `amf-dev`**, for the suite. Deactivate it, or return it
+  to Standard User, between runs.
 
 ---
 
@@ -73,6 +69,19 @@ Record the result in the technical log as **M12.6**.
   holds no `amf-dev` value. The playbook's guardrail allows `amf-dev` alone, so no second org was
   used.
 
+**The first UI run (M12.6) found:**
+
+- **The timeline's times followed the browser's time zone.** Given no zone,
+  `lightning-formatted-date-time` uses the device's, not the user's Salesforce setting. The agent's
+  browser was on UTC−4 and Grok Bot on Pacific, so the timeline read 3 hours ahead of the related
+  lists. Fixed in M12.6.
+- **The LWC compiler drops a line break between text and a tag,** and a space with it, where HTML
+  would render one. The "Approval history:" heading lost the space after its comma. Fixed in
+  M12.6, and no other template has the pattern.
+- **A related-list card shows four columns.** The Approval Decisions card shows Decision Log
+  Number, Submitted At, Outcome and Matched Rule. Rule Version and Selected Process are on the log
+  record and in the timeline.
+
 ---
 
 ## 3. Where the build stands: thirteen phases
@@ -86,14 +95,14 @@ Record the result in the technical log as **M12.6**.
 | **M4** | Configuration validator, the source gate, the post-deploy script | Complete |
 | **M5** | Preview, and the submit action's confirmation modal | Complete |
 | **M6** | Flow approvals spike, research only (`spikes/flow-approvals/`) | Complete; the unanimous value is still open |
-| **M7** | Decision timeline LWC, Classic half | Complete |
-| **M8** | Guard integrity: recall clears the guard; a record already in approval is refused | Complete; manual UI check owed |
+| **M7** | Decision timeline LWC, Classic half | Complete; two display fixes in M12.6 |
+| **M8** | Guard integrity: recall clears the guard; a record already in approval is refused | Complete |
 | **M9** | The full §4.1 grammar | Complete |
 | **M10** | The Flow invocable and REST entry points, and per-record bulk submission | Complete |
-| **M11** | A second governed object, Opportunity | Complete; manual UI check owed |
-| **M12** | Template lifecycle (release manifest), queue and committee templates, portability | Complete; manual UI check owed |
+| **M11** | A second governed object, Opportunity | Complete |
+| **M12** | Template lifecycle (release manifest), queue and committee templates, portability; M12.6, the first UI run and two timeline fixes | Complete; the UI suite's re-run owed |
 
-The MVP was M0–M3; M4–M12 are post-MVP. **Nothing after M12 is numbered or authorised.** What is
+The MVP was M0–M3; M4–M12 are post-MVP. **Nothing after M12.6 is numbered or authorised.** What is
 left of architecture v3.0's target design is Flow approvals, probably two phases (M13 and M14, as a
 proposal), plus the smaller gaps in 4.2.
 
@@ -162,6 +171,7 @@ spike flows, groups and records, including PR-00000014 to PR-00000025 and their 
 | Preview and guard failures | A record a validation rule will refuse still previews as routable | M10.7h |
 | The final-approval lock outside a test | Unmeasured | M10.8a |
 | LWC tidy-up | `messageOf` duplicated in two LWCs; `.prettierrc` indents 2, the code 4 | M7.6 |
+| The Approval Decisions card | Shows four of its six columns, Lightning's limit for the Related Lists component. Reordering them, or an enhanced list, would bring Selected Process onto it | M12.6 |
 | husky pre-commit | Would reformat whole files; commits run with `HUSKY=0` | M10.7 |
 
 ### 4.3 Deliberately not planned
@@ -177,8 +187,7 @@ spike flows, groups and records, including PR-00000014 to PR-00000025 and their 
 
 ## 5. Suggested order
 
-1. **The owed UI checks** (section 1): M12's, then M11's and M8's. About twenty minutes in the
-   browser.
+1. **The UI suite's re-run** (section 1), against M12.6.
 2. **Flow approvals (4.1).** Decide first whether committee steps are wanted on Flow. If they are,
    a person must find the unanimous value in Flow Builder before the phase. If not, it can be
    built with named and any-member steps, and committees stay on Classic.
@@ -187,6 +196,6 @@ spike flows, groups and records, including PR-00000014 to PR-00000025 and their 
 
 ## Decisions waiting on the user
 
-1. Run M12's manual UI check, and M11's and M8's, and report the results.
+1. Re-run the UI suite against M12.6, and share the agent's report.
 2. Choose the next phase and authorise it in `CLAUDE.md`. For Flow approvals, say whether
    committee steps are wanted on Flow.

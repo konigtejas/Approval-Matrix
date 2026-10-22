@@ -28,6 +28,10 @@ jest.mock(
     { virtual: true }
 );
 
+// The viewer's Salesforce time zone. Not the Jest default, America/Los_Angeles, which is also
+// amf-dev's, so a test can tell the value the import gives from one written into the component.
+jest.mock('@salesforce/i18n/timeZone', () => ({ __esModule: true, default: 'Asia/Kolkata' }), { virtual: true });
+
 const SUBMITTER = '005000000000001AAA';
 const ANALYST = '005000000000003AAA';
 const CONTROLLER = '005000000000004AAA';
@@ -198,6 +202,16 @@ describe('c-amf-decision-timeline-entry', () => {
         expect(byId(element, 'date').value).toBe('2026-09-25T09:00:00.000Z');
     });
 
+    it("writes every time in the viewer's Salesforce time zone, not the browser's", () => {
+        const element = render(ROUTED, true);
+
+        // Given no zone, lightning-formatted-date-time uses the browser's, which need not be the one
+        // the rest of Salesforce shows: the first UI test run saw the timeline 3 hours out (M12.6).
+        const dates = Array.from(element.shadowRoot.querySelectorAll('lightning-formatted-date-time'));
+        expect(dates).toHaveLength(1 + ROUTED.approval.steps.length);
+        expect(dates.map((date) => date.timeZone)).toEqual(dates.map(() => 'Asia/Kolkata'));
+    });
+
     it('starts collapsed unless told otherwise, and says so to assistive technology', () => {
         const element = render(ROUTED);
 
@@ -228,6 +242,11 @@ describe('c-amf-decision-timeline-entry', () => {
 
         expect(textOf(byId(element, 'process'))).toBe('PR_Three_Level_Finance');
         expect(textOf(byId(element, 'approval-status'))).toBe('In approval');
+        // The whole line, because the LWC compiler drops a line break between text and a tag, and
+        // a space the template carried only that way went with it (M12.6).
+        expect(textOf(byId(element, 'approval-heading'))).toBe(
+            'Approval history: PR_Three_Level_Finance, In approval'
+        );
 
         expect(allById(element, 'step-title').map(textOf)).toEqual([
             'Submitted',

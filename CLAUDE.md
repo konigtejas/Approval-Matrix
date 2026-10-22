@@ -64,6 +64,10 @@ of a standard object. The rider: New and Mass Change Owner leave the Approval De
 list on every layout. M12 supersedes "queue or committee templates" and "_v2 template cloning" on
 the out-of-scope list and changes no engine class or LWC. The template registry stays out
 (§12 item 4), and committee steps on Flow wait for the unanimous value (§12 item 1).
+M12.6 (authorised 2026-10-22) fixes two display defects that the first UI test run found in M7's
+timeline entry. Its times follow the viewer's Salesforce time zone, not the browser's, and its
+"Approval history" line keeps the space after its comma. It changes amfDecisionTimelineEntry and
+its Jest test alone, and adds the UI test suite under docs/ui-tests.
 
 ## MVP SCOPE — build ONLY these
 - One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)

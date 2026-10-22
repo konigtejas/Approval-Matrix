@@ -428,6 +428,9 @@ proves the guard is cleared and that a bypass submission is then refused. Anothe
 pending record is refused in preview and submit with nothing logged, and that a caller who cannot
 read the record is told about access, not about the approval.
 
+**Gate run 2026-10-08 (technical log M8.7):** steps 1–5 passed. Step 6, the manual UI check, passed
+in the first UI test run, on 2026-10-22 (technical log M12.6, TC-05 to TC-07).
+
 ---
 
 ### M9 — Full expression grammar (post-MVP)
@@ -627,7 +630,9 @@ compiles. The source gate is shown, on scratch copies, to fail a layout with `Su
 layout with no action list.
 
 **Gate run 2026-10-21 (technical log M11.4):** steps 1–7 passed, with 264/264 Apex tests. Step 8,
-the manual UI check, is owed to the user.
+the manual UI check, passed in the first UI test run, on 2026-10-22 (technical log M12.6, TC-11 and
+TC-14). The header shows Follow before Submit for Approval, so the run counted the action rather
+than its position.
 
 ### M12 — Template lifecycle, queue and committee templates, portability (post-MVP)
 
@@ -728,8 +733,22 @@ templates, and the timeline's account of who acted. `force-app` deploys with any
 `amf-dev` holds exactly the released templates.
 
 **Gate run 2026-10-22 (technical log M12.4):** steps 1–10 passed, with 274/274 Apex tests. Step 11,
-the manual UI check, is owed to the user. A second org was not used: the guardrail allows `amf-dev`
-alone, so portability is shown offline (step 3).
+the manual UI check, passed in the first UI test run that day (technical log M12.6, TC-01 and
+TC-03). A second org was not used: the guardrail allows `amf-dev` alone, so portability is shown
+offline (step 3).
+
+**Follow-up M12.6 (2026-10-22): two timeline display fixes.** The first UI test run
+(`docs/ui-tests/`) found two defects in M7's `amfDecisionTimelineEntry`:
+- its times followed the browser's time zone, not the viewer's Salesforce one;
+- its "Approval history:" line lost the space after its comma.
+
+The entry now gives both date components `@salesforce/i18n/timeZone`, and the comma has a span of
+its own. No Apex or other metadata changes. Gate:
+1. Jest: the new time-zone test and the whole-heading assertion fail before the fix and pass after
+   it, and every suite passes.
+2. The source gate, the deploy, the post-deploy check and RunLocalTests, as in M12.
+3. **Manual, the UI suite's re-run** (`docs/ui-tests/README.md`): TC-03.4 reads the heading with its
+   space, and TC-03.6 finds the timeline's time equal to Approval History's.
 
 ---
 
@@ -766,11 +785,12 @@ alone, so portability is shown offline (step 3).
 
 | Item | Where |
 |---|---|
-| M8's manual UI check: submit, submit again (refused by name, no modal, no log row), recall (*Matrix Submission* unticked), resubmit | technical log M8.7d |
-| Optional: M9's manual check, a throwaway rule using the new grammar previewed in the UI | technical log M9.4 |
+| ~~M8's manual UI check: submit, submit again (refused by name, no modal, no log row), recall (*Matrix Submission* unticked), resubmit~~ **passed 2026-10-22** in the first UI test run | technical log M12.6 |
+| Optional: M9's manual check, a throwaway rule using the new grammar previewed in the UI. The UI suite's TC-15 runs it when `RUN_OPTIONAL` is `yes` | technical log M9.4 |
 | ~~M10's org gate: deploy, RunLocalTests (255), the invocable and REST checks~~ **passed 2026-10-21** | technical log M10.8 |
-| M11's manual UI check: on a throwaway Opportunity, one Submit for Approval button, the modal names the route, the timeline updates without a reload, *Matrix Submission* ticked | technical log M11.4 |
-| M12's manual UI check: a medium-risk request's modal names `PR_Credit_Risk_Queue`, the timeline shows the step with *Credit Risk*, and the Approval Decisions list offers no New button | technical log M12.4 |
+| ~~M11's manual UI check: on a throwaway Opportunity, one Submit for Approval button, the modal names the route, the timeline updates without a reload, *Matrix Submission* ticked~~ **passed 2026-10-22** in the first UI test run | technical log M12.6 |
+| ~~M12's manual UI check: a medium-risk request's modal names `PR_Credit_Risk_Queue`, the timeline shows the step with *Credit Risk*, and the Approval Decisions list offers no New button~~ **passed 2026-10-22** in the first UI test run | technical log M12.6 |
+| The UI suite's re-run against M12.6, whose TC-03.4 and TC-03.6 check the two timeline fixes | `docs/ui-tests/README.md` |
 
 ### M10 — Entry points and bulk submission *(authorised and built, 2026-10-08)*
 

@@ -1,6 +1,7 @@
 import { LightningElement, api } from 'lwc';
 import { NavigationMixin } from 'lightning/navigation';
 import LOCALE from '@salesforce/i18n/locale';
+import TIME_ZONE from '@salesforce/i18n/timeZone';
 
 /** Outcome__c values (arch doc 3.3). */
 const SUBMITTED = 'Submitted';
@@ -59,6 +60,13 @@ const STEP_STATUS = {
 export default class AmfDecisionTimelineEntry extends NavigationMixin(LightningElement) {
     view = {};
     logUrl;
+
+    /**
+     * The viewer's Salesforce time zone, for every time shown. Given none,
+     * lightning-formatted-date-time uses the browser's, so the timeline could
+     * disagree with the rest of the record page by hours.
+     */
+    timeZone = TIME_ZONE;
 
     _entry;
     _expanded = false;

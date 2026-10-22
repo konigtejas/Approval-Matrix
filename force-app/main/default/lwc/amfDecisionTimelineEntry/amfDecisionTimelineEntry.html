@@ -37,6 +37,7 @@
                                 day="numeric"
                                 hour="2-digit"
                                 minute="2-digit"
+                                time-zone={timeZone}
                                 data-id="date"
                             ></lightning-formatted-date-time>
                         </p>
@@ -109,9 +110,11 @@
 
                         <template lwc:if={view.approval}>
                             <div class="slds-m-top_small" data-id="approval">
-                                <h4 class="slds-text-title slds-m-bottom_x-small">
-                                    Approval history: <span data-id="process">{view.approval.processName}</span>,
-                                    <span data-id="approval-status">{view.approval.status}</span>
+                                <!-- The comma and its space have a span of their own: the LWC compiler
+                                     drops a line break between text and a tag, and a space with it. -->
+                                <h4 class="slds-text-title slds-m-bottom_x-small" data-id="approval-heading">
+                                    Approval history: <span data-id="process">{view.approval.processName}</span
+                                    ><span>, </span><span data-id="approval-status">{view.approval.status}</span>
                                 </h4>
                                 <ol>
                                     <template for:each={view.approval.steps} for:item="step">
@@ -141,6 +144,7 @@
                                                         day="numeric"
                                                         hour="2-digit"
                                                         minute="2-digit"
+                                                        time-zone={timeZone}
                                                     ></lightning-formatted-date-time>
                                                 </p>
                                                 <template lwc:if={step.comments}>
