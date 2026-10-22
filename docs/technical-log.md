@@ -107,7 +107,7 @@ session needs. Update the row when a phase completes.
 | **M9** | Full expression grammar — `NOT`, word forms, `IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, three-hop paths | **Complete** — gate run in `amf-dev` 2026-10-08: 232/232 Apex, evaluator classes all 100%, mutation-checked, 57/57 Jest, matrix valid; optional manual UI check not run | `a79c880` |
 | **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers; since M10.7 the guard staged per record | **Complete** — org gate passed 2026-10-21 (M10.8): 255/255 Apex at 98% after the locked-record fixture was replaced by a test-only validation rule (the lock did not stop the update in an Apex test), 59/59 Jest, the invocable and REST answered in the org | `393d9d5` + M10.7, M10.8 (`a0273e9`) |
 | **M11** | A second governed object, Opportunity, by configuration alone — guard, two manager-hierarchy templates, the button off four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3, the validator runs each union query | **Complete** — gate run 2026-10-21: source gate and validator green across both objects and failing broken copies, 264/264 Apex at 98%, 59/59 Jest, UI API shows the action and no standard button, an Opportunity routed, approved and recalled in the org. The relationship limit measured as not enforced (142 joined). The manual check, step 8, passed in the first UI test run, 2026-10-22 (M12.6) | `6e3079d` + `96e5692`, M12.6 |
-| **M12** | Template lifecycle, queue and committee templates, portability. A release manifest makes an in-place edit a gate failure. `PR_Credit_Risk_Queue` and `PR_Finance_Committee` each have a rule. Usernames are filled at deploy, and the org's own configuration has its own package directory. New and Mass Change Owner are off the decision-log list | **Complete; the UI suite's re-run owed.** Gate run 2026-10-22. The source gate is green and failed broken copies, and a correct `_v2` passed. `force-app` converts with another org's domain. The org's six templates match the manifest. 274/274 Apex at 98%, 59/59 Jest, the related list offers no actions. Queue and committee requests routed, decided and recalled in the org. The manual check, step 11, passed in the first UI test run that day. M12.6 fixed the two timeline defects that run found: 60/60 Jest, 274/274 Apex, deployed | `bcedf6f` + M12.6 (`72f4dfd`) |
+| **M12** | Template lifecycle, queue and committee templates, portability. A release manifest makes an in-place edit a gate failure. `PR_Credit_Risk_Queue` and `PR_Finance_Committee` each have a rule. Usernames are filled at deploy, and the org's own configuration has its own package directory. New and Mass Change Owner are off the decision-log list | **Complete.** Gate run 2026-10-22. The source gate is green and failed broken copies, and a correct `_v2` passed. `force-app` converts with another org's domain. The org's six templates match the manifest. 274/274 Apex at 98%, 59/59 Jest, the related list offers no actions. Queue and committee requests routed, decided and recalled in the org. The manual check, step 11, passed in the first UI test run that day. M12.6 fixed the two timeline defects that run found: 60/60 Jest, 274/274 Apex, deployed. The UI suite's re-run confirmed both fixes (M12.7) | `bcedf6f` + M12.6 (`72f4dfd`), M12.7 |
 
 ### Superseded — the v1.0 plan
 
@@ -4287,3 +4287,85 @@ This table supersedes M12.5's.
 | ~~M12's manual UI check (step 11)~~ | **closed in M12.6** |
 | ~~M11's manual UI check (playbook M11, step 8)~~ | **closed in M12.6** |
 | ~~Still open from M8.7: the manual UI check (step 6)~~ | **closed in M12.6** |
+
+### M12.7 M12.6's gate closed: the UI suite's re-run (2026-10-22)
+
+**Status:** complete. Step 3 of M12.6's gate passed. Nothing in `force-app` changed.
+
+The agent re-ran the suite against M12.6, as R20261022-1856, from 13:30 to about 13:45 UTC. The user
+shared its account of the two steps that failed, TC-03.6 and TC-14.5. No other step failed.
+
+**(a) Both fixes confirmed.**
+
+- TC-03.4 passed under the strict matching rule, so the heading now reads "Approval history:
+  PR_Credit_Risk_Queue, In approval".
+- TC-03.6's new time check passed: 06:34 AM in the timeline, and 6:34 AM in Approval History.
+  ADL-00000026 was stamped 13:34:51 UTC, which is 06:34 in Grok Bot's Pacific time zone. In the
+  first run, the timeline showed its times 3 hours later.
+
+**(b) The two FAILs were in the Approval Decisions card, not the build.**
+
+- **What the agent saw.** On D1 (PR-00000042) and D5 (UITEST R20261022-1856 Energy deal), the card
+  read "Approval Decisions (0)" right after the submission. The timeline already linked the new
+  rows, ADL-00000026 and ADL-00000030. After one reload, the card read (1) with the right row, and
+  every other condition held. The steps allowed no reload for the card, so the agent failed them.
+  It added that both pass if a reload is allowed.
+- **The submit action already refreshes the page.** It calls `notifyRecordUpdateAvailable` for
+  the record, then dispatches the page's `RefreshEvent` (`lightning/refresh`). The timeline's
+  registered handler re-reads on that event, but the card did not refresh.
+- **It varies.** In the first run, the same two steps saw the new row with no reload.
+- **No requirement promises the card a live update.** M7 and M11 promise one for the timeline,
+  and that held.
+
+So the script now allows one reload for a related-list card after a submission, with the note
+"needed reload", as it already did for Matrix Submission. The rule is in section 0.5, and
+TC-03.6, TC-07.4, TC-09.5 and TC-14.5 point to it. By the agent's own account, both steps meet
+every condition after the reload. They pass under the corrected rule, so this run closes the gate
+without another.
+
+`amfSubmitForApproval`'s comment says the refresh reaches "the decision timeline and the related
+lists". That holds for the timeline. The related lists are carried, below.
+
+**(c) The org after the run:**
+
+```
+records     PR-00000042 (D1), -43 (D2), -44 (D3); accounts UITEST R20261022-1856 Energy Co and
+            Hotels Ltd; its Energy, Hotels and Large deals. No duplicates
+log rows    ADL-00000026 to -30, all by Grok Bot, none changed since written
+approvals   D1 recalled, then approved; D2 recalled in cleanup; D3 rejected; D5 recalled in cleanup
+afterwards  the guard false on all six governed records; no open work item from the run; no
+            UITEST rule in the matrix
+```
+
+| File | Change | Notes |
+|---|---|---|
+| `docs/ui-tests/ui-test-scripts.md` | **modified** | section 0.5: related-list cards after a submission; TC-03.6, TC-07.4, TC-09.5 and TC-14.5 point to it |
+| `docs/ui-tests/README.md` | **modified** | the re-run; what "needed reload" covers |
+| `docs/build-playbook.md` (M12.6's gate; Part 5), `docs/handoff.md` | **modified** | the gate closed |
+
+### M12.7 Carried into later phases
+
+This table supersedes M12.6's.
+
+| Item | Owner |
+|---|---|
+| After a submission, a standard related-list card can show its earlier state until a reload. The submit action's `RefreshEvent` reaches the timeline but not reliably the card, though the action's comment names both. Finding what refreshes the card needs someone in the browser | if wanted |
+| Grok Bot holds System Administrator in `amf-dev`. Deactivate it, or return it to Standard User, between runs | user |
+| PR-00000027 has been pending since M10.8 to serve M8's check, which M12.6 closed. It can be recalled | user |
+| The Approval Decisions card shows four of its six columns. Reordering them, or an enhanced list, would bring Selected Process onto it | if wanted |
+| The decision log's page offers Submit for Approval, Edit and Delete. An explicit action list on its layout would remove them (`docs/ui-tests/README.md`) | a later hardening pass |
+| `AMF_CmdtRuleProviderTest.shippedMatrixComesBackInPriorityOrder` reads the org's shipped rules, not only the pin (M12.3b); a new lowest-priority rule changes it again | a hardening pass |
+| Portability is shown offline only: no second org has deployed `force-app`. In one, the admin also removes the standard Submit button from its own layouts of each governed standard object (§6.3) | whoever sets up CI or a second org |
+| Every deploy that includes approval processes needs `AMF_USERNAME_DOMAIN`, `amf-dev`'s included (`CLAUDE.md`'s deploy line). A retrieve writes real usernames back, which the gate refuses: put the placeholder back | everyone who deploys or retrieves |
+| The gate's fingerprints govern source only. A template edited in Setup is found only by the retrieve-and-compare of M12.4 step 5, which is not scripted | a later hardening pass |
+| Six tests take 21 to 88 s each, and RunLocalTests 489 s. `aMemberThroughAPublicGroupCanDecideAQueueStep` (M12.3g) and the 200-record test are among them | if suite time matters |
+| `Lock_Decision_Log` still permits one post-insert stamp of `Execution_Ref_Id__c`, which nothing performs since M10 (M10.6). Test it against deleting a governed record (M3.12) | a later hardening pass |
+| The seeded approvers cannot approve Opportunities (Platform licenses) | if a demo needs it |
+| Whether the lock a final approval leaves stops a real non-admin's Apex update outside a test is unmeasured (M10.8a) | if a need appears |
+| The preview cannot foresee a guard failure (M10.7h) | if a need appears |
+| A record-triggered Flow on a governed object that calls the action is re-triggered by the engine's guard update and by the templates' clearing update; its entry conditions must exclude those | whoever builds such a Flow |
+| husky's pre-commit would rewrite every file a commit touches (M10.7); commits here run with `HUSKY=0` | a tooling decision |
+| Still open from M8.7c: PR-00000014 to PR-00000025 carry the guard; they go with M6's teardown | M6 teardown |
+| The playbook's optional manual M9 check. The UI suite's TC-15 runs it when `RUN_OPTIONAL` is `yes` | user, optional |
+| M9.5's grammar items: DateTime, the text-like field types, reserved keywords, field-to-field multipicklists | as in M9.5 |
+| ~~The UI suite's re-run against M12.6~~ | **closed in M12.7** |

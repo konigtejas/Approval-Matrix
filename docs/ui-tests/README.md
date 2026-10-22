@@ -45,6 +45,11 @@ It found two defects in the Approval Timeline, which M12.6 fixed (technical log 
 TC-03.4 and TC-03.6 check the fixes. TC-03.6's time check only bites when the agent's browser is
 not on Pacific time, Grok Bot's Salesforce time zone.
 
+The re-run (R20261022-1856) confirmed both fixes (technical log M12.7). It also found that the
+Approval Decisions card can show its count from before a submission until the page reloads, though
+the log row is written and the timeline links it at once. The script now allows that reload, as it
+already did for Matrix Submission.
+
 ## Before a run
 
 1. **The build.** `amf-dev` holds `develop` at M12.6 or later, with the source gate and the org
@@ -120,8 +125,8 @@ These are covered elsewhere, and the agent should not try them.
 - **BLOCKED** means an earlier step failed first. Fix that one before reading anything into it.
 - **NOT OBSERVED** applies only to success toasts. They disappear after about 3 seconds, so an agent
   can miss one. The persistent checks in the following steps decide the test.
-- **"needed reload"** on a Matrix Submission check is a PASS. The field is right, but the page did
-  not refresh by itself.
+- **"needed reload"** on a Matrix Submission check, or on a related-list card after a submission, is
+  a PASS. The data is right, but the page did not refresh it by itself.
 - A timeline that updates only after a reload is a FAIL: M7 and M11 promise the update without one.
 
 ## After a run

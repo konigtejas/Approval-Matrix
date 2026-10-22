@@ -88,6 +88,12 @@ with note", record the verdict as PASS and add the note.
 timeline** means clicking the circular-arrow icon in the Approval Timeline card's header, whose
 tooltip reads "Refresh".
 
+**Related-list cards after a submission.** The Approval Decisions and Approval History cards can go
+on showing what they read before a submission until the page reloads. The timeline cannot: it must
+update by itself. So when a step checks a card's count, rows or actions after a submission and the
+card still shows the earlier state, reload once. If the card is right after the reload, the check is
+a PASS with note "needed reload". Anything else after the reload is a FAIL.
+
 ### 0.6 Where things are
 
 - **Header:** the record's name or number, and its action buttons. Actions that do not fit sit in a
@@ -296,7 +302,8 @@ Uses D1. Depends on TD-01.1. TC-04 to TC-08 depend on this test.
   PASS with note "needed reload".
 - FAIL: unticked after the reload.
 
-**TC-03.6** Open the Related tab. **Screenshot.**
+**TC-03.6** Open the Related tab. If a card still shows the state before the submission, reload once
+(section 0.5). **Screenshot.**
 - PASS:
   - `Approval Decisions (1)`, with one row: Decision Log Number `{D1.log1}`, Outcome `Submitted`
     and Matched Rule `PR_Credit_Risk_Review`. The card shows no more columns than these and Submitted
@@ -405,7 +412,7 @@ Covers: the guard re-armed by the recall (M8). Uses D1. Depends on TC-06.
 
 **TC-07.4** Check the Details tab, then the Related tab.
 - PASS: Matrix Submission is ticked (a reload is allowed, as in TC-03.5), and Related shows
-  `Approval Decisions (2)`.
+  `Approval Decisions (2)` (a reload is allowed, section 0.5).
 - FAIL: unticked after a reload, or another count.
 
 ### TC-08: approving the queue step
@@ -469,7 +476,7 @@ CL-01 recalls it.
   one each, in any order. No step reads "Finance Leadership".
 - FAIL: a different number of pending steps, another approver, or a Finance Leadership step.
 
-**TC-09.5** Check the Details tab, then the Related tab.
+**TC-09.5** Check the Details tab, then the Related tab, whose cards allow a reload (section 0.5).
 - PASS:
   - Matrix Submission is ticked (a reload is allowed);
   - `Approval Decisions (1)`, whose row shows Outcome `Submitted` and Matched Rule
@@ -624,7 +631,7 @@ at the end: CL-01 recalls it.
   Approver One".
 - FAIL: any difference.
 
-**TC-14.5** Check the Details tab, then the Related tab.
+**TC-14.5** Check the Details tab, then the Related tab, whose cards allow a reload (section 0.5).
 - PASS:
   - Matrix Submission is ticked (a reload is allowed);
   - `Approval Decisions (1)`, whose row shows Outcome `Submitted` and Matched Rule

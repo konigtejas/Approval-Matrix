@@ -750,6 +750,10 @@ its own. No Apex or other metadata changes. Gate:
 3. **Manual, the UI suite's re-run** (`docs/ui-tests/README.md`): TC-03.4 reads the heading with its
    space, and TC-03.6 finds the timeline's time equal to Approval History's.
 
+**Gate run 2026-10-22 (technical log M12.6, M12.7):** steps 1 and 2 passed in M12.6. Step 3, the
+re-run, confirmed both fixes (M12.7). Its two FAILs were the script's: it allowed no reload for a
+related-list card after a submission, and now it does.
+
 ---
 
 ## Part 4 — When Things Go Wrong
@@ -790,7 +794,7 @@ its own. No Apex or other metadata changes. Gate:
 | ~~M10's org gate: deploy, RunLocalTests (255), the invocable and REST checks~~ **passed 2026-10-21** | technical log M10.8 |
 | ~~M11's manual UI check: on a throwaway Opportunity, one Submit for Approval button, the modal names the route, the timeline updates without a reload, *Matrix Submission* ticked~~ **passed 2026-10-22** in the first UI test run | technical log M12.6 |
 | ~~M12's manual UI check: a medium-risk request's modal names `PR_Credit_Risk_Queue`, the timeline shows the step with *Credit Risk*, and the Approval Decisions list offers no New button~~ **passed 2026-10-22** in the first UI test run | technical log M12.6 |
-| The UI suite's re-run against M12.6, whose TC-03.4 and TC-03.6 check the two timeline fixes | `docs/ui-tests/README.md` |
+| ~~The UI suite's re-run against M12.6, whose TC-03.4 and TC-03.6 check the two timeline fixes~~ **passed 2026-10-22** | technical log M12.7 |
 
 ### M10 — Entry points and bulk submission *(authorised and built, 2026-10-08)*
 
