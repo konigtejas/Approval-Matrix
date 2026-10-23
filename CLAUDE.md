@@ -73,6 +73,22 @@ a Text field Request_Name__c beside the PR- auto-number, which stays the record 
 Purchase Request layout, in both permission sets (editable) and in the All Purchase Requests list
 view. Opportunity gets a Matrix Opportunities list view, in org-config/amf-dev as the org's own
 configuration. No rule reads the field; it changes no engine class, LWC, rule or template.
+M13 (authorised 2026-10-23) puts AI around the engine, never inside it (architecture §1 principle 6):
+no AI chooses a route, evaluates a rule, writes a decision log row or approves anything. Two parts.
+The Approval Matrix Assistant (§7): an Agentforce employee agent in Agent Script,
+AMF_Approval_Assistant, with four invocable actions over the engine's existing paths. They find a
+governed record, preview its route through preview(), submit it through M10's submitEach() and
+explain it. The agent may submit only the record it has just previewed, after the user confirms.
+Plain-English explanations (§8): an Explain button on each timeline entry with a decision
+(amfDecisionExplanation), and AMF_DecisionExplainer with the AMF_Explain_Approval_Decision Flex
+prompt template. They are built only from the timeline's view of a decision, generated on demand,
+labelled AI-generated and never stored. The prompt template and the authoring bundle live in a new
+package directory, agentforce, because they deploy only to an org with Einstein generative AI and
+Agentforce on; force-app still deploys anywhere. sourceApiVersion rises to 66.0 for Agent Script,
+and Apex classes stay at 62.0. AMF_Approval_Assistant_Access, the agent-access permission set, is
+org-config/amf-dev's, deployed after the agent is published. M13 changes no engine class. It adds
+one public method to AMF_DecisionTimelineService (describeValues), and the explanation component to
+amfDecisionTimelineEntry. Lightning types for the agent panel stay out.
 
 ## MVP SCOPE — build ONLY these
 - One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)
@@ -113,12 +129,22 @@ DateTime fields and literals.
 - Naming: AMF_ on Apex classes, amf on LWC. ApexDoc header cites its § section.
 
 ## Environment
-- Org alias: amf-dev. Deploy: sf project deploy start -o amf-dev, which deploys both package
-  directories (force-app, org-config/amf-dev). It needs AMF_USERNAME_DOMAIN set first, to
+- Org alias: amf-dev. Deploy: sf project deploy start -o amf-dev, which deploys all three package
+  directories (force-app, agentforce, org-config/amf-dev). It needs AMF_USERNAME_DOMAIN set first, to
   amf.00daj000012gj9b.dev for amf-dev (PowerShell: $env:AMF_USERNAME_DOMAIN = '...'); without it
-  the CLI refuses the deploy. Another org: deploy --source-dir force-app only, with that org's domain.
+  the CLI refuses the deploy. Another org: deploy --source-dir force-app only, with that org's domain,
+  and add --source-dir agentforce if that org has Einstein generative AI and Agentforce on.
+- The agent (M13): after a deploy that changes the bundle, publish and activate it with
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-agent.ps1. sf agent publish
+  reads only the default package directory, so the script publishes from a throwaway project, with
+  --skip-retrieve to keep the generated Bot and planner metadata out of force-app. Each publish is
+  a new version. In a fresh org, org-config/amf-dev deploys only after the first publish, because
+  its access permission set and test definition name the agent (playbook M13).
+- A prompt template deploys with no active version unless its source names one. After changing the
+  template's content, retrieve it and take the retrieved form, with activeVersionIdentifier, into
+  source (technical log M13.7a).
 - Tests: sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human
-- API 62.0. LWC only.
+- API 62.0 for Apex and LWC; sourceApiVersion 66.0 (M13). LWC only.
 
 ## Scope discipline
 Only touch files the current phase allows. Never refactor previous phases.

@@ -343,6 +343,22 @@ public with sharing class AMF_DecisionTimelineService {
     }
 
     /**
+     * The values a decision read, labelled and typed exactly as the timeline
+     * shows them -- for M13's Approval Matrix Assistant, which describes a
+     * preview's values before any row records them, so that a route reads the
+     * same in the agent as on the record page.
+     *
+     * @param snapshot JSON as Evaluated_Values__c records it, or a preview's
+     *                 evaluatedValuesJson, which is the same string (6.4).
+     * @param rootType The governed object the paths start from.
+     * @return One Value per path, in the order recorded; one KIND_UNPARSED value
+     *         for anything that is not a JSON object; empty for a blank snapshot.
+     */
+    public static List<Value> describeValues(String snapshot, Schema.SObjectType rootType) {
+        return valuesOf(snapshot, new FieldLabels(rootType));
+    }
+
+    /**
      * Evaluated_Values__c as a list: a JSON object of field path to value,
      * written by AMF_Evaluator.Result.toJson. Anything else is returned whole, as
      * KIND_UNPARSED, rather than failing the timeline.

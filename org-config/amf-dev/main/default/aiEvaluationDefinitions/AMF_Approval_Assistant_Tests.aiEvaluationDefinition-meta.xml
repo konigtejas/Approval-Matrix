@@ -1,0 +1,200 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AiEvaluationDefinition xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>Approval Matrix Assistant Tests</name>
+    <subjectName>AMF_Approval_Assistant</subjectName>
+    <subjectType>AGENT</subjectType>
+    <testCase>
+        <expectation>
+            <expectedValue>route_and_submit</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;preview_route&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says PR-00000045 would go to approval process PR_Credit_Risk_Queue, that rule PR_Credit_Risk_Review decides it because the risk level is Medium and the amount is 60,000, and that nothing has been submitted yet.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Where would this go for approval?</utterance>
+            <contextVariable>
+                <variableName>currentRecordId</variableName>
+                <variableValue>a02aj00000jdD8LAAU</variableValue>
+            </contextVariable>
+            <contextVariable>
+                <variableName>currentObjectApiName</variableName>
+                <variableValue>Purchase_Request__c</variableValue>
+            </contextVariable>
+        </inputs>
+        <number>1</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>route_and_submit</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;preview_route&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says rule PR_High_Value_APAC decides the route for PR-00000048 and that it would go to approval process PR_Three_Level_Finance. It does not submit anything.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Which rule applies to this request?</utterance>
+            <contextVariable>
+                <variableName>currentRecordId</variableName>
+                <variableValue>a02aj00000jdD8OAAU</variableValue>
+            </contextVariable>
+            <contextVariable>
+                <variableName>currentObjectApiName</variableName>
+                <variableValue>Purchase_Request__c</variableValue>
+            </contextVariable>
+        </inputs>
+        <number>2</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>route_and_submit</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;find_record&apos;,&apos;preview_route&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says PR-00000046 would go to approval process PR_Finance_Committee, decided by rule PR_Committee_Spend, and that nothing has been submitted yet.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Which approval process would PR-00000046 go to?</utterance>
+        </inputs>
+        <number>3</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>route_and_submit</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;find_record&apos;,&apos;preview_route&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says PR-00000047 would go to approval process PR_Two_Level_Mgmt through the catch-all rule PR_Catch_All, which matches every record no earlier rule did.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>What route would PR-00000047 take?</utterance>
+        </inputs>
+        <number>4</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>explain_decision</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;find_record&apos;,&apos;explain_approval&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent explains in plain English which rule routed PR-00000042 and to which approval process, and how its approval stands, naming only rules, processes and people the decision log and approval history record.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Why did PR-00000042 go where it went, and where does its approval stand?</utterance>
+        </inputs>
+        <number>5</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>explain_decision</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;explain_approval&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent explains in plain English that rule PR_Credit_Risk_Review sent PR-00000042 to approval process PR_Credit_Risk_Queue because its risk level is Medium and its amount, 60,000, is 50,000 or more, and that the approval was approved.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Explain this approval decision in plain English.</utterance>
+            <contextVariable>
+                <variableName>currentRecordId</variableName>
+                <variableValue>a02aj00000jXxdhAAC</variableValue>
+            </contextVariable>
+            <contextVariable>
+                <variableName>currentObjectApiName</variableName>
+                <variableValue>Purchase_Request__c</variableValue>
+            </contextVariable>
+        </inputs>
+        <number>6</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>explain_decision</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;explain_approval&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says PR-00000047 has not been submitted for approval yet, so there is no decision to explain, and does not describe any approval for it.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Why is this request with its approver?</utterance>
+            <contextVariable>
+                <variableName>currentRecordId</variableName>
+                <variableValue>a02aj00000jdD8NAAU</variableValue>
+            </contextVariable>
+            <contextVariable>
+                <variableName>currentObjectApiName</variableName>
+                <variableValue>Purchase_Request__c</variableValue>
+            </contextVariable>
+        </inputs>
+        <number>7</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>topic_selector</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says it cannot approve, reject, recall or reassign approvals, and does not claim to have approved anything.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Approve PR-00000045 for me.</utterance>
+        </inputs>
+        <number>8</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>topic_selector</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent does not answer the question. It says it can preview where an approval will go, submit a record for approval, and explain approval decisions.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>What is the capital of France?</utterance>
+        </inputs>
+        <number>9</number>
+    </testCase>
+</AiEvaluationDefinition>

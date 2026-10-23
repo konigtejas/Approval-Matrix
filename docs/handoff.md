@@ -1,5 +1,20 @@
 # Handoff — what's next after M12
 
+> **M13 is deployed and committed (2026-10-23):** the Approval Matrix Assistant, an Agentforce
+> employee agent, and plain-English explanations on the decision timeline. Gate steps 0 to 10
+> passed in `amf-dev` (technical log M13.7):
+> - deploy 145/145, and 334/334 Apex;
+> - Einstein explained a real decision accurately;
+> - a live preview session submitted a throwaway only after confirmation;
+> - the agent was published and activated at v2;
+> - its Testing Center suite passed 9/9.
+>
+> **Owed by the user:** step 11, the manual UI check. That is the Explain button on a timeline
+> entry, and the assistant in the Agentforce panel on a throwaway record. Editing the agent later
+> means deploying the bundle, then running `scripts/publish-agent.ps1`.
+>
+> The rest of this file describes `develop` as of M12.8; M13's details are in the technical log.
+
 **As of 2026-10-23.** `develop` holds Phase M12 and its follow-ups M12.6 to M12.8, with every gate
 run in `amf-dev`:
 - M8's, M11's and M12's owed manual UI checks passed in the first run of the UI test suite, which an
@@ -102,9 +117,10 @@ actions (TC-16).
 | **M11** | A second governed object, Opportunity | Complete |
 | **M12** | Template lifecycle (release manifest), queue and committee templates, portability; M12.6, the first UI run and two timeline fixes; M12.7, the re-run; M12.8, a Request Name field and two list views | Complete |
 
-The MVP was M0–M3; M4–M12 are post-MVP. **Nothing after M12.8 is numbered or authorised.** What is
-left of architecture v3.0's target design is Flow approvals, probably two phases (M13 and M14, as a
-proposal), plus the smaller gaps in 4.2.
+The MVP was M0–M3; M4–M12 are post-MVP. M13, AI around the engine, was authorised and built on
+2026-10-23, and its gate is owed (the note at the top). What is left of architecture v3.0's target
+design is Flow approvals, probably two more phases, which are now proposals with no number, plus the
+smaller gaps in 4.2.
 
 ---
 
@@ -196,5 +212,7 @@ spike flows, groups and records, including PR-00000014 to PR-00000025 and their 
 
 ## Decisions waiting on the user
 
-1. Choose the next phase and authorise it in `CLAUDE.md`. For Flow approvals, say whether
-   committee steps are wanted on Flow.
+1. M13: the manual UI check, its gate's step 11 (playbook M13).
+2. Choose the next phase and authorise it in `CLAUDE.md`. For Flow approvals, say whether
+   committee steps are wanted on Flow. Three more AI use cases are proposed in the playbook's
+   Part 5.

@@ -53,6 +53,11 @@ const STEP_STATUS = {
  * The collapsed item says what happened in one sentence; expanding it shows
  * the rule, the condition, the values read and the approval's steps.
  *
+ * Since M13 the details of a decision open with c/amfDecisionExplanation: on
+ * the reader's request, Einstein explains the decision in plain English, above
+ * the recorded facts it explains. That child calls Apex; this component still
+ * calls none.
+ *
  * Only what was recorded is shown. The rule is named by the DeveloperName
  * the row snapshotted, never by today's description of it (arch doc 8's M7
  * note), and every value is rendered as template text, never as markup.
@@ -172,8 +177,20 @@ function viewOf(entry) {
         decision,
         approval,
         approvalMissing: decision?.outcome === SUBMITTED && !approval,
+        historyKey: historyKeyOf(entry),
         ...headlineOf(decision, approval)
     };
+}
+
+/**
+ * Where the approval behind an entry stands: its status and its latest step.
+ * c/amfDecisionExplanation puts an explanation away when this changes, because
+ * the explanation says where the approval stands (M13).
+ */
+function historyKeyOf(entry) {
+    const steps = entry?.approval?.steps ?? [];
+    const last = steps[steps.length - 1];
+    return [entry?.key, entry?.approval?.status, steps.length, last?.id, last?.status, last?.actorId].join('|');
 }
 
 /** The collapsed item: its icon, its one-line title and summary, and its status badge. */

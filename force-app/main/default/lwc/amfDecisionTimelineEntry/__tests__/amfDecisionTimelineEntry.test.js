@@ -422,6 +422,50 @@ describe('c-amf-decision-timeline-entry', () => {
         expect(allById(element, 'step-actor').map(textOf)).toEqual(['by Someone Else']);
     });
 
+    it("opens a decision's details with the offer to explain it in plain English, above the recorded facts", () => {
+        const element = render(ROUTED, true);
+
+        const explanation = byId(element, 'explanation');
+        expect(explanation).not.toBeNull();
+        expect(explanation.logId).toBe(LOG_ID);
+        expect(explanation.historyKey).toBeTruthy();
+
+        const details = byId(element, 'details');
+        const order = Array.from(details.querySelectorAll('[data-id="explanation"], [data-id="decision"]')).map(
+            (node) => node.dataset.id
+        );
+        expect(order).toEqual(['explanation', 'decision']);
+    });
+
+    it('offers to explain a blocked attempt too, and nothing where the decision is not visible', () => {
+        expect(byId(render(BLOCKED, true), 'explanation').logId).toBe('a01000000000005AAA');
+        expect(byId(render(UNEXPLAINED, true), 'explanation')).toBeNull();
+    });
+
+    it('gives the explanation a new history key when the approval moves on, and the same one when it has not', () => {
+        const element = render(ROUTED, true);
+        const before = byId(element, 'explanation').historyKey;
+
+        element.entry = clone(ROUTED);
+        return Promise.resolve()
+            .then(() => {
+                expect(byId(element, 'explanation').historyKey).toBe(before);
+
+                const decided = clone(ROUTED);
+                decided.approval.status = 'Approved';
+                decided.approval.steps[2] = {
+                    ...decided.approval.steps[2],
+                    id: '04h000000000003AAA',
+                    status: 'Approved',
+                    isPending: false
+                };
+                element.entry = decided;
+            })
+            .then(() => {
+                expect(byId(element, 'explanation').historyKey).not.toBe(before);
+            });
+    });
+
     it('says so when the approval behind a routed submission is not available', () => {
         const element = render({ ...ROUTED, approval: undefined }, true);
 

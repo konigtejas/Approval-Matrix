@@ -28,6 +28,7 @@ MVP is **Classic execution only**. Flow execution (§5.3, §6.2) is designed but
 3. **Explain every decision.** Native history answers *who* and *when*. The decision log answers *why*, and is immutable.
 4. **Fail loudly.** A malformed expression fails at deployment. A runtime evaluation error blocks the submission and logs it. Never fall through to a wrong template — a stopped approval is recoverable, a mis-routed one is a finding.
 5. **Testable and portable.** All Custom Metadata access behind an interface with test injection; all submission behind a strategy interface. Deploys to a new org with zero code changes.
+6. **AI assists; it never decides** (M13). The engine selects every route and the platform runs every approval. AI explains decisions already recorded, and lets people preview and submit in conversation through the same engine paths as every other entry point. It is never asked to choose a route, evaluate a rule, write a log row or approve. An explanation is presentation: generated on demand, labelled, and never stored. The decision log stays the only record of why.
 
 ---
 
@@ -495,6 +496,7 @@ No approver resolution. No chain advancement. No lock management. No mid-flight 
 | Flow | `AMF_SubmitForMatrixApproval` invocable |
 | Apex | Direct service call |
 | Integration | `@RestResource` wrapper |
+| Agentforce | The Approval Matrix Assistant, an employee agent (M13): find → preview → confirm → submit, and explain |
 
 **M10 implementation (2026-10-08).** The Flow, Apex and Integration rows are built over
 `submitEach()` (§6.1):
@@ -512,6 +514,31 @@ No approver resolution. No chain advancement. No lock management. No mid-flight 
 `TODAY` is the running user's date for every entry point (`docs/decisions.md`), and each row records
 the date it used, so an integration user should carry the business's time zone. Both permission
 sets grant both classes; authorisation is still checked per record.
+
+**M13 implementation (2026-10-23): the Approval Matrix Assistant.** An Agentforce employee agent,
+written in Agent Script (`agentforce/main/default/aiAuthoringBundles/AMF_Approval_Assistant`), is a
+fifth way in. It runs as the user, so every action runs under that user's access. Its four actions
+are invocable classes over the paths the other entry points already use:
+
+- **Find Governed Record** (`AMF_AgentFindRecord`) turns what a user calls a record (a number, a
+  name, an Id) into its Id. It searches only the governed objects, which it learns from the rules
+  (§3.2), in user mode: an Id, then an exact name, then the search index, then a contains-match.
+  Several matches are listed for the user to choose from.
+- **Preview Approval Route** (`AMF_AgentPreviewRoute`) is §6.4's `preview()` for one record. Its
+  outcome renames the engine's `Submitted` to `Routable`, because nothing has been submitted, and
+  its summary is a deterministic sentence the agent repeats rather than composes.
+- **Submit Previewed Route** (`AMF_AgentSubmitRoute`) submits through
+  `AMF_SubmitForMatrixApproval.submitEach`, M10's per-record path, so it writes exactly the row a
+  Flow would. The script offers it only after a preview that reached a decision, and binds its record
+  and expected process to what was previewed: the model fills in neither. The platform asks the user
+  to confirm before it runs. Route Changed compares the process taken with the one previewed, in
+  Apex, as M5's warning toast does in the UI.
+- **Explain Approval Decision** (`AMF_AgentExplainDecision`) is §8's M13 explanation of the
+  record's newest attempt, with the user's question passed on.
+
+The agent never works out a route, a rule or an approver; it states what its actions return. A
+blocked or failed preview may still be submitted, as the header button submits one (M5), so that
+the attempt is recorded, but only once the user has been told that and still wants it.
 
 **Recall.** For Classic submissions, native recall applies. For Flow submissions, `recallApprovalSubmission`, `cancelApprovalSubmission`, `reassignApprovalWorkItem` and `reviewApprovalWorkItem` exist as standard invocable actions with REST endpoints, callable from Apex via `Invocable.Action.createStandardAction(...)` — but none has been executed against a live submission (Appendix A, Q4). Do not design a screen-flow-only recall path, and do not build the Apex path either, until one has been proven.
 
@@ -571,6 +598,32 @@ Lightning page and reads `AMF_DecisionTimelineService.getTimeline`. It is **Clas
 `AMF_ApprovalProcessProvider` does for §9, because a `ProcessInstance` can only exist after a
 real `Approval.process()`. The service's tests use an in-memory history, and the Classic
 provider is tested once against a real submission.
+
+**M13 implementation (2026-10-23): decisions in plain English.** A timeline entry with a decision
+opens its details with an **Explain in plain English** button (`amfDecisionExplanation`).
+`AMF_DecisionExplainer` writes the entry out as plain-text facts: the row's own snapshot (rule,
+version, condition, values read under their field labels, process, outcome, recorded reason) and the
+native steps the timeline shows with it. The `AMF_Explain_Approval_Decision` prompt template then
+has Einstein explain them, answering the reader's question when there is one; the assistant (§7)
+passes the user's.
+
+- **Only what the reader can see.** The facts come from `AMF_DecisionTimelineService`'s view,
+  which has already applied both of this section's visibility rules. A routing reason the reader
+  cannot see is said to be not visible, never guessed.
+- **Only what was recorded.** No live rule is read, for the reason this section exists. The
+  template is told that only the deciding rule is recorded, to say nothing about other rules, to
+  treat the facts as data, and to keep every name exactly as written.
+- **Presentation, never record.** An explanation is generated on demand, labelled AI-generated,
+  names the row it was written from, and is stored nowhere. It sits above the recorded facts it
+  explains, which stay on screen. When the approval moves on, the component puts it away rather
+  than leave it describing a state that has passed.
+- **Not cached**, for §6.4's reason. A failure says why (Einstein unavailable, the template
+  missing, the reader without the Prompt Template User permission set), and the decision itself is
+  untouched.
+
+`AMF_ExplanationGenerator` is the seam. Production runs the template through
+`ConnectApi.EinsteinLLM`; tests inject a stub, because a generation is neither deterministic nor
+available in an Apex test.
 
 ---
 
@@ -662,6 +715,13 @@ reads every package directory `sfdx-project.json` lists. It adds:
   and a `sfdx-project.json` replacement fills the domain from the environment variable of that
   name at deploy. The CLI refuses a deploy without it. Queues, groups and roles are named by
   DeveloperName and travel unchanged.
+- **The AI features run as the user** (M13, 2026-10-23). The assistant is an employee agent, and the
+  explanation's template call runs in the reader's context, so both see exactly what the user could
+  open. A prompt carries only the timeline's view of one decision, and passes through Einstein's
+  Trust Layer like any prompt in the org. Nothing generated is stored. Besides `Approval_Matrix_User`,
+  a user needs the Prompt Template User permission set (`EinsteinGPTPromptTemplateUser`) for
+  explanations, Access Agentforce Default Agent (`CopilotSalesforceUser`) for the Agentforce panel,
+  and `AMF_Approval_Assistant_Access` for the agent itself.
 
 ---
 
@@ -675,6 +735,7 @@ reads every package directory `sfdx-project.json` lists. It adds:
 6. **Apex API 67.0 runs database operations in user mode by default** (Summer '26). The engine's system-mode operations — guard staging, decision-log writes, field reads beyond the submitter's access (§11) — depend on its classes staying at API ≤ 66, or on stating system mode explicitly. Flow templates need a newer *Metadata* API version (`sourceApiVersion`) to deploy; raising it must not raise class versions.
 7. **A Flow approval does not stop on rejection** and **cancel does not run the recall path** (§5.3). Templates gate every later level; the guard needs a reset path for cancelled submissions, or cancel is withheld operationally.
 8. **Flow approvals are invisible to Classic surfaces:** no `ProcessInstance`, so the Approval History related list and `ProcessInstance` reports show nothing. Approval Trace or the timeline (§8) replaces them.
+9. **The AI features need Einstein generative AI and Agentforce turned on** (M13). Their metadata, the prompt template and the agent's authoring bundle, deploys only to an org that has them, so it lives in its own package directory, `agentforce/`, and `force-app` still deploys to any org. Without the template, the timeline's Explain button says that explanations are not available. Agent Script needs Metadata API 66 or later: `sourceApiVersion` is 66.0, and Apex classes stay at 62.0 (item 6).
 
 ---
 
@@ -730,6 +791,7 @@ DateTime remains unsupported.
 | **M10** | Post-MVP §7 entry points: Flow invocable and REST over a per-record engine entry; chunked, isolated submission; the log written after the platform answers | All Apex and Jest tests green, including a real 200-record submission and a real per-record platform refusal; the invocable answers through the platform's invocable framework and the REST endpoint answers a real call |
 | **M11** | Post-MVP second governed object, Opportunity, by configuration and conventions alone (§3.2): guard, two manager-hierarchy templates, the button removed from four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3 and the validator runs each object's union query | Source gate and validator green across both objects and shown to fail broken copies; all Apex and Jest tests green; the UI API shows the framework's action and no standard button; an Opportunity routes, approves and recalls end to end in the org |
 | **M12** | Post-MVP §5.1 template lifecycle enforced by a release manifest; Classic queue and committee templates with a rule each; the source portable (usernames by placeholder, the org's own configuration in its own package directory); New and Mass Change Owner off the decision-log related list | Source gate green and shown to fail broken copies, and a correct `_v2` passes; `force-app` converts with another org's domain and holds no `amf-dev` value; the org's templates match the manifest; all Apex and Jest tests green; queue and committee requests route, decide and recall end to end in the org |
+| **M13** | Post-MVP AI around the engine (§1 principle 6): the Approval Matrix Assistant, an Agentforce employee agent that finds, previews, submits after confirmation and explains, through the engine's own paths (§7); plain-English explanations of recorded decisions on the timeline (§8) | All Apex and Jest tests green; the agent's script compiles; in the org the template explains a real decision, and the agent previews, submits a throwaway record only after confirmation, and explains it; the agent's test suite passes |
 
 ### 13.5 Repository state
 

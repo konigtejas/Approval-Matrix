@@ -756,6 +756,143 @@ related-list card after a submission, and now it does.
 
 ---
 
+### M13 — AI around the engine: the Approval Matrix Assistant and plain-English explanations (post-MVP)
+
+**Goal:** the first two AI use cases the user chose. Submit by chat: an Agentforce agent that finds a
+record, shows where its approval will go and why, and submits it once the user confirms. A
+plain-English "why": any recorded decision explained in everyday words. Both sit around the engine
+and never inside it (architecture §1 principle 6): no model chooses a route, evaluates a rule,
+writes a log row or approves anything.
+
+**Build:**
+- **Plain-English explanations (§8, M13 note).**
+  - `AMF_DecisionExplainer` writes one timeline entry out as plain-text facts: the row's snapshot
+    and the native steps, as `AMF_DecisionTimelineService` already shows them to the reader.
+  - `AMF_ExplanationGenerator` is the seam. `AMF_EinsteinExplanationGenerator` runs the
+    `AMF_Explain_Approval_Decision` Flex template through `ConnectApi.EinsteinLLM`, with two text
+    inputs, Facts and Question.
+  - `amfDecisionExplanation` is an **Explain in plain English** button, then a card: AI-generated
+    badge, "write it again", and provenance naming the row. It sits at the top of an entry's
+    details, above the recorded facts, and is put away when the approval's history changes.
+  - `amfErrors` holds one shared error-text helper for new components.
+  - `AMF_DecisionTimelineService` gains `describeValues()` (additive).
+- **The Approval Matrix Assistant (§7, M13 note).** An employee agent in Agent Script,
+  `AMF_Approval_Assistant`: a router and two subagents, preview-and-submit and explain. Four
+  invocable actions:
+  - `AMF_AgentFindRecord`: governed objects only, learned from the rules; user mode; never guesses
+    between several matches.
+  - `AMF_AgentPreviewRoute`: `preview()`, writes nothing.
+  - `AMF_AgentSubmitRoute`: M10's `submitEach()`; Route Changed computed in Apex; who it is waiting
+    on, named from `ActorId`.
+  - `AMF_AgentExplainDecision`: the explainer, with the user's question.
+
+  `AMF_AgentSupport` reads the Ids the model passes as text. Submit is available only after a
+  preview that reached a decision. Its record and expected process are bound by the runtime, and it
+  requires the user's confirmation.
+- **Packaging.**
+  - The template and the authoring bundle go in a new package directory, `agentforce/`, because
+    they deploy only where Einstein generative AI and Agentforce are on (§12 item 9).
+  - `sourceApiVersion` rises to 66.0 for Agent Script; Apex stays at 62.0.
+  - Both permission sets grant the five new entry classes.
+  - `AMF_Approval_Assistant_Access` (`agentAccesses`) is `org-config/amf-dev`'s, deployed after the
+    agent is published.
+- **Tests.** 60 new Apex tests, one of them a real approval. 15 new Jest tests.
+  `specs/AMF_Approval_Assistant-testSpec.yaml` holds 9 agent test cases, none of which submits.
+
+No engine class, rule, template, object or field changes.
+
+**Gate, in order.** In `amf-dev`, with `$env:AMF_USERNAME_DOMAIN = 'amf.00daj000012gj9b.dev'` set:
+
+0. **Once, in Setup, by an administrator.** Einstein generative AI is already on in `amf-dev`.
+   - Turn on Agentforce: **Setup → Agentforce Agents**.
+   - Assign to the admin, and to any tester, **Prompt Template User** and **Access Agentforce
+     Default Agent**:
+     `sf org assign permset --name EinsteinGPTPromptTemplateUser --name CopilotSalesforceUser -o amf-dev`.
+     Add **Agent Platform Builder** (`AgentPlatformBuilder`) if step 8's publish is refused for
+     permission.
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`:
+   unchanged.
+2. Offline:
+   - Jest, as in M5: 75 tests.
+   - `sf agent validate authoring-bundle --json --api-name AMF_Approval_Assistant -o amf-dev`:
+     `success: true`.
+3. **Deploy, without `org-config` the first time**:
+   `sf project deploy start -o amf-dev --source-dir force-app --source-dir agentforce`.
+4. `sf apex run --file scripts/validate-config.apex -o amf-dev`: the matrix is valid.
+5. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`: all green, 334 tests (274 + 60).
+6. **The explanation, live:** `sf apex run --file scripts/explain-decision.apex -o amf-dev`. It
+   prints PR-00000042's newest recorded decision and two to four plain sentences that name the same
+   rule and process, and nothing the row does not hold.
+7. **Agent preview before publishing, live actions, on a throwaway Purchase Request** (60,000,
+   AMER, Medium: `PR_Credit_Risk_Review` routes it to `PR_Credit_Risk_Queue`):
+   - `sf agent preview start --json --authoring-bundle AMF_Approval_Assistant --use-live-actions -o amf-dev`
+   - `sf agent preview send --json --authoring-bundle AMF_Approval_Assistant --session-id <id> -u "Where would <its PR number> go for approval?"`
+     names `PR_Credit_Risk_Queue` and `PR_Credit_Risk_Review`, and says nothing was submitted. No
+     log row is added.
+   - `-u "Submit it."` asks for confirmation. `-u "Yes."` submits: `Submitted`, waiting on Credit
+     Risk, with a decision log name.
+   - `-u "Why did it go there?"` explains it.
+   - `sf agent preview end --json --authoring-bundle AMF_Approval_Assistant --session-id <id>`.
+     Recall the throwaway afterwards.
+8. **Publish and activate:**
+   `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-agent.ps1`. It ends
+   "Agent AMF_Approval_Assistant activated." The script publishes from a throwaway project, because
+   `sf agent publish authoring-bundle` looks only in the default package directory (technical log
+   M13.7b). It passes `--skip-retrieve`, so no generated Bot metadata reaches `force-app`.
+9. **Agent access:**
+   - `sf project deploy start -o amf-dev --source-dir org-config/amf-dev`
+   - `sf org assign permset --name AMF_Approval_Assistant_Access -o amf-dev`
+
+   From now on, the plain `sf project deploy start -o amf-dev` deploys all three directories.
+10. **Agent tests:**
+    - `sf agent test create --json --spec specs/AMF_Approval_Assistant-testSpec.yaml --api-name AMF_Approval_Assistant_Tests --force-overwrite -o amf-dev`
+    - `sf agent test run --json --api-name AMF_Approval_Assistant_Tests --wait 10 -o amf-dev`
+
+    All 9 cases pass all three assertions. A topic name the platform reports differently is
+    corrected as the spec's header says, not by loosening an expected outcome. `test create` writes
+    the generated definition into `force-app`; move it to `org-config/amf-dev`.
+11. **Manual, in the real UI:**
+    - On PR-00000042, the newest timeline entry's details open with **Explain in plain English**.
+      It shows "Einstein is writing…", then a card with the AI-generated badge and "Written by
+      Einstein at … from decision log ADL-…". The recorded rule, condition and values stay below
+      it. The refresh icon writes it again.
+    - On a throwaway Purchase Request, open the Agentforce panel and choose **Approval Matrix
+      Assistant**:
+      - "Where would this go?" shows the route, and nothing is submitted.
+      - "Submit it" asks for confirmation; confirm, and it reports the process and who it is
+        waiting on.
+      - The timeline's refresh button shows the new entry.
+      - "Why did it go there?" explains it.
+      - Recall the throwaway afterwards.
+
+Acceptance:
+- The explainer's tests pin what reaches the model: the snapshot only, under field labels, with
+  the native steps. A reason the reader cannot see is said to be hidden, never guessed. The
+  question is passed on, and every refusal is worded for the reader.
+- A preview writes nothing.
+- The agent's submission takes M10's path: guard staged, row written, route change computed in
+  Apex. A real approval names who it is waiting on.
+- The finder searches only governed objects, in user mode, and lists several matches rather than
+  choosing one.
+- Jest covers the explanation's every state, including an answer that arrives after the approval
+  moved on.
+
+**Gate run 2026-10-23 (technical log M13.7):** steps 0 to 10 passed. The user turned on Agentforce
+and assigned the permission sets. Deploy 145/145. 334/334 Apex. Einstein explained PR-00000042's
+decision accurately. A live preview session submitted throwaway PR-00000049 only after
+confirmation, and it was then recalled. The agent tests ran 9/9 on v2. Six defects were found and
+fixed on the way:
+- the template's active version;
+- publish reading only `force-app`;
+- a description over 255 characters;
+- the explanation script's Aura wrapper;
+- the platform's Reverse_Engineering guardrail, and an approve request routed to preview;
+- the test definition written into `force-app`.
+
+Step 11, the manual UI check, is owed.
+
+---
+
 ## Part 4 — When Things Go Wrong
 
 - **Claude Code invents schema** (a field not in §3): stop it, point at the doc, restate
@@ -815,6 +952,18 @@ Moved to Part 3, with its gate. The three decisions it needed were taken:
 - the org's own configuration lives in its own package directory.
 
 The related-list buttons rode along (technical log M12).
+
+### M13 — AI around the engine *(authorised, built and gated 2026-10-23; its manual UI check is owed)*
+
+Moved to Part 3. The user chose two of the five AI use cases proposed that day: submit by chat, and
+a plain-English "why". Three more stay as proposals, each needing its own authorisation:
+- **A rule-writing assistant.** An admin describes a rule; a model drafts `Expression__c` and a
+  priority; `AMF_ExprCompiler` and the validator must accept the draft before any person sees it;
+  it ships as an ordinary config release.
+- **An approver briefing** on the work item.
+- **A matrix-health report** over the decision log: catch-all share, and blocked or failed trends.
+
+Lightning types, for richer cards in the agent panel, are a possible follow-up to M13.
 
 ### Grammar and validator hardening *(small; can join M10 or M11)*
 

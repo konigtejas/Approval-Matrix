@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <description>A recorded decision explained in plain English by Einstein, on demand, inside a decision timeline entry (arch doc 8, M13).</description>
+    <isExposed>false</isExposed>
+</LightningComponentBundle>

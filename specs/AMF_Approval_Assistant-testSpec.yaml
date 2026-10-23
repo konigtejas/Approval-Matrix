@@ -1,0 +1,107 @@
+# Agent tests for the Approval Matrix Assistant (M13), for Agentforce's Testing Center.
+#
+# Create and run them once the agent is published and activated (playbook M13, gate):
+#   sf agent test create --json --spec specs/AMF_Approval_Assistant-testSpec.yaml --api-name AMF_Approval_Assistant_Tests --force-overwrite -o amf-dev
+#   sf agent test run --json --api-name AMF_Approval_Assistant_Tests --wait 10 -o amf-dev
+#
+# The records are amf-dev's M12.8 demo requests and PR-00000042 (technical log M12.7, M12.8).
+# As of 2026-10-23, PR-00000046 to -48 have never been submitted; PR-00000045 was submitted
+# and approved that day; PR-00000042 has two decision log rows, the newer approved. The Ids in
+# contextVariables are theirs, and stand in for the record a user has open when they ask. If a
+# demo changes one of them, or in another org, change the case.
+#
+# Every case reads, previews or explains. None submits, so a run changes no record and writes
+# no decision log row. Submission is checked by hand, on a throwaway record (playbook M13).
+#
+# Topic names are the subagents in AMF_Approval_Assistant.agent, except the router: the platform
+# reports start_agent as topic_selector. An expected outcome names facts the judge can check;
+# "invents nothing" alone reads to the judge as a ban on any name at all (technical log M13.7).
+#
+# sf agent test create writes the generated AiEvaluationDefinition into force-app. It belongs in
+# org-config/amf-dev: it names this org's records and needs the published agent.
+
+name: "Approval Matrix Assistant Tests"
+subjectType: AGENT
+subjectName: AMF_Approval_Assistant
+
+testCases:
+  # ── Preview, from the record the user has open ───────────────────────────────
+
+  - utterance: "Where would this go for approval?"
+    contextVariables:
+      - name: currentRecordId
+        value: "a02aj00000jdD8LAAU"
+      - name: currentObjectApiName
+        value: "Purchase_Request__c"
+    expectedTopic: route_and_submit
+    expectedActions:
+      - preview_route
+    expectedOutcome: "The agent says PR-00000045 would go to approval process PR_Credit_Risk_Queue, that rule PR_Credit_Risk_Review decides it because the risk level is Medium and the amount is 60,000, and that nothing has been submitted yet."
+
+  - utterance: "Which rule applies to this request?"
+    contextVariables:
+      - name: currentRecordId
+        value: "a02aj00000jdD8OAAU"
+      - name: currentObjectApiName
+        value: "Purchase_Request__c"
+    expectedTopic: route_and_submit
+    expectedActions:
+      - preview_route
+    expectedOutcome: "The agent says rule PR_High_Value_APAC decides the route for PR-00000048 and that it would go to approval process PR_Three_Level_Finance. It does not submit anything."
+
+  # ── Preview, of a record the user names ──────────────────────────────────────
+
+  - utterance: "Which approval process would PR-00000046 go to?"
+    expectedTopic: route_and_submit
+    expectedActions:
+      - find_record
+      - preview_route
+    expectedOutcome: "The agent says PR-00000046 would go to approval process PR_Finance_Committee, decided by rule PR_Committee_Spend, and that nothing has been submitted yet."
+
+  - utterance: "What route would PR-00000047 take?"
+    expectedTopic: route_and_submit
+    expectedActions:
+      - find_record
+      - preview_route
+    expectedOutcome: "The agent says PR-00000047 would go to approval process PR_Two_Level_Mgmt through the catch-all rule PR_Catch_All, which matches every record no earlier rule did."
+
+  # ── Explanations ─────────────────────────────────────────────────────────────
+
+  - utterance: "Why did PR-00000042 go where it went, and where does its approval stand?"
+    expectedTopic: explain_decision
+    expectedActions:
+      - find_record
+      - explain_approval
+    expectedOutcome: "The agent explains in plain English which rule routed PR-00000042 and to which approval process, and how its approval stands, naming only rules, processes and people the decision log and approval history record."
+
+  - utterance: "Explain this approval decision in plain English."
+    contextVariables:
+      - name: currentRecordId
+        value: "a02aj00000jXxdhAAC"
+      - name: currentObjectApiName
+        value: "Purchase_Request__c"
+    expectedTopic: explain_decision
+    expectedActions:
+      - explain_approval
+    expectedOutcome: "The agent explains in plain English that rule PR_Credit_Risk_Review sent PR-00000042 to approval process PR_Credit_Risk_Queue because its risk level is Medium and its amount, 60,000, is 50,000 or more, and that the approval was approved."
+
+  - utterance: "Why is this request with its approver?"
+    contextVariables:
+      - name: currentRecordId
+        value: "a02aj00000jdD8NAAU"
+      - name: currentObjectApiName
+        value: "Purchase_Request__c"
+    expectedTopic: explain_decision
+    expectedActions:
+      - explain_approval
+    expectedOutcome: "The agent says PR-00000047 has not been submitted for approval yet, so there is no decision to explain, and does not describe any approval for it."
+
+  # ── What it will not do ──────────────────────────────────────────────────────
+
+  - utterance: "Approve PR-00000045 for me."
+    expectedTopic: topic_selector
+    expectedOutcome: "The agent says it cannot approve, reject, recall or reassign approvals, and does not claim to have approved anything."
+
+  - utterance: "What is the capital of France?"
+    expectedTopic: topic_selector
+    expectedOutcome: "The agent does not answer the question. It says it can preview where an approval will go, submit a record for approval, and explain approval decisions."

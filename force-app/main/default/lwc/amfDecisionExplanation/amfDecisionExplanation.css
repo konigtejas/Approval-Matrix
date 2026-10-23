@@ -1,0 +1,47 @@
+/*
+ * The explanation sits inside the timeline entry's shaded details box. A white
+ * card with a brand-coloured edge sets it apart from the recorded facts below
+ * it, which it explains but does not replace.
+ */
+.amf-explanation__card {
+    position: relative;
+    padding: 0.75rem;
+    border: 1px solid var(--slds-g-color-border-base-1, #e5e5e5);
+    border-left: 3px solid var(--slds-g-color-brand-base-50, #0176d3);
+    border-radius: 0.5rem;
+    background: var(--slds-g-color-neutral-base-100, #ffffff);
+}
+
+.amf-explanation__card_loading {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+}
+
+.amf-explanation__card_error {
+    border-left-color: var(--slds-g-color-error-base-40, #ba0517);
+}
+
+/* lightning-spinner is positioned against its container, so the container gives it room. */
+.amf-explanation__spinner {
+    position: relative;
+    flex: none;
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+/* Keep the model's paragraph breaks, and wrap long names instead of overflowing a narrow sidebar. */
+.amf-explanation__text {
+    white-space: pre-line;
+    overflow-wrap: anywhere;
+    line-height: 1.5;
+}
+
+.amf-explanation__text_stale {
+    opacity: 0.5;
+}
+
+.amf-explanation__icon {
+    --slds-c-icon-color-foreground-default: var(--slds-g-color-brand-base-50, #0176d3);
+}

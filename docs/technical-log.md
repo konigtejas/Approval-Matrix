@@ -108,6 +108,7 @@ session needs. Update the row when a phase completes.
 | **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers; since M10.7 the guard staged per record | **Complete** — org gate passed 2026-10-21 (M10.8): 255/255 Apex at 98% after the locked-record fixture was replaced by a test-only validation rule (the lock did not stop the update in an Apex test), 59/59 Jest, the invocable and REST answered in the org | `393d9d5` + M10.7, M10.8 (`a0273e9`) |
 | **M11** | A second governed object, Opportunity, by configuration alone — guard, two manager-hierarchy templates, the button off four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3, the validator runs each union query | **Complete** — gate run 2026-10-21: source gate and validator green across both objects and failing broken copies, 264/264 Apex at 98%, 59/59 Jest, UI API shows the action and no standard button, an Opportunity routed, approved and recalled in the org. The relationship limit measured as not enforced (142 joined). The manual check, step 8, passed in the first UI test run, 2026-10-22 (M12.6) | `6e3079d` + `96e5692`, M12.6 |
 | **M12** | Template lifecycle, queue and committee templates, portability. A release manifest makes an in-place edit a gate failure. `PR_Credit_Risk_Queue` and `PR_Finance_Committee` each have a rule. Usernames are filled at deploy, and the org's own configuration has its own package directory. New and Mass Change Owner are off the decision-log list | **Complete.** Gate run 2026-10-22. The source gate is green and failed broken copies, and a correct `_v2` passed. `force-app` converts with another org's domain. The org's six templates match the manifest. 274/274 Apex at 98%, 59/59 Jest, the related list offers no actions. Queue and committee requests routed, decided and recalled in the org. The manual check, step 11, passed in the first UI test run that day. M12.6 fixed the two timeline defects that run found: 60/60 Jest, 274/274 Apex, deployed. The UI suite's re-run confirmed both fixes (M12.7). M12.8 added a Request Name field to Purchase Requests and two list views, gated and deployed 2026-10-23 | `bcedf6f` + M12.6 (`72f4dfd`), M12.7 (`0049677`), M12.8 (`c59e758`) |
+| **M13** | AI around the engine. The Approval Matrix Assistant, an Agentforce employee agent, finds, previews, submits after confirmation and explains through the engine's own paths. The timeline explains recorded decisions in plain English through an Einstein prompt template | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M13.7), once the user had turned on Agentforce. Deployed 145/145. 334/334 Apex at 98%. 75/75 Jest. Einstein explained a real decision accurately. A live preview session previewed, confirmed, submitted (ADL-00000032) and explained a throwaway, which was then recalled. The agent was published and activated (v2 active). Its Testing Center suite passed 9/9, 27/27 assertions, after two instruction fixes. Step 11, the manual UI check, is owed | see M13.7 |
 
 ### Superseded — the v1.0 plan
 
@@ -123,8 +124,8 @@ Retained only as a record of what was built. Phases 2–8 of that plan were neve
 carried-forward table), then the phase prompt in `docs/build-playbook.md`. Do not rely on
 conversation history — there is none by design.
 
-**Choosing the next phase:** `docs/build-playbook.md` Part 5 holds the proposed roadmap after M12
-(Flow approvals, the smaller items), with the decisions each needs first.
+**Choosing the next phase:** `docs/build-playbook.md` Part 5 holds the proposed roadmap after M13
+(Flow approvals, three more AI use cases, the smaller items), with the decisions each needs first.
 It authorises nothing; `CLAUDE.md` does. `docs/handoff.md` is the short version.
 
 ---
@@ -4459,3 +4460,413 @@ M12.7's table carries unchanged, with one addition:
 | Item | Owner |
 |---|---|
 | The demo records of (c) stay in `amf-dev` for the walkthrough. Recall any left pending after using them | user |
+
+---
+
+## Phase M13 — AI around the engine: the Approval Matrix Assistant and plain-English explanations
+
+**Commit:** see the status board. **Status:** complete. Built 2026-10-23, then gated, deployed and
+committed the same day (M13.7). Only gate step 11, the manual UI check, is owed. Authorised in
+`CLAUDE.md` on 2026-10-23.
+
+The user asked whether AI or Agentforce could be added to the framework. Five use cases were put
+to them, with one design rule: AI works around the engine, never inside it. They chose two, and
+asked for them to be built after thorough analysis, following best practice, with a good UI and
+easy use:
+- **submit by chat:** an agent that previews a record's route, then submits it once the user
+  confirms;
+- **a plain-English "why":** any recorded decision explained in everyday words.
+
+Mid-session they added: **"dont push any changes to org or branch".** So M13.1 to M13.6 record a
+build in which nothing reached `amf-dev` or `develop`. Every org check there is check-only
+(`--dry-run`), a compile or a read, and saved nothing. They then turned on Agentforce, assigned
+themselves the permission sets, and asked for the deploy and the push. M13.7 is that gate.
+
+### M13.1 File-level changes
+
+| File | Change | Notes |
+|---|---|---|
+| `classes/AMF_ExplanationException.cls` | **new** | the reader-facing failure of an explanation |
+| `classes/AMF_ExplanationGenerator.cls` | **new** | the seam: facts and a question in, an explanation out |
+| `classes/AMF_EinsteinExplanationGenerator.cls` | **new** | runs `AMF_Explain_Approval_Decision` through `ConnectApi.EinsteinLLM`; a refusal keeps the platform's reason |
+| `classes/AMF_DecisionExplainer.cls` | **new** | the timeline entry as plain-text facts; `explainDecision` (`@AuraEnabled`), `explain`, `explainLatest`; `displayOf`, `recordLabelOf` shared |
+| `classes/AMF_AgentSupport.cls` | **new** | an Id read from text; a reason ended as a sentence; values as a sentence |
+| `classes/AMF_AgentPreviewRoute.cls` | **new** | invocable *Preview Approval Route*, over `preview()` |
+| `classes/AMF_AgentSubmitRoute.cls` | **new** | invocable *Submit Previewed Route*, over `AMF_SubmitForMatrixApproval.submitEach` |
+| `classes/AMF_AgentExplainDecision.cls` | **new** | invocable *Explain Approval Decision* |
+| `classes/AMF_AgentFindRecord.cls` | **new** | invocable *Find Governed Record* |
+| seven `…Test.cls` classes | **new** | 60 tests (M13.4) |
+| `classes/AMF_DecisionTimelineService.cls` | modified | public `describeValues()`, additive (`docs/decisions.md`) |
+| `lwc/amfDecisionExplanation/` | **new** | the button and the explanation card, with 12 Jest tests |
+| `lwc/amfErrors/` | **new** | `messageOf`, shared from now on |
+| `lwc/amfDecisionTimelineEntry/` (js, html, test) | modified | the explanation at the top of a decision's details; `historyKey`; 3 Jest tests |
+| `permissionsets/Approval_Matrix_Admin…`, `Approval_Matrix_User…` | modified | class access to the five new entry classes |
+| `agentforce/…/genAiPromptTemplates/AMF_Explain_Approval_Decision…` | **new** | Flex template, inputs `Facts` and `Question`, the org's default model |
+| `agentforce/…/aiAuthoringBundles/AMF_Approval_Assistant/` | **new** | the employee agent, in Agent Script |
+| `org-config/amf-dev/…/permissionsets/AMF_Approval_Assistant_Access…` | **new** | `agentAccesses` for the agent; deploys after publish |
+| `specs/AMF_Approval_Assistant-testSpec.yaml` | **new** | 9 Testing Center cases, none of which submits |
+| `scripts/explain-decision.apex` | **new** | the gate's live explanation check; writes nothing |
+| `sfdx-project.json` | modified | the `agentforce` package directory; `sourceApiVersion` 66.0 |
+| `CLAUDE.md`, `docs/architecture.md` (§1, §7, §8, §11, §12, §13.4), `docs/build-playbook.md`, `docs/decisions.md`, `docs/handoff.md`, `docs/technical-log.md` | modified | M13 authorised, designed, gated and recorded |
+
+### M13.2 Design choices worth recording
+
+`docs/decisions.md` holds the seven approved choices, one line each. The reasoning behind the
+rest:
+
+**(a) The org decided the shape.** Read-only checks of `amf-dev` before any design:
+
+```
+organization     Developer Edition, API 68.0 (Winter '27)
+EinsteinGpt      enableEinsteinGptPlatform   true    -> prompt templates usable now
+EinsteinCopilot  enableEinsteinGptCopilot    false   -> Agentforce off
+Bot              enableBots                  false
+describe         GenAiPromptTemplate, GenAiFunction, GenAiPlugin, LightningTypeBundle listed;
+                 Bot, GenAiPlannerBundle, AiAuthoringBundle absent
+licences         Agentforce (Default) 5, Einstein Prompt Templates 5000, Data Cloud, Agent
+                 Platform Builder 5 -- the admin holds the PSLs, but none of the permission
+                 sets that use them
+CLI              @salesforce/cli 2.126.4, plugin-agent 1.30.11 (validate, preview start/send/end,
+                 publish authoring-bundle, test create/run)
+```
+
+So the explanation could be built and checked now, and the agent could be built and compiled but
+not deployed until Agentforce is turned on.
+
+**(b) Agent Script, an employee agent.** Agent Script is the current authoring format, which the
+CLI validates, previews, publishes and tests. The older Bot, GenAiPlannerBundle and GenAiPlugin
+metadata is what publish generates from it. Three features make the safety properties hold
+outside the model:
+- `available when` offers submit only after a preview that reached a decision;
+- a `with x = @variables.y` binding fills submit's record and expected process from the runtime,
+  not the model;
+- `require_user_confirmation` makes the platform ask before submit runs.
+
+It is an employee agent because it runs as the logged-in user, so every action has that user's
+access, as the header button does. A service agent would run as an Einstein Agent User. The
+sources were Salesforce's own `forcedotcom/sf-skills` (Agent Script reference, CLI reference,
+test-spec templates) and a published employee-agent sample, `afls-ideas/Context-Aware-Agent`.
+`developer.salesforce.com` refused automated reads with 403. Every construct used was then compiled
+by `sf agent validate`.
+
+**(c) Page context.** `currentRecordId` and `currentObjectApiName` are declared
+`mutable string = ""` with `visibility: "External"`, as the sample does. The sample says a
+context variable without External fails at run time with `InternalVariableMutationAttemptException`.
+These names are the panel's context variables; this org has not yet shown them populated (M13.6).
+The model passes the record Id to every action as text, so every action reads it through
+`AMF_AgentSupport.idOf` and answers a non-Id plainly.
+
+**(d) A wrapper for submit, not the M10 action itself.** The M10 action takes an `Id` and returns
+fields. The agent needs four more things:
+- a sentence it can repeat;
+- the route-changed check, in Apex;
+- who the approval is waiting on;
+- an Id that arrives as text.
+
+`AMF_AgentSubmitRoute` calls `AMF_SubmitForMatrixApproval.submitEach`, so the engine path, the guard
+and the row are exactly M10's, and the M10 action is unchanged.
+
+**(e) Routable, not Submitted.** A preview's engine outcome is `Submitted`, because that is what a
+submission would record (§6.4). In an agent's context that word invites "it has been submitted".
+The preview action renames it `Routable` and ends every summary "Nothing has been submitted yet."
+
+**(f) Blocked and failed previews.** The header button submits a blocked or failed preview straight
+away, so the attempt is recorded (M5). The agent may do the same: `canSubmit` is true. But the
+script has it say first that submitting only records the attempt, and submit only if the user still
+wants that. In conversation, consent costs one sentence. Only `Refused` (nothing decided) is
+`canSubmit` false.
+
+**(g) The finder.** It is object-agnostic: governed objects come from
+`AMF_RuleProvider.getActiveRules()`, so a third governed object needs no change. It makes three
+passes, narrowest first:
+1. an Id, then an exact name, which covers the `PR-` auto-number;
+2. SOSL over all fields, which finds a request by its Request Name;
+3. a contains-match on the name, for records the search index has not caught up with.
+
+Input is bound, never spliced, except the SOSL term, which is escaped character by character. A
+test proves that `%` matches itself. Several matches are listed with their Ids for the user to
+choose from.
+
+**(h) The facts, and the template's two text inputs.** The model is given one timeline entry
+written out line by line:
+- the record, and the time zone;
+- the decision row: who, when, outcome, rule and version, condition, values as
+  `Label (Path) = value`, recorded reason;
+- the approval: status, then each step.
+
+The label lets it speak as the page does; the path lets it match the value to the recorded
+condition. Approver comments are quoted and capped at 500 characters, and the template says
+everything between its FACTS markers is data. Approver comments are free text, so this is the
+prompt-injection line. A template that grounded itself on a record input would have bypassed the
+timeline's two visibility rules, and needed them again.
+
+**(i) On demand, never stored, never stale.**
+- The button generates nothing until asked, because a generation takes seconds and most readers
+  need only the recorded facts.
+- The card names its row and its time, carries an AI-generated badge, and sits above the recorded
+  facts.
+- `historyKey` (entry, approval status, step count, last step's Id, status and actor) changes when
+  the timeline's refresh brings news. The card is then put away, and a generation still out is
+  dropped on arrival.
+
+**(j) Not built.**
+- Lightning types for richer cards in the agent panel: they could not be exercised here, and
+  Apex-built sentences already carry every fact (`docs/decisions.md`).
+- Turning Agentforce on through a settings deploy: refused, M13.3(a).
+- The other three proposed AI use cases (playbook Part 5).
+
+### M13.3 Issues encountered
+
+**(a) Turning Agentforce on was refused by the agent harness's permission classifier**, as an
+org-wide permission grant. The attempt was to write a `Settings` package
+(`EinsteinCopilot.enableEinsteinGptCopilot`, `Bot.enableBots`) to the session scratchpad, for a
+deploy. Nothing was written or deployed. Whether to turn Agentforce on is the user's decision: gate
+step 0. No settings file was added to source either, because the next routine deploy would then
+switch it on as a side effect.
+
+**(b) Two Apex reserved words.** The first check-only compile refused `when` and `number` as
+variable names (`Identifier name is reserved`) in `AMF_DecisionExplainer`. They were renamed
+`occurred` and `amount`.
+
+**(c) A prompt template's description is at most 255 characters.** The first check-only deploy of
+the template said `Value too long for field: Description maximum length is:255`. It was shortened.
+The template then validated without `versionIdentifier`, `activeVersionIdentifier` or
+`primaryModel`, so the platform assigns the version and the org's default model is used.
+
+**(d) `Actor.Name` is null for an approval created in the same transaction.** That broke the agent,
+not just its test. The real-approval test failed with `Expected: null, Actual: ` (empty) at
+`AMF_AgentSubmitRouteTest` line 224:
+- the expectation, read through `Actor.Name`, was null;
+- the action's join of no names was empty.
+
+This is the quirk recorded under "Fix — AMF_ClassicApprovalHistoryProviderTest actor-name
+assertions" (after M8.7). It matters beyond the test, because the action reads the work items its
+own transaction has just created, so in production too it could never have said who the approval
+waits on. The action now resolves each `ActorId` against User and Group (a queue). The test
+expects the name read the same way, and passes.
+
+**(e) `RunSpecifiedTests` in a check-only deploy needs 75% on every class in the package.** A
+re-run of the submit suite alone passed 8 of 8 but reported failure, for that reason. The full set
+of new and affected suites gives the real result (M13.4).
+
+**(f) A Jest default parameter.** `render({ logId: undefined })` took the helper's default Id,
+because a default replaces an explicit `undefined`. The test now passes `null`.
+
+**(g) The agent bundle cannot be checked against the org while Agentforce is off.** A check-only
+deploy of `agentforce/` with the classes failed only on the bundle:
+`AiAuthoringBundle: Not available for deploy for this organization`. `sf agent validate` compiles
+the script, and stops at the first error, so it cannot say whether the four Apex targets resolve.
+Deploy and publish will (gate steps 3 and 8).
+
+### M13.4 Verification evidence (this session)
+
+```
+check-only compile  all 10 new classes and the changed timeline service: status 0, success True
+prompt template     check-only deploy of agentforce/.../genAiPromptTemplates: status 0, success True
+                    (after (c))
+apex tests          check-only deploy 0Afaj00000opoScCAI, RunSpecifiedTests over the 7 new suites,
+                    AMF_DecisionTimelineServiceTest and AMF_SubmitForMatrixApprovalTest:
+                    "tests run: 75  failures: 0", success True, nothing saved to the org
+full suite          check-only deploy 0Afaj00000oqPITCA2 of all of force-app at sourceApiVersion 66.0,
+                    RunLocalTests, AMF_USERNAME_DOMAIN set: 143/143 components, 0 errors,
+                    "tests run: 333  failures: 0", 98.5% coverage of the deployed classes.
+                    Nothing saved
+final code          after the last change -- a rule with no recorded version no longer reads
+                    "version null" in either summary, and one test pins it -- check-only deploy
+                    0Afaj00000oqPqLCAU, the same 9 suites: "tests run: 76  failures: 0", success
+                    True. RunLocalTests on the final code is therefore 334 (gate step 5)
+coverage            (final code) AMF_AgentPreviewRoute 85/85, AMF_AgentExplainDecision 24/24,
+                    AMF_AgentSupport 35/35, AMF_DecisionTimelineService 158/158 (all 100%);
+                    AMF_AgentFindRecord 172/174 (99%), AMF_AgentSubmitRoute 128/130 (98%),
+                    AMF_DecisionExplainer 197/205 (96%), AMF_EinsteinExplanationGenerator 31/36
+                    (86%: which branch of the live call runs inside a test depends on the org)
+jest                Test Suites: 5 passed, 5 total; Tests: 75 passed, 75 total (60 before)
+eslint              amfDecisionExplanation, amfErrors, amfDecisionTimelineEntry: exit 0
+agent script        sf agent validate authoring-bundle --api-name AMF_Approval_Assistant:
+                    {"status": 0, "result": {"success": true}, "warnings": []}
+negative check      the same with "set @variables.can_submit = false" substituted: CompilationError
+                    "'false' is not a valid value in AgentScript. Did you mean 'False'
+                    (capitalized)? [Ln 211, Col 44]"; the file restored, byte for byte (True)
+convert             sf project convert source --source-dir agentforce: AiAuthoringBundle and
+                    GenAiPromptTemplate, package version 66.0
+source gate         passed: 8 active rules, 6 processes guard-checked, 6 of 6 templates released
+                    and unchanged, 5 layouts of 2 governed objects (unchanged by the new directory)
+```
+
+Not run, at the user's instruction: a deploy, RunLocalTests in the org, the live explanation, a
+preview session, publish, the agent tests and the UI check. All are in the playbook's M13 gate.
+
+### M13.5 The gate as it stood at the end of the build (run in M13.7)
+
+The playbook's M13 gate, steps 0 to 11. In short:
+- the user turns on Agentforce and assigns Prompt Template User and Access Agentforce Default Agent;
+- then deploy `force-app` and `agentforce`, the post-deploy check, and RunLocalTests (334);
+- the live explanation, and a live preview session on a throwaway record;
+- publish and activate, then deploy `org-config` and assign the access set;
+- the 9 agent tests, and the check in the real UI;
+- then commit, `HUSKY=0`, as `Phase M13: AI around the engine` (Part 1, step 6). The user
+  asked that nothing reach the branch until they say so.
+
+### M13.6 Carried into later phases
+
+M12.8's table carries unchanged, with these additions:
+
+| Item | Owner |
+|---|---|
+| The M13 gate (M13.5), from turning Agentforce on in Setup | user |
+| The page-context variable names (`currentRecordId`, `currentObjectApiName`) follow the published sample and are unproven in this org until gate steps 7 and 11. If the panel passes other names, only the `.agent` file's two declarations change | gate step 7 |
+| How `require_user_confirmation` renders in the Lightning panel is unobserved. The script also tells the model to ask, so the two prompts may need merging into one after step 11 | after the gate |
+| After the assistant submits, the record page's timeline shows the new entry on its refresh button or a reload: the panel cannot raise the page's `RefreshEvent` | if wanted |
+| The template's first retrieve will add a platform-assigned `versionIdentifier`. As with M12's templates, take the retrieved form into source | first retrieve |
+| Einstein's Trust Layer has prompt-injection and toxicity detection off in `amf-dev` (`EinsteinAISettings`). The template's facts-as-data rule is the only defence until they are turned on, which is an org decision | user |
+| In an org without Einstein, `force-app` deploys and the Explain button answers "not available" with the platform's reason. A design-time switch to hide it would be a timeline change | if a second org needs it |
+| The agent test spec names `amf-dev`'s records and Ids | whoever runs it elsewhere |
+| The UI test suite (`docs/ui-tests/`) has no M13 case yet | the next UI run |
+| `amfSubmitForApproval` and `amfDecisionTimeline` still carry their own `messageOf`; `c/amfErrors` now exists for them | a later hardening pass |
+| Three more AI use cases are proposed, unauthorised: a rule-writing assistant, an approver briefing, a matrix-health report (playbook Part 5) | user |
+
+### M13.7 The org gate — steps 0 to 10 PASSED (2026-10-23)
+
+The user turned on Agentforce in Setup, assigned themselves the permission sets, and asked for the
+deploy and the push. Six defects surfaced on the way, (a) to (f) below. All were fixed and every
+step re-run.
+
+**Steps and evidence**
+
+```
+0  prerequisites   metadata types now include Bot, GenAiPlannerBundle, AiAuthoringBundle; the CLI
+                   user holds CopilotSalesforceUser, CopilotSalesforceAdmin,
+                   EinsteinGPTPromptTemplateUser and EinsteinGPTPromptTemplateManager
+1  source gate     passed: 8 rules, 6 processes, 6 of 6 templates released and unchanged, 5 layouts
+2  offline         Jest 75/75; sf agent validate authoring-bundle: success
+3  deploy          force-app + agentforce, 0Afaj00000oqe9SCAQ: Succeeded, 145/145, 0 errors
+                   (the bundle, the template, 12 classes, 2 LWCs created; both permission sets)
+4  post-deploy     "Approval Matrix configuration is valid."
+5  RunLocalTests   707aj00001NJgRc: Outcome Passed, Tests Ran 334, Pass Rate 100%, Org Wide
+                   Coverage 98%. AMF_EinsteinExplanationGenerator 86%: its uncovered lines are the
+                   success path after the live call, which throws inside an Apex test
+6  explanation     after (a) and (d), scripts/explain-decision.apex on PR-00000042:
+                   Recorded: ADL-00000027, Submitted, PR_Credit_Risk_Review -> PR_Credit_Risk_Queue
+                   Explained: "The matrix routed the purchase request to PR_Credit_Risk_Queue because
+                   rule PR_Credit_Risk_Review evaluated true: the risk level, Medium, and the
+                   amount, 60,000, met the condition ... The approval process PR_Credit_Risk_Queue
+                   is complete and approved; the final approval step "Credit Risk Review" was
+                   approved by Grok Bot on 22 Oct 2026 at 06:38."  Every fact matches the row and
+                   the history
+7  live preview    sf agent preview, --authoring-bundle, --use-live-actions, on throwaway
+                   PR-00000049 ("M13 gate throwaway": 60,000, AMER, Medium):
+                   "Where would PR-00000049 go?"   -> find_record, preview_route: "...would go to
+                       the approval process PR_Credit_Risk_Queue. Rule PR_Credit_Risk_Review
+                       decides this, because the Amount is 60,000 and the Risk Level is Medium ...
+                       Nothing has been submitted yet." Log rows for it: still 0
+                   "Submit it."                     -> the confirmation: "Please reply "yes" to
+                       proceed or "no" to cancel." Log rows: still 0
+                   "Yes."                           -> "Submitted. Purchase Request PR-00000049
+                       entered approval process PR_Credit_Risk_Queue and is now waiting on Credit
+                       Risk. Rule PR_Credit_Risk_Review (version 1) decided the route ...
+                       ADL-00000032." In the org: ADL-00000032 Submitted with its
+                       Execution_Ref_Id__c, the ProcessInstance Pending, the guard true
+                   "Why did it go there?"           -> explain_approval: rule, values, ADL-00000032,
+                       waiting on Credit Risk
+                   cleanup: recalled by anonymous Apex, status Removed, guard false (M8)
+8  publish         after (b), scripts/publish-agent.ps1: validate, publish, deploy; "Agent
+                   AMF_Approval_Assistant activated." BotVersion v1 Active; after (e), v2 Active,
+                   v1 Inactive
+9  agent access    after (c), org-config/amf-dev, 0Afaj00000opx67CAA: 7/7;
+                   AMF_Approval_Assistant_Access assigned to the CLI user
+10 agent tests     run 1, 4KBaj00000046mnGAA, against v1: 5 of 9 cases passed all three assertions
+                   (e). Run 2, 4KBaj00000046oPGAQ, against v2: 9 of 9, all 27 assertions PASS
+                   (topic, actions, outcome)
+final              the plain deploy of all three directories, check-only, 0Afaj00000oqjU5CAI:
+                   153/153, 0 errors; the source gate green
+```
+
+**(a) A deployed prompt template has no active version until one is named.** The first explanation
+answered `Einstein said: No active template version`. The deploy had published version
+`/0MCy2NRnsP9ZLj9Xsgvh66VbJrjXadZVilhTmvLHyc=_1`, but no `activeVersionIdentifier` named it. The
+source now takes the retrieved form, as M12's approval templates did:
+- `activeVersionIdentifier` naming that version, and its `versionIdentifier`;
+- the platform's defaults, `overridable` and `isCitationEnabled` false;
+- the content with its apostrophes, quotes and `>=` written as XML entities.
+
+Redeployed as 0Afaj00000oqfGnCAI. A retrieve then matched the source byte for byte. Editing the
+template's content later makes a new version, which needs the same treatment.
+
+**(b) `sf agent publish authoring-bundle` reads only the default package directory.** It answered
+`Cannot find an authoring bundle in ...\force-app that matches AMF_Approval_Assistant`, and has no
+path flag. `validate` and `preview` did find the bundle in `agentforce/`. Moving the bundle into
+`force-app` would end M13's portability decision. Making `agentforce` the default would weaken
+M12's source gate, which treats the default directory as the framework. `scripts/publish-agent.ps1`
+instead publishes from a throwaway project, whose one default directory holds a copy of the
+bundle. It passes `--skip-retrieve`, then activates, and leaves the repository untouched.
+
+**(c) A permission set's description is at most 255 characters too.** The first `org-config`
+deploy refused `AMF_Approval_Assistant_Access` for it, and rolled back all seven components. It was
+shortened.
+
+**(d) `explain-decision.apex` called the `@AuraEnabled` wrapper.** That wrapper converts every
+failure to an `AuraHandledException`, which only an Aura or Visualforce request may throw. In
+anonymous Apex it became `System.LimitException: Can only throw this exception type from
+VisualForce or Aura context`, which hid (a). The script now calls
+`new AMF_DecisionExplainer().explain(...)`.
+
+**(e) The agent tests found two agent faults and three wrong expectations.**
+- *Case 2, "Which rule applies to this request?":* the platform's built-in **Reverse_Engineering**
+  guardrail topic took it, as an attempt to extract the agent's own rules, and declined. The system
+  instructions and the router now say that the matrix's rules are business data the actions read.
+  The router's preview description names the rule. In run 2 the case routed, previewed and passed.
+- *Case 8, "Approve PR-00000045 for me.":* routed to preview, and offered to submit. That was not
+  harmful, because nothing submits unconfirmed, but it was not what the agent should say. The
+  router now has an explicit branch, which the preview subagent repeats: a request to approve,
+  reject, recall or reassign calls no action and says why.
+- *Case 9 and the router:* the platform reports `start_agent` as `topic_selector`, not
+  `approval_router`. Its answer already passed.
+- *Case 7's record had changed.* PR-00000045 was submitted and approved by the user at 10:17 UTC
+  that day (ADL-00000031), after M12.8 recorded it as never submitted. The agent's explanation of
+  it was correct. The case now uses PR-00000047, still unsubmitted.
+- *Case 6's expectation was unjudgeable.* "Without inventing any rule, value or approver" read to
+  the LLM judge as a ban on any name at all, so it failed an accurate answer. It now names the
+  facts to find.
+
+**(f) `sf agent test create` writes the generated `AiEvaluationDefinition` into `force-app`.** The
+definition names `amf-dev`'s records and needs the published agent, so it lives in
+`org-config/amf-dev`, beside the access permission set. The spec's header says so.
+
+**Left in `amf-dev` by the gate:**
+- PR-00000049, "M13 gate throwaway": recalled, guard false;
+- its decision log row ADL-00000032, which is permanent;
+- the agent at v2, active, with v1 inactive;
+- the test definition `AMF_Approval_Assistant_Tests`, with its two runs.
+
+The demo records PR-00000046 to -48 are untouched.
+
+| File | Change | Notes |
+|---|---|---|
+| `agentforce/…/AMF_Explain_Approval_Decision.genAiPromptTemplate-meta.xml` | modified | the retrieved form, with `activeVersionIdentifier` (a) |
+| `agentforce/…/AMF_Approval_Assistant.agent` | modified | matrix rules are business data; the approve, reject, recall and reassign branch (e) |
+| `scripts/publish-agent.ps1` | **new** | publish and activate from a throwaway project (b) |
+| `scripts/explain-decision.apex` | modified | calls the explainer, not its Aura wrapper (d) |
+| `org-config/…/AMF_Approval_Assistant_Access.permissionset-meta.xml` | modified | description under 255 (c) |
+| `org-config/…/aiEvaluationDefinitions/AMF_Approval_Assistant_Tests…` | **new** | the generated test definition (f) |
+| `specs/AMF_Approval_Assistant-testSpec.yaml` | modified | `topic_selector`; PR-00000047 for case 7; case 6 names its facts; the header |
+| `CLAUDE.md`, `docs/build-playbook.md`, `docs/decisions.md`, `docs/handoff.md`, this file | modified | the gate recorded; the publish step is the script |
+
+### M13.7 Carried into later phases
+
+This table supersedes M13.6's.
+
+| Item | Owner |
+|---|---|
+| Gate step 11, the manual UI check: the Explain button on a timeline entry, and the assistant in the Agentforce panel on a throwaway record (playbook M13) | user |
+| The Lightning panel's own page context is unobserved. Testing Center's `contextVariables` named `currentRecordId` and `currentObjectApiName` reached the agent (cases 1, 2, 6, 7), but step 11 shows whether the panel passes the same names | step 11 |
+| Confirmation asked once in the CLI preview ("reply yes"). How the panel renders `require_user_confirmation` is seen in step 11 | step 11 |
+| After the assistant submits, the record page's timeline shows the new entry on its refresh button or a reload: the panel cannot raise the page's `RefreshEvent` | if wanted |
+| Editing the prompt template's content makes a new version: take the retrieved form, with `activeVersionIdentifier`, into source again (M13.7a) | whoever edits it |
+| Editing the agent: deploy the bundle, then `scripts/publish-agent.ps1`. Every publish is a new, permanent version | whoever edits it |
+| Einstein's Trust Layer has prompt-injection and toxicity detection off in `amf-dev` (`EinsteinAISettings`). The template's facts-as-data rule is the only defence until they are turned on, which is an org decision | user |
+| In an org without Einstein, `force-app` deploys and the Explain button answers "not available" with the platform's reason. A design-time switch to hide it would be a timeline change | if a second org needs it |
+| The agent test spec and its definition name `amf-dev`'s records. A demo that submits PR-00000046 to -48 changes what the cases expect | whoever runs it |
+| The UI test suite (`docs/ui-tests/`) has no M13 case yet | the next UI run |
+| `amfSubmitForApproval` and `amfDecisionTimeline` still carry their own `messageOf`; `c/amfErrors` now exists for them | a later hardening pass |
+| Three more AI use cases are proposed, unauthorised: a rule-writing assistant, an approver briefing, a matrix-health report (playbook Part 5) | user |
+| M12.8's items carry unchanged | as there |

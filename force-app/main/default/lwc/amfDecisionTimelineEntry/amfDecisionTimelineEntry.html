@@ -58,6 +58,12 @@
                         data-id="details"
                     >
                         <template lwc:if={view.decision}>
+                            <c-amf-decision-explanation
+                                log-id={view.decision.logId}
+                                history-key={view.historyKey}
+                                class="slds-show slds-m-bottom_small"
+                                data-id="explanation"
+                            ></c-amf-decision-explanation>
                             <dl class="slds-text-body_small" data-id="decision">
                                 <template lwc:if={view.decision.rule}>
                                     <dt class="slds-text-title">Rule</dt>

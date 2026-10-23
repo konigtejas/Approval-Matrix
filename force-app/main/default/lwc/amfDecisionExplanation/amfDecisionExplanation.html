@@ -1,0 +1,72 @@
+<template>
+    <!-- The live region is always rendered, so that the "writing" note and the explanation that
+         replaces it are announced as they arrive; a region inserted with its content often is not. -->
+    <div class="amf-explanation" aria-live="polite" data-id="region">
+        <template lwc:if={showButton}>
+            <lightning-button
+                label="Explain in plain English"
+                icon-name="utility:einstein"
+                onclick={handleExplain}
+                data-id="explain"
+            ></lightning-button>
+        </template>
+
+        <template lwc:if={isFirstLoad}>
+            <div class="amf-explanation__card amf-explanation__card_loading" data-id="loading">
+                <div class="amf-explanation__spinner">
+                    <lightning-spinner
+                        size="x-small"
+                        variant="brand"
+                        alternative-text="Writing the explanation"
+                    ></lightning-spinner>
+                </div>
+                <span class="slds-text-color_weak">Einstein is writing a plain-English explanation of this decision.</span>
+            </div>
+        </template>
+
+        <template lwc:if={explanation}>
+            <section class="amf-explanation__card" aria-busy={ariaBusy} data-id="result">
+                <div class="slds-grid slds-grid_vertical-align-center slds-m-bottom_x-small">
+                    <lightning-icon
+                        icon-name="utility:einstein"
+                        size="x-small"
+                        class="amf-explanation__icon"
+                    ></lightning-icon>
+                    <h4 class="slds-text-title_bold slds-m-left_x-small">In plain English</h4>
+                    <lightning-badge
+                        label="AI-generated"
+                        class="slds-m-left_x-small amf-explanation__badge"
+                        data-id="badge"
+                    ></lightning-badge>
+                    <div class="slds-col_bump-left">
+                        <lightning-button-icon
+                            icon-name="utility:refresh"
+                            variant="bare"
+                            alternative-text="Write the explanation again"
+                            title="Write it again"
+                            disabled={isLoading}
+                            onclick={handleExplain}
+                            data-id="regenerate"
+                        ></lightning-button-icon>
+                    </div>
+                </div>
+                <p class={textClass} data-id="text">{explanation.text}</p>
+                <p class="slds-text-body_small slds-text-color_weak slds-m-top_x-small" data-id="provenance">
+                    {provenance}
+                </p>
+            </section>
+        </template>
+
+        <template lwc:if={error}>
+            <div class="amf-explanation__card amf-explanation__card_error" role="alert" data-id="error">
+                <p class="amf-explanation__text" data-id="error-text">{error}</p>
+                <lightning-button
+                    variant="base"
+                    label="Try again"
+                    onclick={handleExplain}
+                    data-id="retry"
+                ></lightning-button>
+            </div>
+        </template>
+    </div>
+</template>
