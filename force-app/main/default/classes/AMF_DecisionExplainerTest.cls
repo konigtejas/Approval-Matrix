@@ -499,4 +499,90 @@ private class AMF_DecisionExplainerTest {
         value.text = 'APAC';
         Assert.areEqual('APAC', AMF_DecisionExplainer.displayOf(value));
     }
+
+    // ── M14: the approver's briefing ───────────────────────────────────────────
+
+    @IsTest
+    static void describesAReassignedStepByWhomItWentToNotByWhoMovedIt() {
+        // As amf-dev recorded it (technical log M14): the row's actor is the new
+        // assignee, its original actor the step's first one, and who reassigned it
+        // is not recorded. "Reassigned by X, for Y" read to the model as X handing
+        // the step to Y, the wrong way round.
+        Purchase_Request__c record = insertRequest();
+        AMF_ApprovalHistory.Instance approval = pendingApproval(4);
+        AMF_ApprovalHistory.Step moved = step(20, 'Reassigned', false, 'Manager', 'AMF Approver Two', NINE.addHours(3));
+        moved.originalActorId = fakeId(User.SObjectType, 98);
+        moved.originalActorName = 'AMF Approver One';
+        approval.steps.add(moved);
+        AMF_ApprovalHistory.Step unmoved = step(21, 'Reassigned', false, 'Manager', 'AMF Approver Two', NINE.addHours(4));
+        approval.steps.add(unmoved);
+        insert submittedRow(record.Id, approval.id, NINE);
+        GeneratorStub generator = new GeneratorStub();
+
+        explainer(new List<AMF_ApprovalHistory.Instance>{ approval }, generator).explainLatest(record.Id, null);
+
+        assertContains(generator.facts, '- Step "Manager": reassigned to AMF Approver Two (first assigned to AMF Approver One), ');
+        assertContains(generator.facts, '- Step "Manager": reassigned to AMF Approver Two, ');
+        assertLacks(generator.facts, 'reassigned by');
+    }
+
+    @IsTest
+    static void briefsTheApproverItWaitsOnFromTheSameFactsWithTheirQuestion() {
+        Purchase_Request__c record = insertRequest();
+        AMF_ApprovalHistory.Instance pending = pendingApproval(1);
+        pending.steps[2].actorId = UserInfo.getUserId();
+        pending.steps[2].actorName = UserInfo.getName();
+        Approval_Decision_Log__c row = submittedRow(record.Id, pending.id, NINE);
+        insert row;
+
+        GeneratorStub generator = new GeneratorStub();
+
+        Test.startTest();
+        AMF_DecisionExplainer.Explanation briefing = explainer(
+            new List<AMF_ApprovalHistory.Instance>{ pending },
+            generator
+        ).briefLatest(record.Id);
+        Test.stopTest();
+
+        Assert.areEqual(generator.answer, briefing.text);
+        Assert.areEqual(row.Id, briefing.logId);
+        Assert.isNotNull(briefing.generatedAt);
+        Assert.areEqual(AMF_DecisionExplainer.BRIEFING_QUESTION, generator.question, 'The approver\'s question');
+        assertContains(generator.question, 'Do not tell me whether to approve or reject');
+
+        assertContains(generator.facts, 'Record: ' + labelOf(record));
+        assertContains(generator.facts, 'Rule that decided the route: PR_High_Value_APAC, version 3');
+        assertContains(generator.facts, 'Step "Finance Controller": waiting on ' + UserInfo.getName());
+        Assert.isTrue(
+            generator.facts.endsWith('\nReader: ' + UserInfo.getName() + ', the approver this approval is waiting on now.'),
+            generator.facts
+        );
+    }
+
+    @IsTest
+    static void refusesABriefingWhenTheApprovalIsNotWaitingOnTheReader() {
+        Purchase_Request__c record = insertRequest();
+        AMF_ApprovalHistory.Instance pending = pendingApproval(1);
+        insert submittedRow(record.Id, pending.id, NINE);
+        GeneratorStub generator = new GeneratorStub();
+
+        try {
+            explainer(new List<AMF_ApprovalHistory.Instance>{ pending }, generator).briefLatest(record.Id);
+            Assert.fail('Waiting on AMF Approver Four, not on the reader');
+        } catch (AMF_ExplanationException e) {
+            Assert.areEqual(
+                labelOf(record) + ' is not waiting on you for approval, so there is nothing for you to decide. ' +
+                'You can still ask why it went where it did.',
+                e.getMessage()
+            );
+        }
+        Assert.areEqual(0, generator.calls, 'Nothing is asked of the model');
+
+        try {
+            explainer(new List<AMF_ApprovalHistory.Instance>(), generator).briefLatest(null);
+            Assert.fail('Expected a refusal');
+        } catch (AMF_ExplanationException e) {
+            Assert.isTrue(e.getMessage().contains('record is required'), e.getMessage());
+        }
+    }
 }

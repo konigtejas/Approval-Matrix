@@ -891,6 +891,85 @@ fixed on the way:
 
 Step 11, the manual UI check, is owed.
 
+### M14 — The assistant for submitters and approvers (post-MVP)
+
+**Goal:** four more of the assistant's uses, chosen by the user on 2026-10-23 with the admin uses
+that become M15, and one change to who may read the routing reason. All four sit around the engine
+(architecture §1 principle 6): the engine answers the what-if, and the briefing describes a decision
+without recommending one.
+
+**Build:**
+- **Engine (§6.4, M14 note):** `previewWith(recordId, changes)`, write-nothing, the record's own
+  fields only, checked after authorisation. A private `prepare()` overload carries the changes; the
+  existing entries pass none.
+- **The current approver sees why (§8, §11, M14 notes):** `AMF_ApproverScope` (the user, their queues
+  and groups to depth 5, the users they are delegated approver for), and one rule in
+  `AMF_DecisionTimelineService.build()` with `Decision.visibleAsApprover`.
+- **`AMF_DecisionExplainer.briefLatest()`** and `BRIEFING_QUESTION`, additive, through the existing
+  `AMF_Explain_Approval_Decision` template.
+- **Four invocables (§7, M14 note):** `AMF_AgentWhatIfRoute`, `AMF_AgentMyRequests`,
+  `AMF_AgentMyApprovals` and `AMF_AgentBriefApproval`, in both permission sets. `AMF_AgentSupport`
+  gains `labelsOf`, `actorNamesOf` and `whenOf`.
+- **The agent:** a third router branch and a `my_work` subagent for the two lists; the explain
+  subagent also briefs; `route_and_submit` gains `what_if`, which clears `can_submit`. Five more
+  Testing Center cases, none of which submits.
+
+No object, field, template, rule or LWC changes.
+
+**Gate, in order.** In `amf-dev`, with `$env:AMF_USERNAME_DOMAIN = 'amf.00daj000012gj9b.dev'` set:
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`:
+   unchanged.
+2. Offline: Jest, 75 tests, unchanged; `sf agent validate authoring-bundle --json --api-name
+   AMF_Approval_Assistant -o amf-dev`: `success: true`.
+3. Deploy all three directories: `sf project deploy start -o amf-dev`.
+4. `sf apex run --file scripts/validate-config.apex -o amf-dev`: the matrix is valid.
+5. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`: all green, M13's 334 plus M14's.
+6. **Agent preview before publishing, live actions** (`sf agent preview start --authoring-bundle
+   AMF_Approval_Assistant --use-live-actions`), counting decision log rows before and after:
+   - "What if PR-00000047 had an amount of 120000 and region APAC?" names `PR_Three_Level_Finance`
+     and `PR_High_Value_APAC`, says today is `PR_Two_Level_Mgmt`, and adds no row.
+   - "Where do my approval requests stand?" lists the user's own records.
+   - **Briefing:** submit a throwaway Purchase Request (500, AMER, Low: the catch-all) with anonymous
+     Apex, and reassign its work item to the CLI user. "What is waiting for my approval?" lists it, and
+     "Brief me on it" briefs it without recommending a decision. Recall the throwaway afterwards, and
+     check that *Matrix Submission* is cleared.
+   - The CLI user has View All on the log, so the current-approver rule itself is proved by the Apex
+     tests, which run as an `Approval_Matrix_User`.
+7. **Publish and activate:** `scripts/publish-agent.ps1`, which makes v3.
+8. **Agent tests:** `sf agent test create --json --spec specs/AMF_Approval_Assistant-testSpec.yaml
+   --api-name AMF_Approval_Assistant_Tests --force-overwrite -o amf-dev`, then `sf agent test run
+   --json --api-name AMF_Approval_Assistant_Tests --wait 10 -o amf-dev`. All 14 cases pass. Run them
+   only when nothing is assigned to the CLI user, because one case expects nothing waiting. Move the
+   generated definition to `org-config/amf-dev`.
+9. **Manual, in the real UI, owed by the user.** It includes M13's step 11:
+   - the Explain button on PR-00000042's newest timeline entry;
+   - in the Agentforce panel, on a record: "Where would this go?", "What if the amount were
+     120000?", "Where do my requests stand?" and "What is waiting for my approval?";
+   - a throwaway submitted, then reassigned to the tester: "Brief me on it". Then recall it.
+
+Acceptance:
+- A what-if writes nothing, routes by the engine's own walk, and refuses what `preview()` refuses.
+- The current approver, and only while the approval waits on them, is shown the row their sharing
+  hides, and it is flagged. A reader the approval does not wait on is shown nothing new.
+- A briefing is refused to anyone the approval is not waiting on, and never asks the model to
+  recommend.
+- The lists show only the user's own requests, and only governed records the user can read.
+
+**Gate run 2026-10-23 (technical log M14.5):** steps 1 to 8 passed.
+- Deployed 163/163, and the matrix is valid.
+- RunLocalTests 370/370, then 371/371 once a gate finding added a test.
+- A live session's what-ifs wrote no row. A throwaway, PR-00000050, was reassigned to the CLI user,
+  listed as waiting, briefed, and recalled.
+- The agent was published to v7. Its 14-case suite passed 42/42 assertions in two consecutive runs.
+
+Two defects were found and fixed on the way:
+- the explainer described a reassigned step the wrong way round;
+- the published agent routed "brief me" by its descriptions, so a briefing moved to the explain
+  subagent.
+
+Step 9, the manual UI check, is owed.
+
 ---
 
 ## Part 4 — When Things Go Wrong
@@ -964,6 +1043,11 @@ a plain-English "why". Three more stay as proposals, each needing its own author
 - **A matrix-health report** over the decision log: catch-all share, and blocked or failed trends.
 
 Lightning types, for richer cards in the agent panel, are a possible follow-up to M13.
+
+**All three, and three more, authorised 2026-10-23.** The user chose six more AI uses: the
+approver briefing, "where are my requests", "what is waiting for me" and a what-if became **M14**;
+the rule-writing assistant, a rule-change impact check and the matrix-health report became **M15**,
+in a second agent for administrators. Both are in Part 3.
 
 ### Grammar and validator hardening *(small; can join M10 or M11)*
 

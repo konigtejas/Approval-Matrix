@@ -163,6 +163,96 @@
     </testCase>
     <testCase>
         <expectation>
+            <expectedValue>route_and_submit</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;find_record&apos;,&apos;what_if_route&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says that with an amount of 120,000 and region APAC, PR-00000047 would go to approval process PR_Three_Level_Finance under rule PR_High_Value_APAC, that today it goes to PR_Two_Level_Mgmt under rule PR_Catch_All, and that nothing was changed or submitted.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>What if PR-00000047 had an amount of 120000 and region APAC? Where would it go then?</utterance>
+        </inputs>
+        <number>8</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>route_and_submit</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;find_record&apos;,&apos;what_if_route&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says PR-00000047 would still go to approval process PR_Two_Level_Mgmt, because no active rule reads Vendor Type, and that nothing was changed or submitted.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Would PR-00000047 go anywhere else if its vendor type were Strategic?</utterance>
+        </inputs>
+        <number>9</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>my_work</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;list_my_requests&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent lists records the user submitted for approval recently, such as Purchase Requests, and says for each where its approval stands or how it ended. It does not submit, approve or change anything.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Where do my approval requests stand?</utterance>
+        </inputs>
+        <number>10</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>my_work</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;list_my_approvals&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says nothing governed by the approval matrix is waiting on the user for approval.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Is anything waiting for my approval?</utterance>
+        </inputs>
+        <number>11</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>explain_decision</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;find_record&apos;,&apos;brief_approval&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says PR-00000045 is not waiting on the user for approval, so there is nothing for them to decide, and does not tell them whether to approve or reject anything.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Brief me on the approval for PR-00000045 before I decide.</utterance>
+        </inputs>
+        <number>12</number>
+    </testCase>
+    <testCase>
+        <expectation>
             <expectedValue>topic_selector</expectedValue>
             <name>topic_assertion</name>
         </expectation>
@@ -177,7 +267,7 @@
         <inputs>
             <utterance>Approve PR-00000045 for me.</utterance>
         </inputs>
-        <number>8</number>
+        <number>13</number>
     </testCase>
     <testCase>
         <expectation>
@@ -195,6 +285,6 @@
         <inputs>
             <utterance>What is the capital of France?</utterance>
         </inputs>
-        <number>9</number>
+        <number>14</number>
     </testCase>
 </AiEvaluationDefinition>

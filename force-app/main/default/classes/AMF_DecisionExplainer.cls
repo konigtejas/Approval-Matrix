@@ -22,6 +22,11 @@
  * what the reader could already open. A routing reason the reader cannot see
  * is said to be not visible, not guessed at.
  *
+ * BRIEFINGS (M14) are the same facts, asked the current approver's question:
+ * briefLatest() runs only for the person the approval is waiting on, and adds
+ * one line saying so. The model describes the request; it never recommends
+ * approving or rejecting it.
+ *
  * NOT CACHED, for 6.4's reason: the history half moves as approvers act, and
  * an explanation of yesterday's state presented as today's would mislead.
  *
@@ -33,6 +38,15 @@ public with sharing class AMF_DecisionExplainer {
 
     /** What an explanation answers when the reader asks nothing in particular. */
     public static final String DEFAULT_QUESTION = 'Why did this record go where it went, and where does its approval stand now?';
+
+    /**
+     * What a briefing answers (M14): the approver's question before they decide.
+     * The model describes; it never recommends, because the decision is theirs.
+     */
+    public static final String BRIEFING_QUESTION =
+        'I am the approver this request is waiting on. Brief me before I decide: what is being asked, ' +
+        'why the approval matrix sent it to this approval process, the values the rule read, and what has ' +
+        'happened in the approval so far. Do not tell me whether to approve or reject it.';
 
     /** Longest question passed on to the model. The rest is cut, not refused. */
     @TestVisible
@@ -187,6 +201,52 @@ public with sharing class AMF_DecisionExplainer {
             );
         }
         return explain(recordId, story.entries[0], questionOf(question));
+    }
+
+    /**
+     * Briefs the approver a record's pending approval is waiting on (M14): the
+     * same facts an explanation is given, plus who is reading them, answering
+     * BRIEFING_QUESTION. Only for the current approver, as AMF_ApproverScope
+     * defines one -- and the timeline, since M14, shows that approver the row
+     * that explains the route, so the briefing can say why.
+     *
+     * @param recordId The governed record.
+     * @return The briefing.
+     * @throws AMF_ExplanationException When the record is not visible, its
+     *         approval is not waiting on the reader, or no briefing could be
+     *         generated.
+     */
+    public Explanation briefLatest(Id recordId) {
+        if (recordId == null) {
+            throw new AMF_ExplanationException('A record is required to brief its approver.');
+        }
+
+        AMF_DecisionTimelineService.Timeline story = timelineOf(recordId);
+        Set<Id> actors = AMF_ApproverScope.actorsFor(UserInfo.getUserId());
+        String label = recordLabelOf(recordId);
+
+        for (AMF_DecisionTimelineService.Entry entry : story.entries) {
+            if (AMF_ApproverScope.isWaitingOn(entry.approval, actors)) {
+                Explanation briefing = new Explanation();
+                briefing.text = generator.generate(
+                    factsOf(label, entry) +
+                    '\nReader: ' +
+                    UserInfo.getName() +
+                    ', the approver this approval is waiting on now.',
+                    BRIEFING_QUESTION
+                );
+                briefing.logId = entry.decision?.logId;
+                briefing.logName = entry.decision?.logName;
+                briefing.generatedAt = Datetime.now();
+                return briefing;
+            }
+        }
+
+        throw new AMF_ExplanationException(
+            label +
+            ' is not waiting on you for approval, so there is nothing for you to decide. ' +
+            'You can still ask why it went where it did.'
+        );
     }
 
     private Explanation explain(Id recordId, AMF_DecisionTimelineService.Entry entry, String question) {
@@ -354,6 +414,15 @@ public with sharing class AMF_DecisionExplainer {
             text = 'Recalled by ' + actor + ', ' + occurred;
         } else if (step.status == 'NoResponse') {
             text = named + 'no response from ' + actor + '; another approver decided the step, ' + occurred;
+        } else if (step.status == 'Reassigned') {
+            // A reassignment row names whom the step went to (ActorId) and the
+            // step's first assignee (OriginalActorId). Who made the change is not
+            // recorded, so it is not said (technical log M14).
+            text = named + 'reassigned to ' + actor;
+            if (step.originalActorId != null && step.originalActorId != step.actorId && String.isNotBlank(step.originalActorName)) {
+                text += ' (first assigned to ' + step.originalActorName + ')';
+            }
+            text += ', ' + occurred;
         } else {
             text = named + (String.isBlank(step.status) ? 'unknown' : step.status.toLowerCase()) + ' by ' + actor;
             // A delegate, or an admin acting on someone's behalf: whose step it was.

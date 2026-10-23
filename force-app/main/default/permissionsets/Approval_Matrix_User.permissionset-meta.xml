@@ -4,6 +4,10 @@
     <description>Submitters and approvers. Decision log is read-only and record-scoped; the matrix is not exposed at all. Matrix_Submission__c is read-only too, because only the engine sets the guard (arch doc 6.3, 11).</description>
     <hasActivationRequired>false</hasActivationRequired>
     <classAccesses>
+        <apexClass>AMF_AgentBriefApproval</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>AMF_AgentExplainDecision</apexClass>
         <enabled>true</enabled>
     </classAccesses>
@@ -12,11 +16,23 @@
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
+        <apexClass>AMF_AgentMyApprovals</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>AMF_AgentMyRequests</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
         <apexClass>AMF_AgentPreviewRoute</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>
         <apexClass>AMF_AgentSubmitRoute</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>AMF_AgentWhatIfRoute</apexClass>
         <enabled>true</enabled>
     </classAccesses>
     <classAccesses>

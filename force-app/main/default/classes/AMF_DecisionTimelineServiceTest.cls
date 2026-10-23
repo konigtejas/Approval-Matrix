@@ -494,6 +494,117 @@ private class AMF_DecisionTimelineServiceTest {
         }
     }
 
+    // ── M14: the current approver sees why ─────────────────────────────────────
+
+    /** An approval waiting at a step assigned to actorId, as the Classic provider reads one. */
+    private static AMF_ApprovalHistory.Instance waitingOn(Integer n, String status, Id actorId, Boolean pending) {
+        AMF_ApprovalHistory.Instance instance = approval(n, status, NINE);
+        AMF_ApprovalHistory.Step step = new AMF_ApprovalHistory.Step();
+        step.id = fakeId('04h', 100 + n);
+        step.status = pending ? 'Pending' : 'Approved';
+        step.isPending = pending;
+        step.stepName = 'Finance Analyst';
+        step.actorId = actorId;
+        step.occurredAt = NINE.addHours(1);
+        instance.steps.add(step);
+        return instance;
+    }
+
+    /** A record the approver can read, and a row they cannot: someone else submitted it. */
+    private static Purchase_Request__c requestReadableBy(User reader) {
+        Purchase_Request__c record = new Purchase_Request__c(
+            Amount__c = 250000,
+            Region__c = 'APAC',
+            Risk_Level__c = 'Low',
+            OwnerId = reader.Id
+        );
+        insert record;
+        return record;
+    }
+
+    @IsTest
+    static void theCurrentApproverIsShownWhyTheRequestWaitsOnThem() {
+        User approver = matrixUser();
+        Purchase_Request__c record = requestReadableBy(approver);
+        AMF_ApprovalHistory.Instance pending = waitingOn(1, 'Pending', approver.Id, true);
+        Approval_Decision_Log__c row = submittedRow(record.Id, String.valueOf(pending.id), NINE);
+        insert row;
+
+        HistoryStub nativeHistory = history(new List<AMF_ApprovalHistory.Instance>{ pending });
+        AMF_DecisionTimelineService.Timeline seen;
+
+        Test.startTest();
+        System.runAs(approver) {
+            Assert.areEqual(
+                0,
+                [SELECT COUNT() FROM Approval_Decision_Log__c WHERE Id = :row.Id],
+                'Precondition: their sharing does not show them the row'
+            );
+            seen = new AMF_DecisionTimelineService(nativeHistory).build(record.Id);
+        }
+        AMF_DecisionTimelineService.Timeline asAdmin = new AMF_DecisionTimelineService(nativeHistory).build(record.Id);
+        Test.stopTest();
+
+        Assert.areEqual(1, seen.entries.size(), 'One approval, now with its reason');
+        AMF_DecisionTimelineService.Decision decision = seen.entries[0].decision;
+        Assert.isNotNull(decision, 'The approver deciding sees why it came to them');
+        Assert.areEqual(row.Id, decision.logId);
+        Assert.areEqual('PR_High_Value_APAC', decision.matchedRule);
+        Assert.areEqual(2, decision.values.size(), 'The values the rule read');
+        Assert.isTrue(decision.visibleAsApprover, 'And it says why they can see it');
+        Assert.areEqual(pending.id, seen.entries[0].approval.id, 'Joined to the approval it started');
+
+        Assert.isFalse(asAdmin.entries[0].decision.visibleAsApprover, 'A reader who can open the row is not flagged');
+    }
+
+    @IsTest
+    static void anApproverReachedThroughAQueueIsShownWhyToo() {
+        User approver = matrixUser();
+        Group queue = new Group(Name = 'AMF Timeline Queue', DeveloperName = 'AMF_Timeline_Queue', Type = 'Queue');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert queue;
+            insert new GroupMember(GroupId = queue.Id, UserOrGroupId = approver.Id);
+        }
+
+        Purchase_Request__c record = requestReadableBy(approver);
+        AMF_ApprovalHistory.Instance pending = waitingOn(1, 'Pending', queue.Id, true);
+        insert submittedRow(record.Id, String.valueOf(pending.id), NINE);
+
+        AMF_DecisionTimelineService.Timeline seen;
+        System.runAs(approver) {
+            seen = new AMF_DecisionTimelineService(history(new List<AMF_ApprovalHistory.Instance>{ pending })).build(record.Id);
+        }
+
+        Assert.isNotNull(seen.entries[0].decision, 'Work for their queue is theirs to decide');
+        Assert.isTrue(seen.entries[0].decision.visibleAsApprover);
+    }
+
+    @IsTest
+    static void theReasonIsHiddenAgainOnceTheApprovalNoLongerWaitsOnThem() {
+        User approver = matrixUser();
+        Purchase_Request__c record = requestReadableBy(approver);
+
+        // They approved their step and the approval finished; and a second
+        // approval is pending with someone else.
+        AMF_ApprovalHistory.Instance decided = waitingOn(1, 'Approved', approver.Id, false);
+        AMF_ApprovalHistory.Instance elsewhere = waitingOn(2, 'Pending', Id.valueOf('005000000000001AAA'), true);
+        insert new List<Approval_Decision_Log__c>{
+            submittedRow(record.Id, String.valueOf(decided.id), NINE),
+            submittedRow(record.Id, String.valueOf(elsewhere.id), NINE.addHours(2))
+        };
+
+        AMF_DecisionTimelineService.Timeline seen;
+        System.runAs(approver) {
+            seen = new AMF_DecisionTimelineService(
+                history(new List<AMF_ApprovalHistory.Instance>{ elsewhere, decided })
+            ).build(record.Id);
+        }
+
+        Assert.areEqual(2, seen.entries.size(), 'Both approvals are still shown');
+        Assert.isNull(seen.entries[0].decision, 'Not waiting on them: no reason');
+        Assert.isNull(seen.entries[1].decision, 'No longer waiting on them: no reason');
+    }
+
     /** A Standard User holding Approval_Matrix_User: a submitter or an approver. */
     private static User matrixUser() {
         User user = standardUser('amftlv', 'amf.timeline.viewer');

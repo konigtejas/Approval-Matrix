@@ -27,6 +27,15 @@
  *     the Approval History related list shows it. That read access is checked
  *     first, explicitly, because the Classic provider reads without sharing.
  *
+ * AND ONE RULE OF ITS OWN, SINCE M14: THE CURRENT APPROVER SEES WHY. A pending
+ * approval whose row the user cannot read, and which is waiting on them --
+ * directly, through a queue or group, or as delegated approver
+ * (AMF_ApproverScope) -- gets that one row read without sharing, flagged
+ * visibleAsApprover. The person deciding is shown why the matrix sent the
+ * request to them; once the approval moves on, the rule no longer applies and
+ * the row is hidden from them again. No other row, and no other user, is
+ * affected (docs/decisions.md, 2026-10-23).
+ *
  * A READ PATH DEGRADES WHERE ROUTING WOULD FAIL. 4.6's fail-loudly rule governs
  * routing, where a silent fallback misroutes a record. Here the cost runs the
  * other way: a field deleted since a decision was made, or a values snapshot
@@ -137,6 +146,13 @@ public with sharing class AMF_DecisionTimelineService {
 
         @AuraEnabled
         public Datetime submittedAt;
+
+        /**
+         * True when the user cannot read this row through sharing and is shown
+         * it only because the approval it started is waiting on them (M14).
+         */
+        @AuraEnabled
+        public Boolean visibleAsApprover = false;
     }
 
     /** One value the evaluator read, as recorded in Evaluated_Values__c. */
@@ -251,6 +267,18 @@ public with sharing class AMF_DecisionTimelineService {
             entries.add(entry);
         }
 
+        // M14: an approval still unexplained, and waiting on this user, is
+        // explained by its own row, read for them alone.
+        for (Approval_Decision_Log__c row : rowsForCurrentApprover(recordId, unclaimed.values())) {
+            Entry entry = new Entry();
+            entry.key = row.Id;
+            entry.decision = toDecision(row, labels);
+            entry.decision.visibleAsApprover = true;
+            entry.occurredAt = entry.decision.submittedAt;
+            entry.approval = unclaimed.remove(row.Execution_Ref_Id__c);
+            entries.add(entry);
+        }
+
         for (AMF_ApprovalHistory.Instance approval : unclaimed.values()) {
             Entry entry = new Entry();
             entry.key = approval.id;
@@ -321,6 +349,66 @@ public with sharing class AMF_DecisionTimelineService {
             ORDER BY Submitted_At__c DESC NULLS LAST, CreatedDate DESC, Id DESC
             LIMIT :maxRows
         ];
+    }
+
+    /**
+     * M14's rule: the rows of pending approvals that no readable row explained
+     * and that are waiting on the running user. Scope is computed only when
+     * such an approval exists, so most timelines cost nothing extra.
+     */
+    private static List<Approval_Decision_Log__c> rowsForCurrentApprover(
+        Id recordId,
+        List<AMF_ApprovalHistory.Instance> unexplained
+    ) {
+        Set<String> waitingOnReader = new Set<String>();
+        Set<Id> actors;
+
+        for (AMF_ApprovalHistory.Instance approval : unexplained) {
+            if (approval.status != 'Pending') {
+                continue;
+            }
+            if (actors == null) {
+                actors = AMF_ApproverScope.actorsFor(UserInfo.getUserId());
+            }
+            if (AMF_ApproverScope.isWaitingOn(approval, actors)) {
+                waitingOnReader.add(String.valueOf(approval.id));
+            }
+        }
+
+        if (waitingOnReader.isEmpty()) {
+            return new List<Approval_Decision_Log__c>();
+        }
+        return new ApproverRowReader().rowsFor(String.valueOf(recordId), waitingOnReader);
+    }
+
+    /**
+     * Reads the rows M14's rule shows, outside the user's sharing. Its query is
+     * bound to the approvals the caller has already found waiting on the user,
+     * which is the whole of what this class may read without sharing.
+     */
+    private without sharing class ApproverRowReader {
+
+        private List<Approval_Decision_Log__c> rowsFor(String recordKey, Set<String> executionRefIds) {
+            return [
+                SELECT
+                    Id,
+                    Name,
+                    Outcome__c,
+                    Matched_Rule__c,
+                    Rule_Version__c,
+                    Expression_Snapshot__c,
+                    Evaluated_Values__c,
+                    Selected_Process__c,
+                    Execution_Ref_Id__c,
+                    Failure_Detail__c,
+                    Submitted_By__c,
+                    Submitted_By__r.Name,
+                    Submitted_At__c,
+                    CreatedDate
+                FROM Approval_Decision_Log__c
+                WHERE Record_Id__c = :recordKey AND Execution_Ref_Id__c IN :executionRefIds
+            ];
+        }
     }
 
     private static Decision toDecision(Approval_Decision_Log__c row, FieldLabels labels) {

@@ -66,4 +66,34 @@ private class AMF_AgentSupportTest {
         );
         Assert.areEqual('not json', AMF_AgentSupport.sentenceOf('not json', request), 'An unreadable snapshot, as recorded');
     }
+
+    @IsTest
+    static void namesSeveralRecordsApproversAndTimesAsTheListsWriteThem() {
+        Purchase_Request__c record = new Purchase_Request__c(Amount__c = 500, Region__c = 'EMEA', Risk_Level__c = 'Low');
+        insert record;
+        Id missing = Id.valueOf(Purchase_Request__c.SObjectType.getDescribe().getKeyPrefix() + '000000000001');
+        Group queue = new Group(Name = 'AMF Support Queue', Type = 'Queue');
+        System.runAs(new User(Id = UserInfo.getUserId())) {
+            insert queue;
+        }
+
+        Integer before = Limits.getQueries();
+        Map<Id, String> labels = AMF_AgentSupport.labelsOf(new Set<Id>{ record.Id, missing, null });
+        Assert.areEqual(1, Limits.getQueries() - before, 'One query for the object, however many records');
+
+        Assert.areEqual(
+            'Purchase Request ' + [SELECT Name FROM Purchase_Request__c WHERE Id = :record.Id].Name,
+            labels.get(record.Id)
+        );
+        Assert.areEqual('Purchase Request ' + missing, labels.get(missing), 'A record that cannot be read is named by its Id');
+
+        Map<Id, String> names = AMF_AgentSupport.actorNamesOf(new Set<Id>{ UserInfo.getUserId(), queue.Id });
+        Assert.areEqual(UserInfo.getName(), names.get(UserInfo.getUserId()));
+        Assert.areEqual('AMF Support Queue', names.get(queue.Id));
+        Assert.isTrue(AMF_AgentSupport.actorNamesOf(null).isEmpty());
+
+        Datetime nine = Datetime.newInstanceGmt(2026, 10, 23, 9, 5, 0);
+        Assert.areEqual(nine.format('d MMM yyyy, HH:mm'), AMF_AgentSupport.whenOf(nine));
+        Assert.areEqual('an unknown time', AMF_AgentSupport.whenOf(null));
+    }
 }

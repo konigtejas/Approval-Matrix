@@ -109,6 +109,7 @@ session needs. Update the row when a phase completes.
 | **M11** | A second governed object, Opportunity, by configuration alone — guard, two manager-hierarchy templates, the button off four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3, the validator runs each union query | **Complete** — gate run 2026-10-21: source gate and validator green across both objects and failing broken copies, 264/264 Apex at 98%, 59/59 Jest, UI API shows the action and no standard button, an Opportunity routed, approved and recalled in the org. The relationship limit measured as not enforced (142 joined). The manual check, step 8, passed in the first UI test run, 2026-10-22 (M12.6) | `6e3079d` + `96e5692`, M12.6 |
 | **M12** | Template lifecycle, queue and committee templates, portability. A release manifest makes an in-place edit a gate failure. `PR_Credit_Risk_Queue` and `PR_Finance_Committee` each have a rule. Usernames are filled at deploy, and the org's own configuration has its own package directory. New and Mass Change Owner are off the decision-log list | **Complete.** Gate run 2026-10-22. The source gate is green and failed broken copies, and a correct `_v2` passed. `force-app` converts with another org's domain. The org's six templates match the manifest. 274/274 Apex at 98%, 59/59 Jest, the related list offers no actions. Queue and committee requests routed, decided and recalled in the org. The manual check, step 11, passed in the first UI test run that day. M12.6 fixed the two timeline defects that run found: 60/60 Jest, 274/274 Apex, deployed. The UI suite's re-run confirmed both fixes (M12.7). M12.8 added a Request Name field to Purchase Requests and two list views, gated and deployed 2026-10-23 | `bcedf6f` + M12.6 (`72f4dfd`), M12.7 (`0049677`), M12.8 (`c59e758`) |
 | **M13** | AI around the engine. The Approval Matrix Assistant, an Agentforce employee agent, finds, previews, submits after confirmation and explains through the engine's own paths. The timeline explains recorded decisions in plain English through an Einstein prompt template | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M13.7), once the user had turned on Agentforce. Deployed 145/145. 334/334 Apex at 98%. 75/75 Jest. Einstein explained a real decision accurately. A live preview session previewed, confirmed, submitted (ADL-00000032) and explained a throwaway, which was then recalled. The agent was published and activated (v2 active). Its Testing Center suite passed 9/9, 27/27 assertions, after two instruction fixes. Step 11, the manual UI check, is owed | `e81f487` |
+| **M14** | The assistant for submitters and approvers. A what-if over a new write-nothing engine entry, `previewWith()`; the user's own requests; what is waiting for them; a briefing for the current approver; and the current approver's sight of the routing reason | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M14.5). Deployed 163/163. 371/371 Apex at 98%. 75/75 Jest. A live session's what-ifs wrote no row. A throwaway (PR-00000050) was reassigned to the CLI user, listed as waiting, briefed and recalled. Published to v7; its 14-case suite passed 42/42 assertions in two consecutive runs. Two defects found and fixed: a reassigned step described the wrong way round, and routing of "brief me". Step 9, the manual UI check, which includes M13's step 11, is owed | M14 |
 
 ### Superseded — the v1.0 plan
 
@@ -124,9 +125,10 @@ Retained only as a record of what was built. Phases 2–8 of that plan were neve
 carried-forward table), then the phase prompt in `docs/build-playbook.md`. Do not rely on
 conversation history — there is none by design.
 
-**Choosing the next phase:** `docs/build-playbook.md` Part 5 holds the proposed roadmap after M13
-(Flow approvals, three more AI use cases, the smaller items), with the decisions each needs first.
-It authorises nothing; `CLAUDE.md` does. `docs/handoff.md` is the short version.
+**Choosing the next phase:** M15, the Approval Matrix Admin Assistant, is authorised in `CLAUDE.md`
+(2026-10-23) and comes next. `docs/build-playbook.md` Part 5 holds the rest of the proposed roadmap
+(Flow approvals, the smaller items), with the decisions each needs first. It authorises nothing;
+`CLAUDE.md` does. `docs/handoff.md` is the short version.
 
 ---
 
@@ -4870,3 +4872,287 @@ This table supersedes M13.6's.
 | `amfSubmitForApproval` and `amfDecisionTimeline` still carry their own `messageOf`; `c/amfErrors` now exists for them | a later hardening pass |
 | Three more AI use cases are proposed, unauthorised: a rule-writing assistant, an approver briefing, a matrix-health report (playbook Part 5) | user |
 | M12.8's items carry unchanged | as there |
+
+## Phase M14 — The assistant for submitters and approvers
+
+**Commit:** see the status board. **Status:** complete, bar the manual UI check (gate step 9), which
+also covers M13's step 11. Authorised in `CLAUDE.md` on 2026-10-23, and built, gated and committed
+the same day.
+
+After asking what was done and what was pending, the user asked whether more Agentforce use cases
+could be added. Six were offered: the three proposals M13 left (an approver briefing, a rule-writing
+assistant, a matrix-health report) and three more (where are my requests, a what-if preview, a
+rule-change impact check). The user said "yes do all". Four decisions were put to them first:
+- **Approvers and the routing reason:** show it to the current approver, in the briefing and on the
+  timeline.
+- **The engine:** allow two additive write-nothing preview entries.
+- **Admin features:** a second agent, for admins only.
+- **Pallab Saikia:** no access for now.
+
+The plan split the work into two phases, built back to back: M14 for the people who use approvals,
+and M15 for administrators. Mid-build the user asked to "resume slowly". From then on the gate ran
+one step at a time, with a report after each.
+
+### M14.1 File-level changes
+
+| File | Change | Notes |
+|---|---|---|
+| `classes/AMF_ApprovalMatrixService.cls` | modified | `previewWith()`; a private `prepare()` overload carrying the changes; `changedFields()` and `applyChanges()`. `submit`, `preview` and `submitEach` pass no changes and are unchanged |
+| `classes/AMF_ApproverScope.cls` | **new** | who a user may act for: the user, queues and groups containing them (nested to depth 5), and the users they are delegated approver for; `isWaitingOn()` |
+| `classes/AMF_DecisionTimelineService.cls` | modified | the current-approver rule in `build()`, `Decision.visibleAsApprover`, the `without sharing` inner `ApproverRowReader` |
+| `classes/AMF_DecisionExplainer.cls` | modified | `BRIEFING_QUESTION` and `briefLatest()`, additive; a `Reassigned` step described by whom it went to (M14.3f) |
+| `classes/AMF_AgentSupport.cls` | modified | `labelsOf()`, `actorNamesOf()` and `whenOf()`, additive |
+| `classes/AMF_AgentWhatIfRoute.cls` | **new** | invocable *What-If Approval Route* |
+| `classes/AMF_AgentMyRequests.cls` | **new** | invocable *My Approval Requests* |
+| `classes/AMF_AgentMyApprovals.cls` | **new** | invocable *My Pending Approvals* |
+| `classes/AMF_AgentBriefApproval.cls` | **new** | invocable *Brief Approver* |
+| five new `…Test.cls` suites, and four suites extended | new / modified | 37 tests (M14.4) |
+| `permissionsets/Approval_Matrix_Admin…`, `Approval_Matrix_User…` | modified | class access to the four new invocables |
+| `agentforce/…/AMF_Approval_Assistant.agent` | modified | the router, `what_if` in `route_and_submit`, briefing in `explain_decision`, the new `my_work` subagent (M14.2c, M14.3i) |
+| `specs/AMF_Approval_Assistant-testSpec.yaml` | modified | five cases and the header |
+| `org-config/…/aiEvaluationDefinitions/AMF_Approval_Assistant_Tests…` | modified | regenerated from the spec, 14 cases, moved from `force-app` as M13.7f describes |
+| `CLAUDE.md`, `docs/architecture.md` (§1, §6.4, §7, §8, §11, §13.4), `docs/build-playbook.md`, `docs/decisions.md`, this file | modified | M14 and M15 authorised; M14 designed, gated and recorded |
+
+No object, field, template, rule or LWC changes.
+
+### M14.2 Design choices worth recording
+
+`docs/decisions.md` holds the approved choices, one line each. The reasoning behind the rest:
+
+**(a) The what-if is the engine's, applied after step 4.** A what-if evaluated outside the engine
+would be a second rule walk that could drift from the one a submission takes. Putting the changed
+values on the in-memory copy that step 4 read keeps rule order, compilation and first-match the
+engine's own. The record, the row and the guard are never touched.
+- Only the record's own fields may change, because replacing a relationship path would answer a
+  question about a different parent.
+- The fields are checked inside step 4, after authorisation (M14.3c).
+
+**(b) The action reads values the way a person writes them, and refuses rather than guesses.**
+- Field names: label or API name, in any case.
+- Numbers: commas, a currency sign or code, and k, m, thousand or million are all accepted.
+- Picklists: a field's own value or label, in any case. Anything else is refused, with the valid
+  values listed.
+- Booleans: true/false, yes/no, checked/unchecked.
+- Dates: `YYYY-MM-DD`, with the locale's own form as a fallback.
+- Blank: "blank", "none" or "empty" tries a blank value.
+- A field no active rule reads is still tried, and the answer says it cannot change the route. That
+  is itself useful: "vendor type does not matter to the matrix".
+
+**(c) A what-if clears `can_submit`.** Submit's record and expected process are bound to the last
+preview. A what-if is not a preview, so after one, "submit it" must start from a fresh preview of the
+record's real values.
+
+**(d) The current approver's sight of the reason is one bounded read.**
+- Rows are first read `WITH USER_MODE`, as before.
+- A pending approval that no readable row claims gets its own row read without sharing, only if a
+  pending step is assigned to someone in the reader's `AMF_ApproverScope`.
+- The scope is computed only when such an approval exists, so most timelines cost no extra query.
+
+`AMF_ApproverScope` is the single definition that the timeline, the briefing and "my approvals"
+share. Two cases it does not cover:
+- A queue whose member is a role is not followed, because membership through a role is not a
+  `GroupMember` row and the templates name users, queues and groups only.
+- An admin who can approve anything through Modify All Data is not counted as "waiting on". They read
+  every row anyway.
+
+**(e) Names by Id.** Approvers, submitters and the last actor are named through `actorNamesOf()` from
+their Ids, never through `Actor.Name`, `SubmittedBy.Name` or `LastActor.Name`. M13 found that
+`Actor.Name` is null on work items created in the running transaction. The Apex tests decide
+approvals in the transaction they read them, so the relationship names could not be trusted there.
+
+**(f) The lists are deterministic sentences, built in Apex.**
+- "My requests" takes the newest attempt per record over 90 days (at most 500 rows read, 10 records
+  listed), still-waiting first.
+- "My approvals" lists the oldest first. A committee step's several work items count once per record.
+- Each line carries the record's Id, so the next action can use it without a search.
+
+### M14.3 Issues encountered
+
+**(a) `list` cannot be an Apex method name.** The first check-only compile gave `Unexpected token
+'<'` at `public static List<Result> list(...)` in both listing actions. They were renamed
+`listRequests` and `listApprovals`. `when` is reserved too (M13.3b), and one local variable was
+renamed before compiling.
+
+**(b) The PowerShell tool's working directory had drifted** into `force-app/main/default/classes`,
+so the first check-only deploy answered `File or folder not found`. Every `sf` call since runs from
+the project root.
+
+**(c) `previewWith()` first checked the field names before authorising the record.** Writing the
+stranger test exposed this. Describe hides fields a user has no FLS on, so a caller who could not
+read the record would have been told the field did not exist, not that they lacked access. The
+check moved into step 4, after authorisation and the pending check. Only the emptiness check stays
+in front.
+
+**(d) One expectation compared JSON text where it meant values.** The first check-only run gave 146
+tests and 1 failure:
+```
+AMF_ApprovalMatrixServiceTest.aWhatIfToABlankValueAndOneThatChangesNothingBothAnswerAsPreviewWould:
+Expected: {"Region__c":"APAC","Amount__c":250000.00}, Actual: {"Region__c":"APAC","Amount__c":250000}
+```
+The stored amount carries the field's scale, and the tried one does not. The test now compares the
+values. The engine suite then ran 46/46.
+
+**(e) npm is still absent from both shells.** Jest runs through the CLI's bundled `node.exe`, as
+M3.4e records.
+
+**(f) The briefing reversed a reassignment.** The first live briefing said "you reassigned that step
+to AMF Approver One". In fact the step had been reassigned from AMF Approver One to the CLI user. A
+second reassignment of the throwaway to AMF Approver Two showed what a `Reassigned` history row
+holds:
+```
+Reassigned  actor=Tejas Vernekar    original=AMF Approver One   (reassigned to the CLI user)
+Reassigned  actor=AMF Approver Two  original=AMF Approver One   (reassigned by the CLI user)
+```
+- The actor is the new assignee.
+- The original actor is the step's first assignee, not the previous one.
+- The person who reassigned it is not recorded.
+- A second reassignment in the same transaction, back to the CLI user, added no row.
+
+M13's facts said "reassigned by X, for Y", which is wrong for this row and misled the model. The
+explainer now writes "reassigned to X (first assigned to Y)", and a test pins it. It was deployed as
+0Afaj00000orZajCAE, and its three suites ran 29/29. A fresh session then briefed correctly: "the
+step was reassigned twice and is now assigned to Tejas Vernekar".
+
+The timeline LWC words the same row "X, for Y", which is ambiguous but makes no claim about who
+acted. It is carried, because M14 changes no LWC.
+
+**(g) A preview session answers a repeated question from memory.** Asked for the briefing again in
+the same session, the agent returned the earlier text word for word, without calling the action:
+its instructions forbid calling an action again for a result it already has. The check was rerun
+in a fresh session.
+
+**(h) The first what-if answer dropped the comparison with today,** which the action's summary
+carries. `route_and_submit` now says to "always include how the route compares with today", and the
+next session did.
+
+**(i) The published agent routed differently from the local preview.** Testing Center runs the
+published agent. The authoring-bundle preview, which runs the local bundle, routed "Brief me on the
+approval for PR-00000045 before I decide" to `my_work` in 3/3 sessions. The published agent sent it
+to `explain_decision`:
+
+| Version | Change | Run | Assertions | Failures |
+|---|---|---|---|---|
+| v3 | M14 as built | 4KBaj00000046y5GAA | 38/42 | case 5 topic (route_and_submit, then on to explain); case 12 routed to explain |
+| v4 | router: "would go" against "already went"; briefing named first | 4KBaj000000471JGAQ | 36/42 | case 1 answered by the router itself ("which record?"); cases 5 and 12 as before |
+| v5 | router never asks which record; hand-off descriptions sharpened; explain's instructions redirect "brief me" | 4KBaj000000472vGAA, 4KBaj000000474XGAQ | 38/42, 38/42 | case 5 topic (my_work, then route_and_submit); case 12 routed to explain |
+| v6 | the router's and subagents' own descriptions | 4KBaj0000004769GAA, 4KBaj000000477lGAA | 38/42, 41/42 | case 12 in one run; case 5 topic in both |
+| v7 | briefing moved into `explain_decision`; `my_work` holds the lists | 4KBaj000000479NGAQ, 4KBaj00000047AzGAI | **42/42, 42/42** | none |
+
+What the investigation found:
+- `sf agent preview start --api-name AMF_Approval_Assistant` cannot preview the published employee
+  agent from the CLI: `Bad Request: Invalid user ID provided on start session`.
+- The published planner, `GenAiPlannerBundle:AMF_Approval_Assistant_v5`, can be retrieved at API
+  64.0. API 68.0 answers `Cannot use: GenAiPlannerBundle in this version`.
+- That planner's `plannerType` is `Atlas__ConcurrentMultiAgentOrchestration`. Its embedded
+  definition, base64-encoded, is identical to the source, router instructions included.
+- The router's own description, though, still read "Send the user's request to previewing and
+  submitting, or to explaining a decision".
+
+So the published runtime does receive the router's instructions, but it chooses largely by the
+descriptions. The lasting fix was structural, not wording. A briefing is an explanation written for
+the approver, from the same facts and template, so it now belongs to the subagent the platform sends
+it to. `my_work` lost the "where … stand" wording that drew case 5, and keeps the briefing action
+only for an approval from a list it has just given. Case 12's expected topic changed with the design,
+which is documented in the spec's header. No expected outcome was loosened.
+
+**(j) A permission set edit that seemed to apply did not.** The first scripted insertion of the four
+class grants left both files unchanged, and the grant counts showed it. It was rerun with patterns
+that tolerate either line ending and checked: 14 grants in Admin, 13 in User, each new class once,
+and line endings unchanged.
+
+### M14.4 Verification evidence
+
+```
+check-only compile   the 9 new and changed classes: Succeeded (after (a))
+check-only tests     14 suites, RunSpecifiedTests: 146 run, 1 failure (d); after the fix the engine
+                     suite 46/46, AMF_ApprovalMatrixService 384/416 (92%) by its own suite
+source gate          passed: 8 active rules, 6 processes guard-checked, 6 of 6 templates released and
+                     unchanged, 5 layouts of 2 governed objects
+jest                 Test Suites: 5 passed, 5 total; Tests: 75 passed, 75 total
+agent validate       {"status": 0, "result": {"success": true}, "warnings": []}, after every change
+deploy               0Afaj00000orXNdCAM: Succeeded, 163/163, 0 errors
+post-deploy          "Approval Matrix configuration is valid."
+RunLocalTests        707aj00001NLwGR: Passed, 370/370, org-wide 98%
+                     AMF_ApprovalMatrixService 415/416, AMF_DecisionTimelineService 183/183,
+                     AMF_ApproverScope 28/28, AMF_AgentMyRequests 144/144, AMF_AgentBriefApproval
+                     24/24 (100%); AMF_AgentMyApprovals 130/131 (99%); AMF_DecisionExplainer 221/229
+                     (97%); AMF_AgentSupport 74/77 (96%); AMF_AgentWhatIfRoute 274/298 (92%)
+explainer fix        0Afaj00000orZajCAE, 3 suites: 29/29
+final RunLocalTests  707aj00001NMg9J: Passed, 371/371, org-wide 98%; AMF_DecisionExplainer 226/234
+final check-only     all three directories, 0Afaj00000oroujCAA: Succeeded, 163/163, 0 errors
+```
+
+New tests by suite:
+- `AMF_ApprovalMatrixServiceTest` +6
+- `AMF_ApproverScopeTest` 6
+- `AMF_DecisionTimelineServiceTest` +3
+- `AMF_DecisionExplainerTest` +3
+- `AMF_AgentBriefApprovalTest` 3
+- `AMF_AgentWhatIfRouteTest` 7
+- `AMF_AgentMyRequestsTest` 4
+- `AMF_AgentMyApprovalsTest` 4
+- `AMF_AgentSupportTest` +1
+
+That is 37, so 334 + 37 = 371. Two of them run real Classic approvals, one in each listing suite
+(M14.2e).
+
+### M14.5 The gate as run (2026-10-23)
+
+```
+1  source gate     passed (M14.4)
+2  offline         Jest 75/75; sf agent validate: success
+3  deploy          all three directories, 0Afaj00000orXNdCAM: 163/163
+4  post-deploy     "Approval Matrix configuration is valid."
+5  RunLocalTests   370/370 (707aj00001NLwGR); 371/371 after (f) (707aj00001NMg9J)
+6  live preview    --authoring-bundle --use-live-actions; decision log rows 28 before
+                   "What if PR-00000047 had an amount of 120000 and region APAC?"
+                     -> PR_Three_Level_Finance under PR_High_Value_APAC; "Today, with its current
+                        values, it would go to PR_Two_Level_Mgmt under rule PR_Catch_All. This is just
+                        a what-if: nothing was changed or submitted." (after (h))
+                   "...if its vendor type were Strategic?" -> "Changing Vendor Type makes no difference
+                        to the route, since no active rule reads Vendor Type."
+                   "Where do my approval requests stand?" -> "You submitted 15 records in the last 90
+                        days, with 6 still waiting for approval", pending first, each with its approver
+                        and date. PR-00000006, pending but submitted by AMF Approver One with no
+                        decision log row, is rightly not among them
+                   throwaway: PR-00000050 (500, AMER, Low) submitted by anonymous Apex through the
+                        engine: Submitted, PR_Catch_All -> PR_Two_Level_Mgmt, ADL-00000033; its work
+                        item reassigned from AMF Approver One to the CLI user
+                   "Is anything waiting for my approval?" -> "One request is waiting on you for
+                        approval: Purchase Request PR-00000050 (approval process PR_Two_Level_Mgmt,
+                        step "Manager"), submitted by Tejas Vernekar, waiting on you since ..."
+                   "Brief me on it before I decide." -> rule PR_Catch_All, process
+                        PR_Two_Level_Mgmt, ADL-00000033, the step reassigned and now waiting on the
+                        user; no recommendation (after (f))
+                   decision log rows after: 29 (the throwaway's own submission only)
+                   cleanup: recalled by anonymous Apex, status Removed, Matrix Submission false; no
+                        work item left assigned to the CLI user
+7  publish         scripts/publish-agent.ps1: v3, then v4 to v7 for (i); v7 active
+8  agent tests     14 cases; v7: 42/42 assertions in two consecutive runs (M14.3i)
+9  manual UI check owed by the user; it includes M13's step 11
+```
+
+**Left in `amf-dev` by the gate:**
+- PR-00000050, "M14 gate throwaway": recalled, guard false;
+- its permanent row, ADL-00000033;
+- agent versions v1 to v6, inactive and permanent, with v7 active;
+- the test definition's runs.
+
+PR-00000045 to -48 were read, never submitted.
+
+### M14.6 Carried into later phases
+
+This table supersedes M13.7's.
+
+| Item | Owner |
+|---|---|
+| Gate step 9, the manual UI check, including M13's step 11. In the Agentforce panel, on a record: "Where would this go?", "What if the amount were 120000?", "Where do my requests stand?", "What is waiting for my approval?". Then a throwaway, submitted and reassigned to the tester: "Brief me on it", then recall it. And the Explain button on PR-00000042's newest timeline entry | user |
+| The panel's own page context and how it renders submit's confirmation, both unobserved (M13.7) | step 9 |
+| The timeline LWC words a `Reassigned` row as "X, for Y". It is accurate about the actor, but does not say it is the new assignee (M14.3f) | a later LWC change |
+| Topic assertions depend on the platform's model. v7 passed twice in a row. A platform change may need the descriptions revisited, the way M14.3i did | whoever reruns the suite |
+| A follow-up what-if phrased "And would it …" carries the earlier values over, and the answer states them (M14.5 step 6) | as designed; revisit if confusing |
+| Real approvers (`amfu1` to `5`) would each need an Agentforce licence to use the briefing; amf-dev has 5 seats, 1 used | user |
+| Einstein's Trust Layer prompt-injection detection is still off. More free text now reaches the model: approver comments in briefings | user |
+| `AMF_AgentSubmitRoute` keeps its own private approver-name lookup, now duplicated by `AMF_AgentSupport.actorNamesOf()` | a later hardening pass |
+| M15, the Approval Matrix Admin Assistant: authorised, next | next phase |
+| M13.7's other items carry unchanged: the prompt template's version, editing the agent, an org without Einstein, the agent spec's records, the UI suite, `messageOf` | as there |

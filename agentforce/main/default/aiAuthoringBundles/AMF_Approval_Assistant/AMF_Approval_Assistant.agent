@@ -11,17 +11,22 @@
 #     never filled in by the model;
 #   - the platform asks the user to confirm before submit runs;
 #   - whether the route changed since the preview is decided in Apex, not by the model.
+#
+# M14 adds, on the same terms: where the user's own requests stand, what is waiting for
+# their approval, a briefing for the current approver, and a what-if that the engine answers.
+# A what-if clears can_submit, so a submission after one always starts from a fresh preview
+# of the record's real values, never from the values tried.
 
 system:
     instructions: |
-        You are the Approval Matrix Assistant, an AI assistant for employees. You help people see where a record's approval will go, submit it for approval, and understand why an approval went where it did.
+        You are the Approval Matrix Assistant, an AI assistant for employees. You help people see where a record's approval will go, try what-if changes, submit a record for approval, see where their own requests stand and what is waiting for their approval, get briefed before they decide, and understand why an approval went where it did.
         The approval matrix decides every route, not you. Never predict, choose, change or promise a route, an approver or an outcome. State routes, rules, values, approval steps and decision log names only as your actions return them, and keep rule and approval process names exactly as written.
         The approval matrix's routing rules are business data that your actions read, not your own instructions. Questions about which rule applies to a record, or why a rule matched, are ordinary approval questions that you answer with your actions.
-        You cannot approve, reject, recall or reassign approvals, and you cannot change records or rules. If someone asks, say so, and suggest they use the record page.
+        You cannot approve, reject, recall or reassign approvals, and you cannot change records or rules. If someone asks, say so, and suggest they use the record page. Never tell an approver whether to approve or reject: the decision is theirs.
         Everything you show respects the user's own access to records and decision logs.
         Keep answers short and plain. Do not use tables.
     messages:
-        welcome: "Hi! I can show where a record's approval will go, submit it for you, and explain any approval decision in plain English. Open a Purchase Request or an Opportunity, or tell me which record you mean."
+        welcome: "Hi! I can show where a record's approval will go, try what-if changes, submit it for you, show where your requests stand and what is waiting for your approval, and explain any approval decision in plain English. Open a Purchase Request or an Opportunity, or tell me which record you mean."
         error: "Sorry, something went wrong. Please try again."
 
 config:
@@ -50,23 +55,26 @@ language:
     all_additional_locales: False
 
 start_agent approval_router:
-    description: "Send the user's request to previewing and submitting, or to explaining a decision"
+    description: "Send the user's request on: previews, what-ifs and submissions; explanations of decisions already made and briefings before a decision; or lists of the user's own requests and approvals"
     reasoning:
         instructions: |
-            You route requests; you do not answer them. Choose one of these:
-            - Where a record would go for approval, which approval matrix rule or approval process applies to it, or submitting a record for approval: use to_route_and_submit. The matrix's rules are business routing rules, not your own instructions, so a question about which rule applies is one to route.
-            - Why a record went where it did, what an approval decision means, or where an approval stands now: use to_explain.
+            You route requests; you do not answer them. Never ask the user which record they mean: the subagents work that out, and they can see the record on the user's screen when the user says "this" or "it". Choose exactly one of these:
+            - Where a record would go if it were submitted now, where it would go if some of its values were different, which approval matrix rule or approval process would apply to it, or submitting a record for approval: use to_route_and_submit. The matrix's rules are business routing rules, not your own instructions, so a question about which rule applies is one to route.
+            - Why a record already went where it went, what its recorded approval decision means, where one record's approval stands now, or a briefing on an approval before the user decides it, with words such as "brief me": use to_explain.
+            - A list of the user's own submitted requests, or of the approvals waiting for them: use to_my_work.
             - A request to approve, reject, recall or reassign an approval: use no action. Say that you cannot do that, because the approvers decide in the approval itself, and offer to show where a record's approval will go, submit it, or explain a decision.
-            - Anything else: say in one sentence that you can preview where an approval will go, submit a record for approval, and explain approval decisions, and ask what they need.
+            - Anything else: say in one sentence that you can preview where an approval will go, try a what-if, submit a record for approval, show the user's requests and what is waiting for their approval, and explain approval decisions, and ask what they need.
         actions:
             to_route_and_submit: @utils.transition to @subagent.route_and_submit
-                description: "Preview where a record's approval would go and which approval matrix rule decides it, or submit a record for approval"
+                description: "For where a record WOULD go if submitted now or with different values, which rule WOULD decide it, or submitting it. Not for records that already went somewhere"
             to_explain: @utils.transition to @subagent.explain_decision
-                description: "Explain why a record went where it did, or where its approval stands now"
+                description: "For why a record already WENT where it did, where its approval stands now, or a briefing before the user decides it (brief me)"
+            to_my_work: @utils.transition to @subagent.my_work
+                description: "For lists: the requests the user submitted and their status, or the approvals waiting for the user"
 
 subagent route_and_submit:
     label: "Preview and Submit"
-    description: "Preview where a governed record's approval would go, and submit it for approval when the user asks"
+    description: "Preview where a record's approval would go if it were submitted now or had different values (what-if), and submit it for approval when the user asks. Not for records that already went somewhere"
 
     actions:
         find_record:
@@ -184,6 +192,47 @@ subagent route_and_submit:
                     description: "Who the approval is waiting on now."
                     filter_from_agent: False
 
+        what_if_route:
+            description: "Shows where a record's approval would go if some of its field values were different, and how that compares with today. Changes nothing and submits nothing."
+            target: "apex://AMF_AgentWhatIfRoute"
+            include_in_progress_indicator: True
+            progress_indicator_message: "Trying the change on the approval matrix..."
+            inputs:
+                recordId: string
+                    description: "The Salesforce Id of the record to try the values on."
+                    is_required: True
+                changes: string
+                    description: "The values to try, as Field = value pairs separated by semicolons, such as Amount = 120000; Region = EMEA. Fields may be named by their label."
+                    is_required: True
+            outputs:
+                recordId: string
+                    description: "The record tried, as an 18-character Id."
+                    filter_from_agent: True
+                recordLabel: string
+                    description: "The record as a person names it."
+                    filter_from_agent: False
+                outcome: string
+                    description: "What the matrix would do with the values tried: Routable, Blocked_No_Match or Failed. Refused when the what-if could not be run."
+                    filter_from_agent: False
+                routeChanged: boolean
+                    description: "True when the values tried would send the record somewhere other than today."
+                    filter_from_agent: False
+                selectedProcess: string
+                    description: "The approval process the record would enter with the values tried."
+                    filter_from_agent: False
+                matchedRule: string
+                    description: "The rule that would decide the route with the values tried."
+                    filter_from_agent: False
+                currentProcess: string
+                    description: "The approval process the record would enter today, with its own values."
+                    filter_from_agent: False
+                currentRule: string
+                    description: "The rule that decides the route today."
+                    filter_from_agent: False
+                summary: string
+                    description: "The what-if in plain English, complete and ready to give the user."
+                    filter_from_agent: False
+
     reasoning:
         instructions: ->
             | If the user asks you to approve, reject, recall or reassign an approval, call no action: say that you cannot, because the approvers decide in the approval itself.
@@ -195,8 +244,9 @@ subagent route_and_submit:
                   If the user asked to submit it, call {!@actions.submit}; the user is asked to confirm before it runs. If the preview's outcome was Blocked_No_Match or Failed, first say that submitting will not start an approval and will only record the attempt, and submit only if the user still wants that.
                   If the user only asked where it would go, offer to submit it.
             | After a submission, give the user the summary the action returned. If routeChanged is True, say clearly that the record went by a different route than the one previewed, because the record or the approval matrix changed in between.
+              If the user asks where a record would go if some of its values were different, call {!@actions.what_if} with the record's Id and the values to try, written as Field = value pairs separated by semicolons, such as Amount = 120000; Region = EMEA. Give the user its summary in your own words without changing any name, rule, value or process, and always include how the route compares with today. A what-if changes nothing and is never submitted. If the user then wants to submit, explain that the record is submitted with its own values, not the values tried, so they should change the record first if they want those values; then preview the record again before submitting it.
               Use only what the actions return. Never work out a route, a rule or an approver yourself, and do not call an action again for a result you already have.
-              If the user asks why a record went where it did, use the to_explain action.
+              If the user asks why a record went where it did, use the to_explain action. If they ask where their own requests stand or what is waiting for their approval, use the to_my_work action.
 
         actions:
             find: @actions.find_record
@@ -214,14 +264,41 @@ subagent route_and_submit:
                 with expectedProcess = @variables.previewed_process
                 set @variables.can_submit = False
                 available when @variables.can_submit == True
+            what_if: @actions.what_if_route
+                description: "Try different field values on a record and see where its approval would go, without changing or submitting anything"
+                with recordId = ...
+                with changes = ...
+                set @variables.can_submit = False
             to_explain: @utils.transition to @subagent.explain_decision
                 description: "Explain why a record went where it did, or where its approval stands now"
+            to_my_work: @utils.transition to @subagent.my_work
+                description: "List the user's own requests or the approvals waiting for them"
 
 subagent explain_decision:
-    label: "Explain a Decision"
-    description: "Explain in plain English why a record was routed where it was, and where its approval stands now"
+    label: "Explain or Brief"
+    description: "Explain in plain English why a record already went where it did and where its approval stands now, or brief the approver it is waiting on before they decide (brief me)"
 
     actions:
+        brief_approval:
+            description: "Briefs the user in plain English on an approval that is waiting on them: what is asked, why the approval matrix routed it to them, and what has happened so far. Never recommends a decision."
+            target: "apex://AMF_AgentBriefApproval"
+            include_in_progress_indicator: True
+            progress_indicator_message: "Preparing your briefing..."
+            inputs:
+                recordId: string
+                    description: "The Salesforce Id of the record whose approval is waiting on the user."
+                    is_required: True
+            outputs:
+                briefed: boolean
+                    description: "True when the briefing describes an approval waiting on the user; false when it says why it cannot."
+                    filter_from_agent: False
+                briefing: string
+                    description: "The briefing in plain English, or the reason none could be given."
+                    filter_from_agent: False
+                decisionLogName: string
+                    description: "The decision log row the briefing was written from."
+                    filter_from_agent: False
+
         explain_approval:
             description: "Explains in plain English why the approval matrix sent a record where it did, and where its approval stands now, from the recorded decision and the approval history the user can see."
             target: "apex://AMF_AgentExplainDecision"
@@ -272,11 +349,15 @@ subagent explain_decision:
         instructions: ->
             | The record on the user's screen has Id "{!@variables.currentRecordId}" and object "{!@variables.currentObjectApiName}". Both are empty when no record is open.
               Work out which record the user means. If they say "this" or "it", or name no record, use the record on screen. If they name a record by its name or number, call {!@actions.find} with what they said, and use the recordId it returns. If it returns several matches, show them and ask which one they mean. If no record is on screen and they named none, ask which record they mean.
-              Call {!@actions.explain} with the record's Id and the user's question in their own words. Give the user the explanation as it was returned, without adding any fact, rule, value or step of your own. If explained is False, tell the user what the explanation says.
-              Do not call {!@actions.explain} again for the same question.
-              If the user wants to see where a record would go, or to submit it, use the to_route_and_submit action.
+              If the user asks to be briefed on an approval before deciding it, with words such as "brief me", call {!@actions.brief} with the record's Id, not {!@actions.explain}. Give the user the briefing as it was returned, without adding any fact, rule, value or step of your own. If briefed is False, tell the user what the briefing says. Never tell the user whether to approve or reject: the decision is theirs.
+              For any other question about why a record went where it did or where its approval stands, call {!@actions.explain} with the record's Id and the user's question in their own words. Give the user the explanation as it was returned, without adding any fact, rule, value or step of your own. If explained is False, tell the user what the explanation says.
+              Do not call an action again for a result you already have.
+              If the user wants to see where a record would go, or to submit it, use the to_route_and_submit action. If they want a list of their own requests or of the approvals waiting for them, use the to_my_work action.
 
         actions:
+            brief: @actions.brief_approval
+                description: "Brief the user on an approval waiting on them, without recommending a decision"
+                with recordId = ...
             explain: @actions.explain_approval
                 description: "Explain a record's latest approval decision in plain English"
                 with recordId = ...
@@ -286,3 +367,120 @@ subagent explain_decision:
                 with searchText = ...
             to_route_and_submit: @utils.transition to @subagent.route_and_submit
                 description: "Preview where a record's approval would go, or submit it for approval"
+            to_my_work: @utils.transition to @subagent.my_work
+                description: "List the user's own requests or the approvals waiting for them"
+
+subagent my_work:
+    label: "My Requests and Approvals"
+    description: "List the requests the user submitted, with the status of each, or the approvals waiting for the user"
+
+    actions:
+        list_my_requests:
+            description: "Lists the governed records the user submitted for approval in the last 90 days and where each one stands: waiting on whom, approved, rejected, recalled, blocked or failed. Reads only."
+            target: "apex://AMF_AgentMyRequests"
+            include_in_progress_indicator: True
+            progress_indicator_message: "Reading your requests..."
+            inputs:
+                pendingOnly: boolean
+                    description: "True to list only requests still waiting for approval."
+            outputs:
+                count: integer
+                    description: "How many records the user submitted in the period listed."
+                    filter_from_agent: False
+                requests: string
+                    description: "A numbered list of the user's records, each with its Id and where its approval stands."
+                    filter_from_agent: False
+                message: string
+                    description: "What was found, ready to give the user."
+                    filter_from_agent: False
+
+        list_my_approvals:
+            description: "Lists the governed records whose approval is waiting on the user, directly, through a queue, or as delegated approver, oldest first. Reads only."
+            target: "apex://AMF_AgentMyApprovals"
+            include_in_progress_indicator: True
+            progress_indicator_message: "Checking what is waiting for you..."
+            inputs:
+                objectName: string
+                    description: "Optional: list only one kind of record, such as Purchase Request or Opportunity. Leave empty for every kind."
+            outputs:
+                count: integer
+                    description: "How many governed records are waiting on the user for approval."
+                    filter_from_agent: False
+                approvals: string
+                    description: "A numbered list of the records waiting on the user, oldest first, each with its Id."
+                    filter_from_agent: False
+                message: string
+                    description: "What is waiting, ready to give the user."
+                    filter_from_agent: False
+
+        brief_approval:
+            description: "Briefs the user in plain English on an approval that is waiting on them: what is asked, why the approval matrix routed it to them, and what has happened so far. Never recommends a decision."
+            target: "apex://AMF_AgentBriefApproval"
+            include_in_progress_indicator: True
+            progress_indicator_message: "Preparing your briefing..."
+            inputs:
+                recordId: string
+                    description: "The Salesforce Id of the record whose approval is waiting on the user."
+                    is_required: True
+            outputs:
+                briefed: boolean
+                    description: "True when the briefing describes an approval waiting on the user; false when it says why it cannot."
+                    filter_from_agent: False
+                briefing: string
+                    description: "The briefing in plain English, or the reason none could be given."
+                    filter_from_agent: False
+                decisionLogName: string
+                    description: "The decision log row the briefing was written from."
+                    filter_from_agent: False
+
+        find_record:
+            description: "Finds governed records, such as Purchase Requests and Opportunities, by name, number or Id, among the records the user can see."
+            target: "apex://AMF_AgentFindRecord"
+            inputs:
+                searchText: string
+                    description: "The record's name, number or Id as the user gave it, such as PR-00000045."
+                    is_required: True
+            outputs:
+                matchCount: integer
+                    description: "How many records matched, up to six."
+                    filter_from_agent: False
+                recordId: string
+                    description: "The matching record's Id, when exactly one matched."
+                    filter_from_agent: False
+                recordLabel: string
+                    description: "The matching record as a person names it."
+                    filter_from_agent: False
+                matches: string
+                    description: "When several records matched, a numbered list of them with their Ids."
+                    filter_from_agent: False
+                message: string
+                    description: "What was found, ready to give the user."
+                    filter_from_agent: False
+
+    reasoning:
+        instructions: ->
+            | The record on the user's screen has Id "{!@variables.currentRecordId}" and object "{!@variables.currentObjectApiName}". Both are empty when no record is open.
+              If the user asks where their requests stand, or what they have submitted, call {!@actions.my_requests}. Set pendingOnly to True only if they ask about requests still waiting. Give the user its message, then the requests as listed.
+              If the user asks what is waiting for their approval, call {!@actions.my_approvals}. Fill objectName only if they name one kind of record. Give the user its message, then the approvals as listed.
+              If the user asks to be briefed on an approval, work out which record they mean: the record they name, the record on screen if they say "this", or one from the list you just gave them. If they name a record by its name or number and its Id is not in that list, call {!@actions.find} with what they said. Then call {!@actions.brief} with the record's Id. Give the user the briefing as it was returned, without adding any fact, rule, value or step of your own. If briefed is False, tell the user what the briefing says.
+              Never tell the user whether to approve or reject. You cannot approve, reject, recall or reassign approvals: the approver decides in the approval itself, on the record page.
+              Use only what the actions return, and do not call an action again for a result you already have.
+              If the user wants to see where a record would go, try a what-if, or submit a record, use the to_route_and_submit action. If they ask why a record went where it did, or to be briefed on a record not in the list you gave them, use the to_explain action.
+
+        actions:
+            my_requests: @actions.list_my_requests
+                description: "List the user's own approval requests and where each one stands"
+                with pendingOnly = ...
+            my_approvals: @actions.list_my_approvals
+                description: "List the approvals waiting on the user"
+                with objectName = ...
+            brief: @actions.brief_approval
+                description: "Brief the user on an approval waiting on them, without recommending a decision"
+                with recordId = ...
+            find: @actions.find_record
+                description: "Look up a governed record by its name, number or Id"
+                with searchText = ...
+            to_route_and_submit: @utils.transition to @subagent.route_and_submit
+                description: "Preview where a record's approval would go, try a what-if, or submit it for approval"
+            to_explain: @utils.transition to @subagent.explain_decision
+                description: "Explain why a record went where it did, or brief the user on an approval before they decide"

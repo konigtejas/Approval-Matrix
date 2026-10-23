@@ -1300,6 +1300,150 @@ private class AMF_ApprovalMatrixServiceTest {
         Assert.isTrue(queriesUsed <= 5, 'Two access queries, then the same three. Used: ' + queriesUsed);
     }
 
+    // ── previewWith(): the what-if (M14) ───────────────────────────────────────
+
+    @IsTest
+    static void aWhatIfRoutesByTheChangedValuesAndWritesNothing() {
+        // Ordinary EMEA spend takes the catch-all. With APAC and 250,000 in
+        // place of its own values, the same engine walk picks priority 10.
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+
+        Test.startTest();
+        AMF_ApprovalMatrixService.Outcome outcome = serviceWith(shippedShape(), strategy).previewWith(
+            record.Id,
+            new Map<String, Object>{ 'Amount__c' => 250000, 'region__c' => 'APAC' }
+        );
+        Test.stopTest();
+
+        Assert.areEqual('Submitted', outcome.outcome, 'The verdict a submission with those values would record');
+        Assert.isFalse(outcome.submitted, 'A what-if submits nothing');
+        Assert.areEqual('PR_High_Value_APAC', outcome.matchedRule);
+        Assert.areEqual(THREE_LEVEL, outcome.selectedProcess);
+        Assert.isNull(outcome.decisionLogId);
+
+        Map<String, Object> read = (Map<String, Object>) JSON.deserializeUntyped(outcome.evaluatedValuesJson);
+        Assert.areEqual(250000, (Decimal) read.get('Amount__c'), 'The values read are the ones tried');
+        Assert.areEqual('APAC', read.get('Region__c'));
+
+        Assert.areEqual(0, strategy.calls, 'No submission');
+        Assert.areEqual(0, logsFor(record.Id).size(), 'No row');
+        Assert.isFalse(guardOf(record.Id), 'No guard');
+
+        Purchase_Request__c stored = [SELECT Amount__c, Region__c FROM Purchase_Request__c WHERE Id = :record.Id];
+        Assert.areEqual(500, stored.Amount__c, 'The record itself is untouched');
+        Assert.areEqual('EMEA', stored.Region__c);
+    }
+
+    @IsTest
+    static void aWhatIfToABlankValueAndOneThatChangesNothingBothAnswerAsPreviewWould() {
+        Purchase_Request__c record = request(250000, 'APAC', 'High');
+        insert record;
+        AMF_ApprovalMatrixService service = serviceWith(shippedShape(), new AMF_StrategyStub());
+
+        Test.startTest();
+        AMF_ApprovalMatrixService.Outcome blankRegion = service.previewWith(
+            record.Id,
+            new Map<String, Object>{ 'Region__c' => null }
+        );
+        AMF_ApprovalMatrixService.Outcome sameAmount = service.previewWith(
+            record.Id,
+            new Map<String, Object>{ 'Amount__c' => 250000 }
+        );
+        AMF_ApprovalMatrixService.Outcome today = service.preview(new List<Id>{ record.Id })[0];
+        Test.stopTest();
+
+        Assert.areEqual('PR_High_Risk', blankRegion.matchedRule, 'Without APAC, high risk is the first match');
+        Assert.areEqual(today.matchedRule, sameAmount.matchedRule, 'An unchanged value routes as today');
+
+        // The same values read, compared as values: the stored amount carries the
+        // field's scale (250000.00) and the tried one does not (250000).
+        Map<String, Object> todayRead = (Map<String, Object>) JSON.deserializeUntyped(today.evaluatedValuesJson);
+        Map<String, Object> triedRead = (Map<String, Object>) JSON.deserializeUntyped(sameAmount.evaluatedValuesJson);
+        Assert.areEqual(todayRead.keySet(), triedRead.keySet(), 'The same fields were read');
+        Assert.areEqual(todayRead.get('Region__c'), triedRead.get('Region__c'));
+        Assert.isTrue((Decimal) todayRead.get('Amount__c') == (Decimal) triedRead.get('Amount__c'), 'The same amount');
+    }
+
+    @IsTest
+    static void aWhatIfRefusesAFieldTheObjectLacksAndARelatedRecordsField() {
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+        AMF_ApprovalMatrixService service = serviceWith(shippedShape(), new AMF_StrategyStub());
+
+        Map<String, String> refusals = new Map<String, String>{
+            'No_Such_Field__c' => 'has no field No_Such_Field__c',
+            'Owner.Name' => 'belongs to a related record',
+            ' ' => 'must name a field'
+        };
+
+        for (String field : refusals.keySet()) {
+            try {
+                service.previewWith(record.Id, new Map<String, Object>{ field => 'x' });
+                Assert.fail('Expected a refusal for ' + field);
+            } catch (AMF_SubmissionException e) {
+                Assert.isTrue(e.getMessage().contains(refusals.get(field)), 'Got: ' + e.getMessage());
+            }
+        }
+    }
+
+    @IsTest
+    static void aWhatIfRefusesAValueItsFieldCannotHold() {
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+
+        try {
+            serviceWith(shippedShape(), new AMF_StrategyStub())
+                .previewWith(record.Id, new Map<String, Object>{ 'Amount__c' => 'a great deal' });
+            Assert.fail('Text is not an amount');
+        } catch (AMF_SubmissionException e) {
+            Assert.isTrue(e.getMessage().startsWith('The what-if value for Amount__c cannot be used'), 'Got: ' + e.getMessage());
+        }
+        Assert.areEqual(0, logsFor(record.Id).size());
+    }
+
+    @IsTest
+    static void aWhatIfNeedsARecordAndAChange() {
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+        AMF_ApprovalMatrixService service = serviceWith(shippedShape(), new AMF_StrategyStub());
+
+        for (Map<String, Object> changes : new List<Map<String, Object>>{ null, new Map<String, Object>() }) {
+            try {
+                service.previewWith(record.Id, changes);
+                Assert.fail('Expected a refusal');
+            } catch (AMF_SubmissionException e) {
+                Assert.isTrue(e.getMessage().contains('at least one field value'), 'Got: ' + e.getMessage());
+            }
+        }
+
+        try {
+            service.previewWith(null, new Map<String, Object>{ 'Amount__c' => 1 });
+            Assert.fail('Expected a refusal');
+        } catch (AMF_SubmissionException e) {
+            Assert.isTrue(e.getMessage().contains('record is required'), 'Got: ' + e.getMessage());
+        }
+    }
+
+    @IsTest
+    static void aWhatIfRefusesWhatAPreviewRefuses() {
+        // The same whole-call refusals as preview(): here, a record the caller cannot read.
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+        User stranger = strangerUser();
+
+        System.runAs(stranger) {
+            try {
+                serviceWith(shippedShape(), new AMF_StrategyStub())
+                    .previewWith(record.Id, new Map<String, Object>{ 'Amount__c' => 1 });
+                Assert.fail('A record the caller cannot read has no what-if either');
+            } catch (AMF_SubmissionException e) {
+                Assert.isTrue(e.getMessage().contains('read access'), 'Got: ' + e.getMessage());
+            }
+        }
+    }
+
     private static Boolean guardOf(Id recordId) {
         return [SELECT Matrix_Submission__c FROM Purchase_Request__c WHERE Id = :recordId]
         .Matrix_Submission__c;

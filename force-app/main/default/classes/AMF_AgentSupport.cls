@@ -1,6 +1,8 @@
 /**
  * What the Approval Matrix Assistant's actions share (M13): reading the record
  * Id the agent passes as text, and writing a decision's values as a sentence.
+ * M14's listing actions add three: several records' labels at once, approvers'
+ * names, and a time as the explanations write it.
  *
  * Architecture section: 7 (entry points, and its M13 note).
  *
@@ -91,5 +93,84 @@ public with sharing class AMF_AgentSupport {
             sentence += (i == parts.size() - 1 ? ' and ' : ', ') + parts[i];
         }
         return sentence;
+    }
+
+    /**
+     * Several records as people name them, "Purchase Request PR-00000045", read
+     * in user mode with one query per object (M14): the bulk form of
+     * AMF_DecisionExplainer.recordLabelOf, for actions that list records. A
+     * record whose name cannot be read is named by its object and Id.
+     */
+    public static Map<Id, String> labelsOf(Set<Id> recordIds) {
+        Map<Id, String> labels = new Map<Id, String>();
+        Map<Schema.SObjectType, Set<Id>> idsByType = new Map<Schema.SObjectType, Set<Id>>();
+
+        for (Id recordId : recordIds) {
+            if (recordId == null) {
+                continue;
+            }
+            Schema.SObjectType sobjectType = recordId.getSObjectType();
+            if (!idsByType.containsKey(sobjectType)) {
+                idsByType.put(sobjectType, new Set<Id>());
+            }
+            idsByType.get(sobjectType).add(recordId);
+            labels.put(recordId, sobjectType.getDescribe().getLabel() + ' ' + recordId);
+        }
+
+        for (Schema.SObjectType sobjectType : idsByType.keySet()) {
+            Schema.DescribeSObjectResult described = sobjectType.getDescribe();
+            String nameField = nameFieldOf(described);
+            if (nameField == null) {
+                continue;
+            }
+
+            Set<Id> bound = idsByType.get(sobjectType);
+            try {
+                for (SObject row : Database.query(
+                    'SELECT Id, ' + nameField + ' FROM ' + described.getName() + ' WHERE Id IN :bound',
+                    AccessLevel.USER_MODE
+                )) {
+                    if (row.get(nameField) != null) {
+                        labels.put(row.Id, described.getLabel() + ' ' + String.valueOf(row.get(nameField)));
+                    }
+                }
+            } catch (Exception e) {
+                // An unreadable name is not a reason to withhold the list.
+            }
+        }
+        return labels;
+    }
+
+    /**
+     * Approvers as people name them: a user's name or a queue's (M14). Read by
+     * Id, never through Actor.Name, which the platform leaves null on work items
+     * created in the running transaction (docs/decisions.md, 2026-10-23).
+     */
+    public static Map<Id, String> actorNamesOf(Set<Id> actorIds) {
+        Map<Id, String> names = new Map<Id, String>();
+        if (actorIds == null || actorIds.isEmpty()) {
+            return names;
+        }
+        for (User person : [SELECT Id, Name FROM User WHERE Id IN :actorIds]) {
+            names.put(person.Id, person.Name);
+        }
+        for (Group queue : [SELECT Id, Name FROM Group WHERE Id IN :actorIds]) {
+            names.put(queue.Id, queue.Name);
+        }
+        return names;
+    }
+
+    /** A time as the explanations write it, in the reader's time zone: 23 Oct 2026, 10:17. */
+    public static String whenOf(Datetime value) {
+        return value == null ? 'an unknown time' : value.format('d MMM yyyy, HH:mm');
+    }
+
+    private static String nameFieldOf(Schema.DescribeSObjectResult described) {
+        for (Schema.SObjectField field : described.fields.getMap().values()) {
+            if (field.getDescribe().isNameField()) {
+                return field.getDescribe().getName();
+            }
+        }
+        return null;
     }
 }

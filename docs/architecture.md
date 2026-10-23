@@ -28,7 +28,7 @@ MVP is **Classic execution only**. Flow execution (§5.3, §6.2) is designed but
 3. **Explain every decision.** Native history answers *who* and *when*. The decision log answers *why*, and is immutable.
 4. **Fail loudly.** A malformed expression fails at deployment. A runtime evaluation error blocks the submission and logs it. Never fall through to a wrong template — a stopped approval is recoverable, a mis-routed one is a finding.
 5. **Testable and portable.** All Custom Metadata access behind an interface with test injection; all submission behind a strategy interface. Deploys to a new org with zero code changes.
-6. **AI assists; it never decides** (M13). The engine selects every route and the platform runs every approval. AI explains decisions already recorded, and lets people preview and submit in conversation through the same engine paths as every other entry point. It is never asked to choose a route, evaluate a rule, write a log row or approve. An explanation is presentation: generated on demand, labelled, and never stored. The decision log stays the only record of why.
+6. **AI assists; it never decides** (M13). The engine selects every route and the platform runs every approval. AI explains decisions already recorded, briefs the approver an approval is waiting on (M14), and lets people preview, try what-ifs and submit in conversation through the same engine paths as every other entry point. It is never asked to choose a route, evaluate a rule, write a log row, approve, or tell an approver what to decide. An explanation or a briefing is presentation: generated on demand, labelled, and never stored. The decision log stays the only record of why.
 
 ---
 
@@ -482,6 +482,16 @@ confirm, so the action submits it directly — the submission, not the preview, 
 §6.1 step 6 requires. Submit re-runs the engine, and if the route it takes differs from the one
 previewed, the user is told so rather than shown the preview's answer.
 
+**M14 implementation (2026-10-23): the what-if.** `previewWith(recordId, changes)` is `preview()` for
+one record, with some field values replaced on the in-memory copy that step 4 read, before step 5
+evaluates any rule. Rule order, compilation and the first-match walk stay the engine's own, so a
+what-if cannot drift from the route a submission would take. Nothing is written: not the record, not
+a row, not the guard. Only fields of the record itself may be changed, because replacing a
+relationship path would answer a question about a different parent. The fields are checked after the
+record is authorised, so a caller who cannot read it is told that first, as by `preview()`. A
+private overload of `prepare()` carries the changes; `submit()`, `preview()` and `submitEach()` pass
+none and run exactly as before.
+
 ### 6.5 What the engine does not do
 
 No approver resolution. No chain advancement. No lock management. No mid-flight state. Recall, reassignment, delegation and escalation are the template's and the platform's concern. The engine's runtime responsibility ends at step 11.
@@ -539,6 +549,30 @@ are invocable classes over the paths the other entry points already use:
 The agent never works out a route, a rule or an approver; it states what its actions return. A
 blocked or failed preview may still be submitted, as the header button submits one (M5), so that
 the attempt is recorded, but only once the user has been told that and still wants it.
+
+**M14 implementation (2026-10-23): the assistant for submitters and approvers.** Four more actions,
+each read-only, each answering in deterministic sentences built in Apex:
+
+- **What-If Approval Route** (`AMF_AgentWhatIfRoute`) runs §6.4's `preview()` and `previewWith()`
+  for one record and compares the two. Fields are named by label or API name, and values as a person
+  writes them: `Amount = 120k; Region = apac`. A picklist value must be one of the field's own. A
+  field no active rule reads is accepted, and the answer says it cannot change the route. A what-if
+  clears the script's `can_submit`, so a submission afterwards starts from a fresh preview of the
+  record's real values, never from the values tried.
+- **My Approval Requests** (`AMF_AgentMyRequests`) lists the user's own decision log rows of the
+  last 90 days, read in user mode: the newest attempt per readable record, joined to its approval,
+  those still waiting first.
+- **My Pending Approvals** (`AMF_AgentMyApprovals`) lists the pending work items on governed
+  records that `AMF_ApproverScope` says are the user's (§8's M14 note), oldest first, on records the
+  user can read.
+- **Brief Approver** (`AMF_AgentBriefApproval`) is §8's explanation, written for the approver the
+  approval is waiting on and asked their question. It never recommends a decision.
+
+In the script, a briefing belongs to the explain subagent, because it is an explanation written for
+the approver; a `my_work` subagent holds the two lists, and briefs only an approval from a list it has
+just given. The published agent chooses a subagent largely by the subagents' descriptions, so each
+description says what it is not for ("would go" against "already went"), and the router never asks
+which record is meant: the subagents can see the record on screen (technical log M14).
 
 **Recall.** For Classic submissions, native recall applies. For Flow submissions, `recallApprovalSubmission`, `cancelApprovalSubmission`, `reassignApprovalWorkItem` and `reviewApprovalWorkItem` exist as standard invocable actions with REST endpoints, callable from Apex via `Invocable.Action.createStandardAction(...)` — but none has been executed against a live submission (Appendix A, Q4). Do not design a screen-flow-only recall path, and do not build the Apex path either, until one has been proven.
 
@@ -625,9 +659,27 @@ passes the user's.
 `ConnectApi.EinsteinLLM`; tests inject a stub, because a generation is neither deterministic nor
 available in an Apex test.
 
----
+**M14 implementation (2026-10-23): the current approver sees why.** M7's visibility rules left an
+approver seeing every approval on a record they can read, but the routing reason only where they
+could read the row, which for an `Approval_Matrix_User` meant never for someone else's submission.
+The timeline adds one rule: a pending approval that no readable row explains, and that is waiting on
+the reader, has its own row read for them without sharing and flagged `visibleAsApprover`.
 
-## 9. Config Validator
+- **Waiting on the reader** is `AMF_ApproverScope`'s answer, which every M14 surface shares: a
+  pending step assigned to the reader, to a queue or public group that contains them (nested groups
+  followed to depth 5), or to a user who names them delegated approver. Membership through a role is
+  not followed; the framework's templates name users, queues and groups (§5.2).
+- **Only that row, only while it waits.** The reader is the person deciding. Once the approval moves
+  on, the rule no longer applies and the row is hidden from them again. No other row is affected, and
+  no record is shared.
+- **Everything built on the timeline inherits it:** the Explain button, the assistant's explanations
+  and M14's briefing, which `AMF_DecisionExplainer.briefLatest()` writes from the same facts plus one
+  line naming the reader as the approver it waits on.
+- **A reassigned step is described by whom it went to.** A `Reassigned` history row's actor is the new
+  assignee and its original actor the step's first one; who made the change is not recorded. The
+  facts therefore say "reassigned to X (first assigned to Y)". M13's "reassigned by X, for Y" read to
+  the model as X handing the step to Y, the wrong way round (technical log M14).
+
 
 Runs as a required release gate and is also exposed as an invocable for post-deploy pipeline checks. The gate fails when:
 
@@ -722,6 +774,11 @@ reads every package directory `sfdx-project.json` lists. It adds:
   a user needs the Prompt Template User permission set (`EinsteinGPTPromptTemplateUser`) for
   explanations, Access Agentforce Default Agent (`CopilotSalesforceUser`) for the Agentforce panel,
   and `AMF_Approval_Assistant_Access` for the agent itself.
+- **The current approver may read one row their sharing hides** (M14, 2026-10-23): the decision log
+  row of a pending approval waiting on them, directly, through a queue or group, or as delegated
+  approver (§8's M14 note). It is read without sharing, bound to that approval, and only while it
+  waits. This supersedes the 2026-10-08 decision for that case alone; the log's Private sharing model
+  and both permission sets are unchanged.
 
 ---
 
@@ -792,6 +849,7 @@ DateTime remains unsupported.
 | **M11** | Post-MVP second governed object, Opportunity, by configuration and conventions alone (§3.2): guard, two manager-hierarchy templates, the button removed from four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3 and the validator runs each object's union query | Source gate and validator green across both objects and shown to fail broken copies; all Apex and Jest tests green; the UI API shows the framework's action and no standard button; an Opportunity routes, approves and recalls end to end in the org |
 | **M12** | Post-MVP §5.1 template lifecycle enforced by a release manifest; Classic queue and committee templates with a rule each; the source portable (usernames by placeholder, the org's own configuration in its own package directory); New and Mass Change Owner off the decision-log related list | Source gate green and shown to fail broken copies, and a correct `_v2` passes; `force-app` converts with another org's domain and holds no `amf-dev` value; the org's templates match the manifest; all Apex and Jest tests green; queue and committee requests route, decide and recall end to end in the org |
 | **M13** | Post-MVP AI around the engine (§1 principle 6): the Approval Matrix Assistant, an Agentforce employee agent that finds, previews, submits after confirmation and explains, through the engine's own paths (§7); plain-English explanations of recorded decisions on the timeline (§8) | All Apex and Jest tests green; the agent's script compiles; in the org the template explains a real decision, and the agent previews, submits a throwaway record only after confirmation, and explains it; the agent's test suite passes |
+| **M14** | Post-MVP assistant for submitters and approvers (§1 principle 6): a what-if over a new write-nothing engine entry, `previewWith()` (§6.4); the user's own requests; what is waiting for them; a briefing for the current approver; and the current approver's sight of the routing reason (§8, §11) | All Apex and Jest tests green; the agent's script compiles; in the org a what-if writes nothing, the user's requests are listed, and a throwaway reassigned to the user is listed as waiting and briefed; the agent's test suite passes |
 
 ### 13.5 Repository state
 

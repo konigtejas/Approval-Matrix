@@ -89,6 +89,27 @@ and Apex classes stay at 62.0. AMF_Approval_Assistant_Access, the agent-access p
 org-config/amf-dev's, deployed after the agent is published. M13 changes no engine class. It adds
 one public method to AMF_DecisionTimelineService (describeValues), and the explanation component to
 amfDecisionTimelineEntry. Lightning types for the agent panel stay out.
+M14 (authorised 2026-10-23) extends the Approval Matrix Assistant for the people who use approvals,
+under the same principle 6. Four actions: where are my requests (AMF_AgentMyRequests), what is
+waiting for me (AMF_AgentMyApprovals), a briefing for the current approver (AMF_AgentBriefApproval,
+through the existing explanation template), and a what-if preview (AMF_AgentWhatIfRoute) over a new
+write-nothing engine entry, previewWith(), which applies changed field values in memory after step 4.
+The current approver of a pending approval, directly, through a queue or group, or as delegated
+approver (AMF_ApproverScope), may now read that approval's decision log row, in the timeline and so
+in every explanation; this supersedes the 2026-10-08 decision for that case alone. M14 changes the
+engine by that one additive entry, the timeline service by that one rule, and the explainer by one
+additive method and one correction (a reassigned step is described by whom it went to, technical
+log M14), and adds no object, field, template or LWC change. A what-if is never submitted. In the
+agent, a briefing is the explain subagent's, and my_work holds the two lists.
+M15 (authorised 2026-10-23) adds a second employee agent for administrators only,
+AMF_Matrix_Admin_Assistant, with three uses: drafting a matrix rule from a description
+(AMF_RuleDrafter and the AMF_Draft_Matrix_Rule template), checking a draft's impact on recent records
+(AMF_MatrixImpact, over a new write-nothing engine entry, previewEach(), and AMF_DraftRuleProvider),
+and a matrix-health report (AMF_MatrixHealthService and the AMF_Summarize_Matrix_Health template).
+A draft must compile and pass the validator's checks before anyone sees it, and it routes nothing:
+the admin releases it as an ordinary configuration release, through source and the gate. Nothing in
+M15 writes a rule, a log row or a record. Its access permission set and test definition are
+org-config/amf-dev's, as M13's are.
 
 ## MVP SCOPE — build ONLY these
 - One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)

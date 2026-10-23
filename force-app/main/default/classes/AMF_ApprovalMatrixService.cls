@@ -8,7 +8,9 @@
  *
  * PREVIEW (6.4, added in M5) is this same path stopped after step 7: it
  * answers "where would this go, and why" with nothing written or submitted,
- * and drives the quick action's confirmation modal.
+ * and drives the quick action's confirmation modal. previewWith() (M14) is the
+ * same preview with some of the record's field values replaced in memory
+ * after step 4, for the assistant's what-if; it too writes nothing.
  *
  * WHAT THIS CLASS EXISTS TO PROVE (13): an admin changes one Custom Metadata
  * row, the next submission routes to a different approval process, and a log
@@ -311,6 +313,43 @@ public without sharing class AMF_ApprovalMatrixService {
     }
 
     /**
+     * 6.4's what-if (M14): preview() for one record, with some of its field
+     * values replaced in memory once step 4 has read it, so that "where would
+     * this go if the amount were 120,000?" is answered by the engine's own
+     * rule order, compiled expressions and first-match walk rather than by a
+     * second evaluator that could drift from the first.
+     *
+     * Nothing is written: not the record, not a row, not the guard. The changes
+     * live only on the in-memory copy the rules read, and the outcome's
+     * evaluated values show them as read. Whole-call refusals are preview()'s:
+     * a record the caller cannot read, one already in an approval process, an
+     * object the matrix does not govern, a rule that will not compile.
+     *
+     * @param recordId The governed record to preview.
+     * @param changes  Field API name to the value to use instead, typed as the
+     *                 field is (Decimal for a number, Date for a date). Fields
+     *                 of the record itself only: a relationship path such as
+     *                 Account.Industry is refused, because the record's parent
+     *                 is not the record.
+     * @return The outcome a submission would have if the record held those values.
+     * @throws AMF_SubmissionException For no changes, a field the object lacks,
+     *         a relationship path, a value the field cannot hold, or a
+     *         whole-call refusal.
+     * @throws AMF_ExpressionException If any active rule will not compile.
+     */
+    public Outcome previewWith(Id recordId, Map<String, Object> changes) {
+        if (recordId == null) {
+            throw new AMF_SubmissionException('A record is required for a what-if preview.');
+        }
+        if (changes == null || changes.isEmpty()) {
+            throw new AMF_SubmissionException('A what-if preview needs at least one field value to change.');
+        }
+        // The fields are checked in step 4, once the record is authorised, so a
+        // caller who cannot read it is told that first, exactly as by preview().
+        return prepare(new List<Id>{ recordId }, true, changes).outcomes[0];
+    }
+
+    /**
      * 7's Flow, Apex and Integration rows (M10): 6.1 answering record by record.
      *
      * Where submit() refuses the whole call, this refuses only the records
@@ -398,6 +437,15 @@ public without sharing class AMF_ApprovalMatrixService {
      * @return The plan for execute().
      */
     private Plan prepare(List<Id> recordIds, Boolean wholeCall) {
+        return prepare(recordIds, wholeCall, null);
+    }
+
+    /**
+     * prepare(), with field values to use in place of the record's own once
+     * step 4 has read it: previewWith()'s what-if. Null for every other caller,
+     * which then runs exactly as before M14.
+     */
+    private Plan prepare(List<Id> recordIds, Boolean wholeCall, Map<String, Object> changes) {
         if (recordIds == null || recordIds.isEmpty()) {
             throw new AMF_SubmissionException('No records were supplied to submit');
         }
@@ -481,16 +529,17 @@ public without sharing class AMF_ApprovalMatrixService {
         }
 
         if (!toDecide.isEmpty()) {
-            decide(plan, toDecide);
+            decide(plan, toDecide, changes);
         }
         return plan;
     }
 
     /**
      * Steps 1-7 for the records left to decide: each outcome is filled in place
-     * and its unsaved row added to the plan.
+     * and its unsaved row added to the plan. Changes, when given, replace field
+     * values on the records step 4 read, before step 5 evaluates any rule.
      */
-    private void decide(Plan plan, List<Outcome> toDecide) {
+    private void decide(Plan plan, List<Outcome> toDecide, Map<String, Object> changes) {
         // Step 1. An object with no active rules is not governed (3.2), and
         // deactivating an object's rules is the framework's kill switch -- so
         // this is a deliberate configuration state, reported as such.
@@ -538,6 +587,14 @@ public without sharing class AMF_ApprovalMatrixService {
             AMF_FieldPathResolver.unionPaths(compiled),
             recordIds
         );
+
+        // previewWith()'s what-if (M14): the in-memory copy only, never saved.
+        if (changes != null) {
+            Map<String, Object> checked = changedFields(plan.objectApiName, changes);
+            for (SObject record : recordsById.values()) {
+                applyChanges(record, checked);
+            }
+        }
 
         // Steps 5-7, per record.
         for (Outcome result : toDecide) {
@@ -1059,6 +1116,59 @@ public without sharing class AMF_ApprovalMatrixService {
                 GUARD_FIELD +
                 ' field. Every governed object carries the guard (arch doc 3.2, 6.3).'
             );
+        }
+    }
+
+    /**
+     * previewWith()'s changes, checked against the object once the record is
+     * authorised, and keyed by each field's own API name.
+     *
+     * Only fields of the record itself. A path through a relationship names
+     * another record's field, and replacing it here would answer a question
+     * about a different parent while appearing to answer one about this record.
+     * Describe answers in the caller's context, so a field they have no access
+     * to is reported as missing, exactly as the compiler reports it (4.2).
+     */
+    private static Map<String, Object> changedFields(String objectApiName, Map<String, Object> changes) {
+        Map<String, Schema.SObjectField> fields = Schema.getGlobalDescribe()
+            .get(objectApiName)
+            .getDescribe()
+            .fields.getMap();
+        Map<String, Object> checked = new Map<String, Object>();
+
+        for (String name : changes.keySet()) {
+            String trimmed = name == null ? '' : name.trim();
+
+            if (String.isBlank(trimmed)) {
+                throw new AMF_SubmissionException('A what-if change must name a field.');
+            }
+            if (trimmed.contains('.')) {
+                throw new AMF_SubmissionException(
+                    'A what-if can change only fields of the record itself, not ' +
+                    trimmed +
+                    ', which belongs to a related record.'
+                );
+            }
+
+            Schema.SObjectField field = fields.get(trimmed);
+            if (field == null) {
+                throw new AMF_SubmissionException(objectApiName + ' has no field ' + trimmed + ' that you can read.');
+            }
+            checked.put(field.getDescribe().getName(), changes.get(name));
+        }
+        return checked;
+    }
+
+    /** previewWith()'s changes, put on the in-memory record a rule is about to read. */
+    private static void applyChanges(SObject record, Map<String, Object> changes) {
+        for (String field : changes.keySet()) {
+            try {
+                record.put(field, changes.get(field));
+            } catch (SObjectException e) {
+                throw new AMF_SubmissionException(
+                    'The what-if value for ' + field + ' cannot be used: ' + e.getMessage()
+                );
+            }
         }
     }
 
