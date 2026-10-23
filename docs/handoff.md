@@ -1,15 +1,17 @@
 # Handoff — what's next after M12
 
-**As of 2026-10-22.** `develop` holds Phase M12 and its follow-ups M12.6 and M12.7, with every gate
+**As of 2026-10-23.** `develop` holds Phase M12 and its follow-ups M12.6 to M12.8, with every gate
 run in `amf-dev`:
 - M8's, M11's and M12's owed manual UI checks passed in the first run of the UI test suite, which an
   AI agent ran in the browser.
 - That run found two display defects in the timeline, which M12.6 fixed.
 - The suite's re-run confirmed both fixes (M12.7). No check is owed.
+- M12.8 gave Purchase Requests a Request Name field, and added it to the All Purchase Requests
+  list view. Opportunity gained a Matrix Opportunities list view.
 
 This is the short version. The sources are:
 
-- `docs/technical-log.md`: the status board, M12 to M12.7, and M12.7's table of open items;
+- `docs/technical-log.md`: the status board, M12 to M12.8, and M12.7's table of open items;
 - `docs/ui-tests/`: the UI test suite, and the guide for whoever runs it;
 - `docs/build-playbook.md`: Part 3's gates, Part 5's roadmap;
 - `docs/architecture.md`: v3.0, the target design this document measures progress against.
@@ -98,9 +100,9 @@ actions (TC-16).
 | **M9** | The full §4.1 grammar | Complete |
 | **M10** | The Flow invocable and REST entry points, and per-record bulk submission | Complete |
 | **M11** | A second governed object, Opportunity | Complete |
-| **M12** | Template lifecycle (release manifest), queue and committee templates, portability; M12.6, the first UI run and two timeline fixes; M12.7, the re-run | Complete |
+| **M12** | Template lifecycle (release manifest), queue and committee templates, portability; M12.6, the first UI run and two timeline fixes; M12.7, the re-run; M12.8, a Request Name field and two list views | Complete |
 
-The MVP was M0–M3; M4–M12 are post-MVP. **Nothing after M12.7 is numbered or authorised.** What is
+The MVP was M0–M3; M4–M12 are post-MVP. **Nothing after M12.8 is numbered or authorised.** What is
 left of architecture v3.0's target design is Flow approvals, probably two phases (M13 and M14, as a
 proposal), plus the smaller gaps in 4.2.
 

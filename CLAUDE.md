@@ -68,6 +68,11 @@ M12.6 (authorised 2026-10-22) fixes two display defects that the first UI test r
 timeline entry. Its times follow the viewer's Salesforce time zone, not the browser's, and its
 "Approval history" line keeps the space after its comma. It changes amfDecisionTimelineEntry and
 its Jest test alone, and adds the UI test suite under docs/ui-tests.
+M12.8 (authorised 2026-10-23) gives Purchase Requests a readable name for demos and list views:
+a Text field Request_Name__c beside the PR- auto-number, which stays the record name. It is on the
+Purchase Request layout, in both permission sets (editable) and in the All Purchase Requests list
+view. Opportunity gets a Matrix Opportunities list view, in org-config/amf-dev as the org's own
+configuration. No rule reads the field; it changes no engine class, LWC, rule or template.
 
 ## MVP SCOPE — build ONLY these
 - One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)

@@ -107,7 +107,7 @@ session needs. Update the row when a phase completes.
 | **M9** | Full expression grammar — `NOT`, word forms, `IN`, `CONTAINS`, `STARTS_WITH`, multipicklist, `TODAY(±n)`, three-hop paths | **Complete** — gate run in `amf-dev` 2026-10-08: 232/232 Apex, evaluator classes all 100%, mutation-checked, 57/57 Jest, matrix valid; optional manual UI check not run | `a79c880` |
 | **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers; since M10.7 the guard staged per record | **Complete** — org gate passed 2026-10-21 (M10.8): 255/255 Apex at 98% after the locked-record fixture was replaced by a test-only validation rule (the lock did not stop the update in an Apex test), 59/59 Jest, the invocable and REST answered in the org | `393d9d5` + M10.7, M10.8 (`a0273e9`) |
 | **M11** | A second governed object, Opportunity, by configuration alone — guard, two manager-hierarchy templates, the button off four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3, the validator runs each union query | **Complete** — gate run 2026-10-21: source gate and validator green across both objects and failing broken copies, 264/264 Apex at 98%, 59/59 Jest, UI API shows the action and no standard button, an Opportunity routed, approved and recalled in the org. The relationship limit measured as not enforced (142 joined). The manual check, step 8, passed in the first UI test run, 2026-10-22 (M12.6) | `6e3079d` + `96e5692`, M12.6 |
-| **M12** | Template lifecycle, queue and committee templates, portability. A release manifest makes an in-place edit a gate failure. `PR_Credit_Risk_Queue` and `PR_Finance_Committee` each have a rule. Usernames are filled at deploy, and the org's own configuration has its own package directory. New and Mass Change Owner are off the decision-log list | **Complete.** Gate run 2026-10-22. The source gate is green and failed broken copies, and a correct `_v2` passed. `force-app` converts with another org's domain. The org's six templates match the manifest. 274/274 Apex at 98%, 59/59 Jest, the related list offers no actions. Queue and committee requests routed, decided and recalled in the org. The manual check, step 11, passed in the first UI test run that day. M12.6 fixed the two timeline defects that run found: 60/60 Jest, 274/274 Apex, deployed. The UI suite's re-run confirmed both fixes (M12.7) | `bcedf6f` + M12.6 (`72f4dfd`), M12.7 (`0049677`) |
+| **M12** | Template lifecycle, queue and committee templates, portability. A release manifest makes an in-place edit a gate failure. `PR_Credit_Risk_Queue` and `PR_Finance_Committee` each have a rule. Usernames are filled at deploy, and the org's own configuration has its own package directory. New and Mass Change Owner are off the decision-log list | **Complete.** Gate run 2026-10-22. The source gate is green and failed broken copies, and a correct `_v2` passed. `force-app` converts with another org's domain. The org's six templates match the manifest. 274/274 Apex at 98%, 59/59 Jest, the related list offers no actions. Queue and committee requests routed, decided and recalled in the org. The manual check, step 11, passed in the first UI test run that day. M12.6 fixed the two timeline defects that run found: 60/60 Jest, 274/274 Apex, deployed. The UI suite's re-run confirmed both fixes (M12.7). M12.8 added a Request Name field to Purchase Requests and two list views, gated and deployed 2026-10-23 | `bcedf6f` + M12.6 (`72f4dfd`), M12.7 (`0049677`), M12.8 |
 
 ### Superseded — the v1.0 plan
 
@@ -4370,3 +4370,92 @@ This table supersedes M12.6's.
 | The playbook's optional manual M9 check. The UI suite's TC-15 runs it when `RUN_OPTIONAL` is `yes` | user, optional |
 | M9.5's grammar items: DateTime, the text-like field types, reserved keywords, field-to-field multipicklists | as in M9.5 |
 | ~~The UI suite's re-run against M12.6~~ | **closed in M12.7** |
+
+### M12.8 Follow-up: a Request Name field and two list views (2026-10-23)
+
+**Commit:** recorded on the status board · **Status:** complete. Authorised in `CLAUDE.md` the same
+day.
+
+The user asked for nine demo records, to walk through the post-MVP features in the UI, then asked
+for readable names on them and for list views that show them. Opportunities and Accounts have
+names already. A Purchase Request's only name was its `PR-` auto-number.
+
+**(a) Two choices, both the user's.** They were put as questions, because new metadata on a
+governed object was outside every authorised phase:
+- **A new field, not a new name.** `Request_Name__c` is a Text(80) field beside the auto-number,
+  which stays the record name. Converting `Name` to Text was the alternative. It would have changed
+  every header, made the name mandatory on every new record, and broken the UI suite's checks for
+  `PR-` and 8 digits. As built, the timeline, the decision log's lookup and the suite are unchanged.
+- **In source, as a numbered follow-up.** The alternative, a change in the org alone, would have
+  left `amf-dev` ahead of `develop`.
+
+**(b) Where each piece lives.** The field, the layout and both permission sets are in `force-app`,
+like the object's other fields. Both sets grant edit, as they do for `Region__c`. The Opportunity
+list view goes in `org-config/amf-dev`, beside that org's Opportunity layouts and object settings:
+`force-app` keeps no configuration of a standard object (M12). No rule reads the field, and the
+validator compiles only what rules name, so it needs no change.
+
+**(c) Demo data.** These records were created in `amf-dev` by anonymous Apex run as Tejas Vernekar.
+None has been submitted, and no log row names them:
+
+```
+purchase requests  PR-00000045 PR-Queue      60,000 AMER Medium -> PR_Credit_Risk_Review (30)
+                   PR-00000046 PR-Committee  1,200,000 AMER Low -> PR_Committee_Spend (5)
+                   PR-00000047 PR-CatchAll   5,000 EMEA Low     -> PR_Catch_All (9999)
+                   PR-00000048 PR-APAC       150,000 APAC Low   -> PR_High_Value_APAC (10)
+accounts           DEMO Energy Co (Energy), DEMO Hotels Ltd (Hospitality)
+opportunities      DEMO Energy deal 5,000 Energy Co    -> OPP_Key_Industry (20)
+                   DEMO Hotels deal 5,000 Hotels Ltd   -> OPP_Catch_All (9999)
+                   DEMO Large deal 300,000 Energy Co   -> OPP_Large_Deal (10)
+                   all three Prospecting, closing 2026-11-21
+```
+
+The routes are `AMF_ApprovalMatrixService.previewRecord` on each record, which writes nothing. A log
+count over the seven Ids returned 0 afterwards.
+
+**Verification evidence:**
+
+```
+source gate      passed: 8 active rules, 6 processes guard-checked, 6 of 6 templates released and
+                 unchanged, 5 layouts of 2 governed objects
+deploy dry run   succeeded, both package directories
+deploy           0Afaj00000opCf4CAE: Succeeded, 131/131 components, 0 errors
+validator        "Approval Matrix configuration is valid."
+field access     Request_Name__c readable and updateable for the CLI user; FieldPermissions read
+                 and edit true in Approval_Matrix_Admin and Approval_Matrix_User
+list views       UI API list-info:
+                 All_Purchase_Requests: Purchase Request Number | Request Name | Amount | Region |
+                   Risk Level | Matrix Submission | Owner Alias | Last Modified Date
+                 Matrix_Opportunities: Opportunity Name | Account Name | Amount | Stage |
+                   Close Date | Matrix Submission | Opportunity Owner Alias
+data             PR-00000045 to -48 carry their Request Name; guard false on all four
+apex tests       RunLocalTests, job 707aj00001NJFKBAA5, 07:38 to 07:44 UTC: "Outcome Passed,
+                 Tests Ran 274, Pass Rate 100%". ApexTestResult for the job: Pass 274, nothing else.
+                 ApexTestRunResult: Completed, MethodsFailed 0
+```
+
+The CLI exited 255 after printing that report. The org's records of the run show no failure, so
+the gate counts it as passed. ApexTestRunResult also reads MethodsCompleted 259 of 274 enqueued,
+though all 274 results exist. Neither has a known cause, and neither appeared in earlier phases'
+reports.
+
+No LWC changed, so Jest was not re-run. The UI suite needs no change: TD-01 leaves every unnamed
+field empty, and no step reads the layout's field list or a list view's columns.
+
+| File | Change | Notes |
+|---|---|---|
+| `objects/Purchase_Request__c/fields/Request_Name__c.field-meta.xml` | **new** | Text(80), optional |
+| `layouts/Purchase_Request__c-Purchase Request Layout.layout-meta.xml` | modified | Request Name under the number, editable |
+| `objects/Purchase_Request__c/listViews/All_Purchase_Requests.listView-meta.xml` | modified | Request Name column after the number |
+| `permissionsets/Approval_Matrix_Admin…`, `Approval_Matrix_User…` | modified | read and edit on Request Name |
+| `org-config/amf-dev/…/objects/Opportunity/listViews/Matrix_Opportunities.listView-meta.xml` | **new** | Name, Account, Amount, Stage, Close Date, Matrix Submission, Owner Alias; all opportunities |
+| `CLAUDE.md` | modified | M12.8 authorised |
+| `docs/handoff.md`, `docs/technical-log.md` | modified | M12.8 recorded; the status board |
+
+### M12.8 Carried into later phases
+
+M12.7's table carries unchanged, with one addition:
+
+| Item | Owner |
+|---|---|
+| The demo records of (c) stay in `amf-dev` for the walkthrough. Recall any left pending after using them | user |
