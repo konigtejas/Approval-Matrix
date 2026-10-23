@@ -970,6 +970,87 @@ Two defects were found and fixed on the way:
 
 Step 9, the manual UI check, is owed.
 
+### M15 — The Approval Matrix Admin Assistant (post-MVP)
+
+**Goal:** the three administrator uses the user chose on 2026-10-23, in a second agent for
+administrators only. It drafts a rule from a description, checks what a change would do before it
+is released, and reports how the matrix has been doing. It changes nothing. A draft routes nothing
+until it is released as an ordinary configuration release (architecture §1, principles 1 and 6).
+
+**Build:**
+- **Engine (§6.4, M15 note):** `previewEach(recordIds)`, write-nothing, per-record refusals.
+- **The prompt seam:** `AMF_PromptRunner`, `AMF_EinsteinPromptRunner`, `AMF_PromptException`.
+- **`AMF_DraftRuleProvider`:** the live matrix with one rule added, replaced (at a new version) or
+  taken out.
+- **`AMF_RuleDrafter`:** context, the `AMF_Draft_Matrix_Rule` template, §9's checks on the draft,
+  one corrected attempt, and the Custom Metadata file.
+- **`AMF_MatrixImpact`:** two `previewEach()` runs, live and changed, over the object's records
+  decided in the last 90 days.
+- **`AMF_MatrixHealthService`:** counted facts and the `AMF_Summarize_Matrix_Health` summary.
+- **Three invocables, in `Approval_Matrix_Admin` only:** `AMF_AgentDraftRule`,
+  `AMF_AgentCheckImpact`, `AMF_AgentMatrixHealth`. `AMF_AgentSupport` gains `governedObjectNamed`.
+- **`agentforce/`:** the two templates, and the `AMF_Matrix_Admin_Assistant` bundle.
+- **`org-config/amf-dev`:** `AMF_Matrix_Admin_Assistant_Access`, and the agent's test definition.
+- **`specs/AMF_Matrix_Admin_Assistant-testSpec.yaml`:** six cases, none of which changes anything.
+
+No object, field, template, rule or LWC changes.
+
+**Gate, in order.** In `amf-dev`, with `$env:AMF_USERNAME_DOMAIN = 'amf.00daj000012gj9b.dev'` set:
+
+1. The source gate: unchanged.
+2. Offline: Jest, 75 tests, unchanged; `sf agent validate authoring-bundle` for both agents.
+3. **Deploy, without `org-config`,** because the new access set names an agent not yet published:
+   `sf project deploy start -o amf-dev --source-dir force-app --source-dir agentforce`.
+4. `sf apex run --file scripts/validate-config.apex -o amf-dev`: the matrix is valid.
+5. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`: all green.
+6. **The templates' active versions (M13.7a):** retrieve both, take the retrieved form, with
+   `activeVersionIdentifier`, into source, redeploy `agentforce/`, and check that a retrieve then
+   matches.
+7. **Agent preview before publishing, live actions**
+   (`sf agent preview start --authoring-bundle AMF_Matrix_Admin_Assistant --use-live-actions`).
+   Count the decision log rows and the matrix's rules before and after:
+   - "Draft a rule for purchase requests: anything over 500,000 in EMEA should go to the finance
+     committee." gives a valid draft for `PR_Finance_Committee`, with its file.
+   - "What would that draft change for recent requests?" reports the comparison.
+   - "How has the matrix been doing over the last 90 days?" gives a summary whose figures are in its
+     facts.
+   - Nothing is added to the log or the matrix.
+8. **Publish and activate:**
+   `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-agent.ps1 -AgentName AMF_Matrix_Admin_Assistant`.
+9. **Agent access:** `sf project deploy start -o amf-dev --source-dir org-config/amf-dev`, then
+   `sf org assign permset --name AMF_Matrix_Admin_Assistant_Access -o amf-dev`.
+10. **Agent tests:** `sf agent test create --json --spec specs/AMF_Matrix_Admin_Assistant-testSpec.yaml
+    --api-name AMF_Matrix_Admin_Assistant_Tests --force-overwrite -o amf-dev`, then `sf agent test
+    run --json --api-name AMF_Matrix_Admin_Assistant_Tests --wait 15 -o amf-dev`. Run it twice; all
+    cases should pass both times. Move the generated definition to `org-config/amf-dev`.
+11. **Manual, in the real UI, owed by the user:** choose Approval Matrix Admin Assistant in the
+    Agentforce panel. Draft a rule, check its impact, and ask for a health report. Check that it
+    refuses "deploy it".
+
+Acceptance:
+- A draft is shown only when it compiles, its name is valid and free, its priority is free, its
+  process is active, and the engine's query runs. One corrected attempt is allowed; otherwise it is a
+  refusal with reasons.
+- The impact check writes nothing. Both sides are the engine's, and refused records are skipped.
+- Every figure in a health report is counted in Apex; the facts come back without a summary too.
+- Nothing in M15 writes a rule, a log row or a record.
+
+**Gate run 2026-10-23 (technical log M15.5):** steps 1 to 10 passed.
+- Deployed 176/176. The matrix is valid. RunLocalTests 404/404.
+- Both templates were taken in their retrieved form, and a retrieve matches them.
+- **Live sessions:**
+  - Drafts were valid and checked.
+  - The draft's impact covered 16 requests, with 7 pending ones skipped.
+  - The health report gave the log's real figures.
+  - The log stayed at 29 rows and the matrix at 9 rules.
+- The agent was published to v1 and its access deployed. The 6-case suite passed 18/18 assertions
+  in two consecutive runs.
+
+The gate found that the model answered without calling its tools. The fix was in the script's
+wording: what the model does not know, tools named as lookups, and no answer templates.
+
+Step 11, the manual UI check, is owed.
+
 ---
 
 ## Part 4 — When Things Go Wrong

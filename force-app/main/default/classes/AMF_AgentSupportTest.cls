@@ -96,4 +96,20 @@ private class AMF_AgentSupportTest {
         Assert.areEqual(nine.format('d MMM yyyy, HH:mm'), AMF_AgentSupport.whenOf(nine));
         Assert.areEqual('an unknown time', AMF_AgentSupport.whenOf(null));
     }
+
+    @IsTest
+    static void namesAGovernedObjectAsAPersonNamesIt() {
+        AMF_RuleBuilder.Stub rules = new AMF_RuleBuilder.Stub(
+            new List<AMF_RuleDefinition>{
+                new AMF_RuleBuilder().named('PR_Catch_All').withPriority(9999).withExpression('TRUE').routingTo('PR_Two_Level_Mgmt').build(),
+                new AMF_RuleBuilder().named('OPP_Catch_All').forObject('Opportunity').withPriority(9999).withExpression('TRUE').routingTo('OPP_Manager_Approval').build()
+            }
+        );
+
+        Assert.areEqual('Purchase_Request__c', AMF_AgentSupport.governedObjectNamed(' purchase requests ', rules), 'Plural label');
+        Assert.areEqual('Purchase_Request__c', AMF_AgentSupport.governedObjectNamed('Purchase Request', rules), 'Label');
+        Assert.areEqual('Opportunity', AMF_AgentSupport.governedObjectNamed('OPPORTUNITY', rules), 'API name, in any case');
+        Assert.isNull(AMF_AgentSupport.governedObjectNamed('Account', rules), 'An object the matrix does not govern');
+        Assert.isNull(AMF_AgentSupport.governedObjectNamed(null, rules));
+    }
 }

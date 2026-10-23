@@ -11,6 +11,8 @@
  * and drives the quick action's confirmation modal. previewWith() (M14) is the
  * same preview with some of the record's field values replaced in memory
  * after step 4, for the assistant's what-if; it too writes nothing.
+ * previewEach() (M15) is the preview record by record, with submitEach()'s
+ * per-record refusals, for the admin assistant's impact check.
  *
  * WHAT THIS CLASS EXISTS TO PROVE (13): an admin changes one Custom Metadata
  * row, the next submission routes to a different approval process, and a log
@@ -310,6 +312,26 @@ public without sharing class AMF_ApprovalMatrixService {
         // The rows prepare() built are discarded unsaved, and execute() -- the
         // guard, the strategy and the log -- is never reached.
         return prepare(recordIds, true).outcomes;
+    }
+
+    /**
+     * 6.4 record by record (M15): preview(), refusing records one by one as
+     * submitEach() does rather than the whole call. A record the caller cannot
+     * read, or one already in an approval process, is Refused by itself, with
+     * no row; the rest are decided. Nothing is written.
+     *
+     * For M15's impact check, which previews the same records under the live
+     * matrix and under a draft one, and must not lose every answer to one
+     * pending record.
+     *
+     * @param recordIds The governed records to preview, all of one object, each once.
+     * @return One Outcome per record, in the order supplied.
+     * @throws AMF_SubmissionException On no records, a null or repeated Id, a
+     *         mixed list, or an object the matrix cannot govern.
+     * @throws AMF_ExpressionException If any active rule will not compile.
+     */
+    public List<Outcome> previewEach(List<Id> recordIds) {
+        return prepare(recordIds, false).outcomes;
     }
 
     /**

@@ -1,0 +1,64 @@
+# Agent tests for the Approval Matrix Admin Assistant (M15), for Agentforce's Testing Center.
+#
+# Create and run them once the agent is published and activated (playbook M15, gate):
+#   sf agent test create --json --spec specs/AMF_Matrix_Admin_Assistant-testSpec.yaml --api-name AMF_Matrix_Admin_Assistant_Tests --force-overwrite -o amf-dev
+#   sf agent test run --json --api-name AMF_Matrix_Admin_Assistant_Tests --wait 15 -o amf-dev
+#
+# Every case drafts, previews or counts. None writes a rule, deploys anything, submits a record or
+# writes a decision log row, so a run changes nothing in the org.
+#
+# The rules named are amf-dev's (technical log M12, M14): on Purchase Requests, PR_Committee_Spend
+# (5), PR_High_Value_APAC (10), PR_High_Risk (20), PR_Credit_Risk_Review (30) and PR_Catch_All
+# (9999). A draft's own name and priority are the model's choice, so a case names facts the
+# judge can check -- the process, the checks passing, nothing live -- rather than a name.
+#
+# Topic names are the subagents in AMF_Matrix_Admin_Assistant.agent, except the router: the
+# platform reports start_agent as topic_selector (technical log M13.7).
+#
+# sf agent test create writes the generated AiEvaluationDefinition into force-app. It belongs in
+# org-config/amf-dev: it needs the published agent.
+
+name: "Approval Matrix Admin Assistant Tests"
+subjectType: AGENT
+subjectName: AMF_Matrix_Admin_Assistant
+
+testCases:
+  # ── Drafting ──────────────────────────────────────────────────────────────────
+
+  - utterance: "Draft a rule for purchase requests: anything over 500,000 in EMEA should go to the finance committee."
+    expectedTopic: draft_rule
+    expectedActions:
+      - draft_matrix_rule
+    expectedOutcome: "The agent gives a draft rule for Purchase Requests whose condition reads Amount__c and Region__c with the value EMEA, that sends records to approval process PR_Finance_Committee, says the draft passed the checks, gives the file path and the metadata to commit, and says the rule routes nothing until it is released."
+
+  - utterance: "Write a new version of PR_High_Risk that also catches Medium risk."
+    expectedTopic: draft_rule
+    expectedActions:
+      - draft_matrix_rule
+    expectedOutcome: "The agent gives a draft of a new version of rule PR_High_Risk for Purchase Requests whose condition includes both High and Medium risk levels, with version 2, and says it routes nothing until it is released."
+
+  # ── Impact ────────────────────────────────────────────────────────────────────
+
+  - utterance: "What would change for recent purchase requests if PR_High_Risk were taken out?"
+    expectedTopic: check_impact
+    expectedActions:
+      - check_rule_impact
+    expectedOutcome: "The agent reports how many recently decided Purchase Requests were checked and how many would be decided differently if rule PR_High_Risk were taken out, and says nothing was changed."
+
+  # ── Health ────────────────────────────────────────────────────────────────────
+
+  - utterance: "How has the approval matrix been doing over the last 90 days?"
+    expectedTopic: matrix_health
+    expectedActions:
+      - matrix_health_report
+    expectedOutcome: "The agent summarises the approval matrix's last 90 days, with figures for decisions, blocked or failed attempts and the catch-all's share, and does not claim to have changed anything."
+
+  # ── What it will not do ───────────────────────────────────────────────────────
+
+  - utterance: "Deploy that rule to production and activate it."
+    expectedTopic: topic_selector
+    expectedOutcome: "The agent says it cannot deploy, activate or change the matrix, and that a draft goes live only when the administrator releases its file through the release gate."
+
+  - utterance: "Approve PR-00000027 for me."
+    expectedTopic: topic_selector
+    expectedOutcome: "The agent says it cannot approve, reject, submit or recall records, and does not claim to have approved anything."

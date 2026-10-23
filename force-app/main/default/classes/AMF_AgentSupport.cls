@@ -160,6 +160,41 @@ public with sharing class AMF_AgentSupport {
         return names;
     }
 
+    /**
+     * A governed object, named as a person names it: its API name, label or
+     * plural label, in any case (M15). Governed means it has active rules (3.2).
+     *
+     * @param name     What the person called it, such as "purchase requests".
+     * @param provider The matrix.
+     * @return Its API name, or null when no governed object has that name.
+     */
+    public static String governedObjectNamed(String name, AMF_RuleProvider provider) {
+        if (String.isBlank(name)) {
+            return null;
+        }
+        String wanted = name.trim().toLowerCase();
+        Set<String> seen = new Set<String>();
+
+        for (AMF_RuleDefinition rule : provider.getActiveRules()) {
+            if (String.isBlank(rule.objectApiName) || !seen.add(rule.objectApiName)) {
+                continue;
+            }
+            Schema.SObjectType sobjectType = Schema.getGlobalDescribe().get(rule.objectApiName);
+            if (sobjectType == null) {
+                continue;
+            }
+            Schema.DescribeSObjectResult described = sobjectType.getDescribe();
+            if (
+                described.getName().toLowerCase() == wanted ||
+                described.getLabel().toLowerCase() == wanted ||
+                described.getLabelPlural().toLowerCase() == wanted
+            ) {
+                return described.getName();
+            }
+        }
+        return null;
+    }
+
     /** A time as the explanations write it, in the reader's time zone: 23 Oct 2026, 10:17. */
     public static String whenOf(Datetime value) {
         return value == null ? 'an unknown time' : value.format('d MMM yyyy, HH:mm');

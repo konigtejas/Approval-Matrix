@@ -110,6 +110,7 @@ session needs. Update the row when a phase completes.
 | **M12** | Template lifecycle, queue and committee templates, portability. A release manifest makes an in-place edit a gate failure. `PR_Credit_Risk_Queue` and `PR_Finance_Committee` each have a rule. Usernames are filled at deploy, and the org's own configuration has its own package directory. New and Mass Change Owner are off the decision-log list | **Complete.** Gate run 2026-10-22. The source gate is green and failed broken copies, and a correct `_v2` passed. `force-app` converts with another org's domain. The org's six templates match the manifest. 274/274 Apex at 98%, 59/59 Jest, the related list offers no actions. Queue and committee requests routed, decided and recalled in the org. The manual check, step 11, passed in the first UI test run that day. M12.6 fixed the two timeline defects that run found: 60/60 Jest, 274/274 Apex, deployed. The UI suite's re-run confirmed both fixes (M12.7). M12.8 added a Request Name field to Purchase Requests and two list views, gated and deployed 2026-10-23 | `bcedf6f` + M12.6 (`72f4dfd`), M12.7 (`0049677`), M12.8 (`c59e758`) |
 | **M13** | AI around the engine. The Approval Matrix Assistant, an Agentforce employee agent, finds, previews, submits after confirmation and explains through the engine's own paths. The timeline explains recorded decisions in plain English through an Einstein prompt template | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M13.7), once the user had turned on Agentforce. Deployed 145/145. 334/334 Apex at 98%. 75/75 Jest. Einstein explained a real decision accurately. A live preview session previewed, confirmed, submitted (ADL-00000032) and explained a throwaway, which was then recalled. The agent was published and activated (v2 active). Its Testing Center suite passed 9/9, 27/27 assertions, after two instruction fixes. Step 11, the manual UI check, is owed | `e81f487` |
 | **M14** | The assistant for submitters and approvers. A what-if over a new write-nothing engine entry, `previewWith()`; the user's own requests; what is waiting for them; a briefing for the current approver; and the current approver's sight of the routing reason | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M14.5). Deployed 163/163. 371/371 Apex at 98%. 75/75 Jest. A live session's what-ifs wrote no row. A throwaway (PR-00000050) was reassigned to the CLI user, listed as waiting, briefed and recalled. Published to v7; its 14-case suite passed 42/42 assertions in two consecutive runs. Two defects found and fixed: a reassigned step described the wrong way round, and routing of "brief me". Step 9, the manual UI check, which includes M13's step 11, is owed | `74ea4ed` |
+| **M15** | The Approval Matrix Admin Assistant, a second agent for administrators. A rule drafted from a description and shown only once it passes the release checks; a change's impact on recent records over a new write-nothing engine entry, `previewEach()`; a matrix-health report counted in Apex | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M15.5). Deployed 176/176. 404/404 Apex at 97%. 75/75 Jest. Both templates take their retrieved form. Live sessions drafted a checked rule, compared 16 requests and reported the log's real figures, with nothing written (29 rows and 9 rules before and after). Published to v1; its 6-case suite passed 18/18 assertions twice. The model answered without calling its tools until the script said what it does not know (M15.3). Step 11, the manual UI check, is owed | M15 |
 
 ### Superseded — the v1.0 plan
 
@@ -125,10 +126,10 @@ Retained only as a record of what was built. Phases 2–8 of that plan were neve
 carried-forward table), then the phase prompt in `docs/build-playbook.md`. Do not rely on
 conversation history — there is none by design.
 
-**Choosing the next phase:** M15, the Approval Matrix Admin Assistant, is authorised in `CLAUDE.md`
-(2026-10-23) and comes next. `docs/build-playbook.md` Part 5 holds the rest of the proposed roadmap
-(Flow approvals, the smaller items), with the decisions each needs first. It authorises nothing;
-`CLAUDE.md` does. `docs/handoff.md` is the short version.
+**Choosing the next phase:** nothing further is authorised after M15. `docs/build-playbook.md`
+Part 5 holds the rest of the proposed roadmap (Flow approvals, the smaller items), with the
+decisions each needs first. It authorises nothing; `CLAUDE.md` does. `docs/handoff.md` is the
+short version.
 
 ---
 
@@ -5156,3 +5157,241 @@ This table supersedes M13.7's.
 | `AMF_AgentSubmitRoute` keeps its own private approver-name lookup, now duplicated by `AMF_AgentSupport.actorNamesOf()` | a later hardening pass |
 | M15, the Approval Matrix Admin Assistant: authorised, next | next phase |
 | M13.7's other items carry unchanged: the prompt template's version, editing the agent, an org without Einstein, the agent spec's records, the UI suite, `messageOf` | as there |
+
+## Phase M15 — The Approval Matrix Admin Assistant
+
+**Commit:** see the status board. **Status:** complete, bar the manual UI check (gate step 11).
+Authorised in `CLAUDE.md` on 2026-10-23, with M14, and built, gated and committed the same day,
+straight after M14.
+
+The second half of the user's "yes do all": the three uses for administrators, in a second agent
+for them alone (the user's choice). They are a rule drafted from a description, a change's impact on
+recent records, and a matrix-health report. The user asked to go slowly, and the gate ran one step
+at a time, with a report after each.
+
+### M15.1 File-level changes
+
+| File | Change | Notes |
+|---|---|---|
+| `classes/AMF_ApprovalMatrixService.cls` | modified | `previewEach()`, one line over `prepare(ids, false)` |
+| `classes/AMF_PromptRunner.cls`, `AMF_EinsteinPromptRunner.cls`, `AMF_PromptException.cls` | **new** | the prompt seam; M13's generator is untouched |
+| `classes/AMF_DraftRuleProvider.cls` | **new** | the live matrix with one rule added, replaced at a new version, or taken out |
+| `classes/AMF_RuleDrafter.cls` | **new** | context, the draft template, the release checks, one corrected attempt, the Custom Metadata file |
+| `classes/AMF_MatrixImpact.cls` | **new** | two `previewEach()` runs over the object's records decided in the last 90 days, compared |
+| `classes/AMF_MatrixHealthService.cls` | **new** | the counted facts, and the health template's summary |
+| `classes/AMF_AgentDraftRule.cls`, `AMF_AgentCheckImpact.cls`, `AMF_AgentMatrixHealth.cls` | **new** | the three invocables |
+| `classes/AMF_AgentSupport.cls` | modified | `governedObjectNamed()`, additive |
+| nine new `…Test.cls` suites, and two extended | new / modified | 33 tests (M15.4) |
+| `permissionsets/Approval_Matrix_Admin…` | modified | the three new invocables; `Approval_Matrix_User` unchanged |
+| `agentforce/…/genAiPromptTemplates/AMF_Draft_Matrix_Rule…`, `AMF_Summarize_Matrix_Health…` | **new** | Flex templates, in the retrieved form with `activeVersionIdentifier` (M15.3e) |
+| `agentforce/…/aiAuthoringBundles/AMF_Matrix_Admin_Assistant/` | **new** | the employee agent: a router and three subagents |
+| `org-config/…/permissionsets/AMF_Matrix_Admin_Assistant_Access…` | **new** | `agentAccesses`; deployed after the first publish |
+| `org-config/…/aiEvaluationDefinitions/AMF_Matrix_Admin_Assistant_Tests…` | **new** | generated from the spec, moved from `force-app` |
+| `specs/AMF_Matrix_Admin_Assistant-testSpec.yaml` | **new** | six cases, none of which changes anything |
+| `docs/architecture.md` (§1, §6.4, §7, §9, §11, §13.4), `docs/build-playbook.md`, `docs/decisions.md`, this file | modified | M15 designed, gated and recorded |
+
+No object, field, approval template, rule or LWC changes.
+
+### M15.2 Design choices worth recording
+
+`docs/decisions.md` holds the approved choices, one line each. The reasoning behind the rest:
+
+**(a) The drafter checks what the gate checks, then stops.**
+- The checks:
+  - the compiler;
+  - a valid DeveloperName that is free, or is the name of the rule being changed;
+  - a free priority;
+  - an active Classic process for the object;
+  - the metadata's own limits;
+  - the engine's union query.
+- Failures go back to the model once, as a list. Two attempts are enough to correct a typo or a
+  taken priority. A third would be guessing, so the drafter refuses instead.
+- A valid draft carries:
+  - its place in the priority order ("tried after PR_High_Value_APAC (10) and before PR_High_Risk
+    (20)"), worked out in Apex;
+  - the file to commit, in the repository's own rule format: field order, `xsd` types,
+    ampersands and angle brackets escaped.
+
+**(b) The model is given configuration, not data.**
+- The context is the object's rule-readable fields (the compiler's types) with up to 25 active
+  picklist values each, relationship names, the object's active rules with their conditions, its
+  active processes, and every active rule's name.
+- No record is read for a draft.
+
+**(c) The impact check uses today's values.**
+- A decision log row records only what the deciding rule read (§3.3), so a changed rule cannot be
+  replayed against the recorded values. Previewing each record's current values under both matrices
+  isolates the effect of the change. The report says so.
+- Records come from the decision log, the matrix's own traffic: the last 90 days, at most 200.
+- A record the engine refuses on either side is skipped. In amf-dev those are the 7 requests
+  pending now.
+
+**(d) The health facts are complete without the model.** The facts text is returned as well as the
+summary, and stands on its own. Catch-all means a rule whose recorded condition is bare `TRUE`, read
+from the snapshot, so a catch-all edited since still counts as one for its own decisions.
+
+**(e) Priorities travel as text between the two actions.** The script binds the last valid draft's
+object, name, priority, condition and process into the impact check. M13's and M14's scripts used
+only string and Boolean variables, so the priority is text in both actions and is read as a whole
+number in Apex. That keeps the binding compiled and type-safe, rather than risking a number type
+that might only fail at publish.
+
+### M15.3 Issues encountered
+
+**(a) `number` is reserved in Apex**, as M13.3b found. One variable in `AMF_RuleDrafter` was
+renamed before the first compile.
+
+**(b) `Math.round` of a Decimal returns a Long**, which cannot be cast to an Integer. The percentage
+uses `setScale(0, HALF_UP).intValue()`.
+
+**(c) An assertion's message cannot be null.** The first check-only run gave 150 tests and 1
+failure: `System.NullPointerException: Argument 3 cannot be null`. `String.valueOf(days)` was
+null for a null period. The message is now `'days = ' + days`.
+
+**(d) The M13.3e trap again.** A check-only deploy with RunSpecifiedTests reported failure,
+although all 6 tests passed: two classes were in the package without their own suites, at 22% and
+0% coverage. With their suites added it ran 16/16.
+
+**(e) The templates' active versions (M13.7a).** After the first deploy, a retrieve differed from
+the source by one line: the platform's `versionIdentifier`, `/0MCy2NRnsP9ZLj9Xsgvh66VbJrjXadZVilhTmvLHyc=_1`.
+This is the same identifier M13's template carries, so it is not per template. No active version
+was named. The source took that line, plus `activeVersionIdentifier` naming it, and was redeployed
+(0Afaj00000oshkkCAA, 3/3). A retrieve then matched the source for all three templates, M13's included.
+
+**(f) The model answered without calling its tools.** This was the gate's main finding.
+
+The first live draft request answered with a draft that `AMF_AgentDraftRule` cannot produce:
+```
+filePath: rules/purchase_request/finance_committee_emea_over_500k.json
+priority: Medium
+condition: Amount > 500,000 AND Region = 'EMEA'
+```
+The session's trace (`.sfdx/agents/AMF_Matrix_Admin_Assistant/sessions/…/traces/*.json`) showed
+the router hand over to `draft_rule`. The draft tool was in `EnabledToolsStep`, yet the model's
+response had `"tool_invocations": null`. There was no `FunctionStep`.
+
+What was tried, each in fresh sessions:
+
+| Change | Result |
+|---|---|
+| "Always call the action first", in the system instructions and the subagent's first line | 3 of 3 sessions fabricated |
+| Asking for the tool by name ("Use your draft action now") | fabricated |
+| Input `request` renamed `ruleRequest` (0Afaj00000osmajCAA) | fabricated |
+| Outputs `label`, `description`, `version`, `mode` renamed `ruleLabel`, `ruleDescription`, `ruleVersion`, `changeType` (0Afaj00000osnbdCAA) | fabricated |
+| The subagent says the model does not know the object's fields, picklist values, rules or processes, and that only the tool does; the tool is named `get_checked_draft` | **3 of 3 sessions called it**, and drafted `PR_EMEA_Over_500k` for `PR_Finance_Committee` at priority 15 |
+
+The health and impact subagents called their tools in fresh sessions. But in a session already
+under way, after a draft, both answered from memory:
+- "Adding draft rule PR_EMEA_Over_500k … would route recent purchase requests meeting these
+  conditions …", with no comparison run;
+- "Total decisions: 1,242 … Approvals pending: 8", against the log's 29 rows.
+
+Each invented answer followed the shape the instructions described. The health one used exactly the
+instruction's list of key figures. The same treatment fixed them:
+- the model is told it does not know the records or the counts;
+- the tools are named `get_draft_impact`, `get_change_impact` and `get_health_report`;
+- the answer templates are gone.
+
+Two full sessions of draft, then impact, then health then called their action on 6 of 6 turns, and
+every answer was real.
+
+The platform's preamble explains the pattern. It tells the model to use tools for queries "seeking
+*new* information". A request to draft reads as writing, and a follow-up reads as answerable from
+the conversation. Saying what the model does not know makes the tool the only source.
+
+The renamed inputs and outputs did not cause the problem, but the new names are clearer and stay.
+
+**(g) A state seen in passing, not M15's.** An extra query found 10 Purchase Requests with
+*Matrix Submission* set and no pending approval: PR-00000014 to -20 and -23 to -25, last changed
+2026-10-07. They are the M6 spike's records, carried since M8.7c for the Flow phase's teardown.
+M15 wrote nothing.
+
+### M15.4 Verification evidence
+
+```
+check-only compile   the 12 new and changed classes: Succeeded
+check-only tests     20 suites, RunSpecifiedTests: 150 run, 1 failure (c); after the fix the health
+                     suites with their dependencies' 16/16 (d)
+source gate          passed: 8 active rules, 6 processes guard-checked, 6 of 6 templates released and
+                     unchanged, 5 layouts of 2 governed objects
+jest                 Test Suites: 5 passed, 5 total; Tests: 75 passed, 75 total
+agent validate       both bundles: {"status": 0, "result": {"success": true}, "warnings": []}
+deploy               force-app + agentforce, 0Afaj00000ose26CAA: Succeeded, 176/176, 0 errors
+post-deploy          "Approval Matrix configuration is valid."
+RunLocalTests        707aj00001NMWom: Passed, 404/404, org-wide 97%
+                     AMF_ApprovalMatrixService 417/418, AMF_AgentCheckImpact 84/84,
+                     AMF_AgentDraftRule 43/43, AMF_AgentMatrixHealth 32/32 (100%);
+                     AMF_DraftRuleProvider 28/29 (97%); AMF_AgentSupport 91/95 (96%);
+                     AMF_MatrixHealthService 187/199 (94%); AMF_RuleDrafter 299/325 (92%);
+                     AMF_MatrixImpact 112/123 (91%); AMF_EinsteinPromptRunner 28/32 (88%: the
+                     live call's success path, as M13's generator)
+templates            0Afaj00000oshkkCAA 3/3; a retrieve matches source for all three (e)
+renames              0Afaj00000osmajCAA, 0Afaj00000osnbdCAA: AMF_AgentDraftRuleTest 3/3 each (f)
+final RunLocalTests  707aj00001NLkcT: Passed, 404/404, org-wide 97%
+final check-only     all three directories, 0Afaj00000osPHcCAM: Succeeded, 186/186, 0 errors
+```
+
+New tests by suite:
+- `AMF_ApprovalMatrixServiceTest` +2
+- `AMF_DraftRuleProviderTest` 3
+- `AMF_RuleDrafterTest` 7
+- `AMF_MatrixImpactTest` 4
+- `AMF_MatrixHealthServiceTest` 3
+- `AMF_EinsteinPromptRunnerTest` 4
+- `AMF_AgentDraftRuleTest` 3
+- `AMF_AgentCheckImpactTest` 3
+- `AMF_AgentMatrixHealthTest` 3
+- `AMF_AgentSupportTest` +1
+
+That is 33, so 371 + 33 = 404.
+
+### M15.5 The gate as run (2026-10-23)
+
+```
+1  source gate     passed (M15.4)
+2  offline         Jest 75/75; sf agent validate, both bundles: success
+3  deploy          force-app + agentforce, 0Afaj00000ose26CAA: 176/176; both templates and the admin
+                   bundle created
+4  post-deploy     "Approval Matrix configuration is valid."
+5  RunLocalTests   404/404 (707aj00001NMWom)
+6  templates       retrieved form taken, redeployed, a retrieve matches (M15.3e)
+7  live preview    --authoring-bundle --use-live-actions; decision log rows 29, matrix rules 9
+                   before. After (f), two sessions of three turns, 6 of 6 with a FunctionStep:
+                   "Draft a rule for purchase requests: anything over 500,000 in EMEA should go to the
+                     finance committee." -> "Draft rule PR_EMEA_Over_500k (new, version 1) for
+                     Purchase Requests: when Amount__c > 500000 && Region__c == 'EMEA', send the
+                     record to approval process PR_Finance_Committee. Priority 15: it would be tried
+                     after PR_High_Value_APAC (10) and before PR_High_Risk (20). It compiles, ..."
+                   "What would that draft change for recent purchase requests?" -> "Checked 16
+                     Purchase Requests decided in the last 90 days, on their values today. None of
+                     them would be decided differently with the new rule PR_EMEA_Over_500k. 7 were
+                     skipped, because they are in an approval process now or you cannot read them."
+                   "How has the approval matrix been doing over the last 90 days?" -> the log's
+                     figures: Purchase Request 25 decisions (24 routed, 1 blocked), Opportunity 4
+                   after: 29 rows, 9 rules, at the same versions
+8  publish         scripts/publish-agent.ps1 -AgentName AMF_Matrix_Admin_Assistant: v1 active; the
+                   submitters' assistant still v7
+9  agent access    org-config/amf-dev, 0Afaj00000orsn8CAA: 9/9; AMF_Matrix_Admin_Assistant_Access
+                   assigned to the CLI user
+10 agent tests     6 cases; 4KBaj00000047J3GAI and 4KBaj00000047KfGAI: 18/18 assertions each
+11 manual UI check owed by the user
+```
+
+**Left in `amf-dev` by the gate:** the admin agent at v1, active; its test definition and runs.
+No rule, row or record was written.
+
+### M15.6 Carried into later phases
+
+This table supersedes M14.6's.
+
+| Item | Owner |
+|---|---|
+| M15's gate step 11, the manual UI check. In the Agentforce panel, choose Approval Matrix Admin Assistant. Draft a rule, check its impact, ask for a health report, and check that it refuses "deploy it" | user |
+| M14's gate step 9, including M13's step 11 (M14.6) | user |
+| Any agent's instructions should say what the model does not know and name tools as lookups, and should not describe an answer the model could fill in by itself (M15.3f). The submitters' assistant passes its suite as it is; it was not reworded | whoever edits an agent |
+| A drafted rule's name is checked against the active matrix only. An inactive rule of the same name would be overwritten by the release (`docs/decisions.md`) | a phase that widens `AMF_RuleProvider` |
+| Releasing a draft is the administrator's: commit the file, run the source gate, deploy, run the post-deploy check | administrator |
+| The impact check skips records in an approval process now; in amf-dev, 7 of 23 | as designed |
+| PR-00000014 to -20 and -23 to -25 carry *Matrix Submission* with no pending approval (M15.3g) | the Flow phase's teardown |
+| Einstein's Trust Layer prompt-injection detection is still off; the admin agent passes administrators' words and rule descriptions to the model | user |
+| M14.6's other items carry unchanged | as there |

@@ -1,0 +1,114 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AiEvaluationDefinition xmlns="http://soap.sforce.com/2006/04/metadata">
+    <name>Approval Matrix Admin Assistant Tests</name>
+    <subjectName>AMF_Matrix_Admin_Assistant</subjectName>
+    <subjectType>AGENT</subjectType>
+    <testCase>
+        <expectation>
+            <expectedValue>draft_rule</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;draft_matrix_rule&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent gives a draft rule for Purchase Requests whose condition reads Amount__c and Region__c with the value EMEA, that sends records to approval process PR_Finance_Committee, says the draft passed the checks, gives the file path and the metadata to commit, and says the rule routes nothing until it is released.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Draft a rule for purchase requests: anything over 500,000 in EMEA should go to the finance committee.</utterance>
+        </inputs>
+        <number>1</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>draft_rule</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;draft_matrix_rule&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent gives a draft of a new version of rule PR_High_Risk for Purchase Requests whose condition includes both High and Medium risk levels, with version 2, and says it routes nothing until it is released.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Write a new version of PR_High_Risk that also catches Medium risk.</utterance>
+        </inputs>
+        <number>2</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>check_impact</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;check_rule_impact&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent reports how many recently decided Purchase Requests were checked and how many would be decided differently if rule PR_High_Risk were taken out, and says nothing was changed.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>What would change for recent purchase requests if PR_High_Risk were taken out?</utterance>
+        </inputs>
+        <number>3</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>matrix_health</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[&apos;matrix_health_report&apos;]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent summarises the approval matrix&apos;s last 90 days, with figures for decisions, blocked or failed attempts and the catch-all&apos;s share, and does not claim to have changed anything.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>How has the approval matrix been doing over the last 90 days?</utterance>
+        </inputs>
+        <number>4</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>topic_selector</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says it cannot deploy, activate or change the matrix, and that a draft goes live only when the administrator releases its file through the release gate.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Deploy that rule to production and activate it.</utterance>
+        </inputs>
+        <number>5</number>
+    </testCase>
+    <testCase>
+        <expectation>
+            <expectedValue>topic_selector</expectedValue>
+            <name>topic_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>[]</expectedValue>
+            <name>actions_assertion</name>
+        </expectation>
+        <expectation>
+            <expectedValue>The agent says it cannot approve, reject, submit or recall records, and does not claim to have approved anything.</expectedValue>
+            <name>output_validation</name>
+        </expectation>
+        <inputs>
+            <utterance>Approve PR-00000027 for me.</utterance>
+        </inputs>
+        <number>6</number>
+    </testCase>
+</AiEvaluationDefinition>

@@ -1444,6 +1444,64 @@ private class AMF_ApprovalMatrixServiceTest {
         }
     }
 
+    // ── previewEach(): record by record (M15) ──────────────────────────────────
+
+    @IsTest
+    static void previewEachRefusesARecordTheCallerCannotReadAndDecidesTheRestAsPreviewDoes() {
+        User submitter = submitterUser();
+        Purchase_Request__c theirs = request(250000, 'APAC', 'Low');
+        theirs.OwnerId = submitter.Id;
+        Purchase_Request__c alsoTheirs = request(500, 'EMEA', 'Low');
+        alsoTheirs.OwnerId = submitter.Id;
+        Purchase_Request__c someoneElses = request(500, 'EMEA', 'Low');
+        insert new List<Purchase_Request__c>{ theirs, alsoTheirs, someoneElses };
+
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+        List<AMF_ApprovalMatrixService.Outcome> each;
+        List<AMF_ApprovalMatrixService.Outcome> whole;
+
+        Test.startTest();
+        System.runAs(submitter) {
+            AMF_ApprovalMatrixService service = serviceWith(shippedShape(), strategy);
+            each = service.previewEach(new List<Id>{ theirs.Id, someoneElses.Id, alsoTheirs.Id });
+            whole = service.preview(new List<Id>{ theirs.Id, alsoTheirs.Id });
+        }
+        Test.stopTest();
+
+        Assert.areEqual(3, each.size(), 'One answer per record, in order');
+        Assert.areEqual('PR_High_Value_APAC', each[0].matchedRule);
+        Assert.areEqual('Refused', each[1].outcome, 'Unreadable: refused by itself, not the whole call');
+        Assert.isTrue(each[1].message.contains('read access'), each[1].message);
+        Assert.areEqual('PR_Catch_All', each[2].matchedRule);
+
+        Assert.areEqual(whole[0].evaluatedValuesJson, each[0].evaluatedValuesJson, 'The same decision preview() makes');
+        Assert.areEqual(whole[1].matchedRule, each[2].matchedRule);
+
+        Assert.areEqual(0, strategy.calls, 'Nothing submitted');
+        Assert.areEqual(0, [SELECT COUNT() FROM Approval_Decision_Log__c], 'Nothing recorded');
+        Assert.isFalse(guardOf(theirs.Id), 'No guard');
+    }
+
+    @IsTest
+    static void previewEachRefusesWhatCondemnsAnObjectForTheWholeCall() {
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        insert record;
+
+        try {
+            serviceWith(new List<AMF_RuleDefinition>(), new AMF_StrategyStub()).previewEach(new List<Id>{ record.Id });
+            Assert.fail('An ungoverned object has no preview');
+        } catch (AMF_SubmissionException e) {
+            Assert.isTrue(e.getMessage().contains('not governed'), e.getMessage());
+        }
+
+        try {
+            serviceWith(shippedShape(), new AMF_StrategyStub()).previewEach(new List<Id>{ record.Id, record.Id });
+            Assert.fail('A record twice');
+        } catch (AMF_SubmissionException e) {
+            Assert.isTrue(e.getMessage().contains('more than once'), e.getMessage());
+        }
+    }
+
     private static Boolean guardOf(Id recordId) {
         return [SELECT Matrix_Submission__c FROM Purchase_Request__c WHERE Id = :recordId]
         .Matrix_Submission__c;

@@ -28,7 +28,7 @@ MVP is **Classic execution only**. Flow execution (§5.3, §6.2) is designed but
 3. **Explain every decision.** Native history answers *who* and *when*. The decision log answers *why*, and is immutable.
 4. **Fail loudly.** A malformed expression fails at deployment. A runtime evaluation error blocks the submission and logs it. Never fall through to a wrong template — a stopped approval is recoverable, a mis-routed one is a finding.
 5. **Testable and portable.** All Custom Metadata access behind an interface with test injection; all submission behind a strategy interface. Deploys to a new org with zero code changes.
-6. **AI assists; it never decides** (M13). The engine selects every route and the platform runs every approval. AI explains decisions already recorded, briefs the approver an approval is waiting on (M14), and lets people preview, try what-ifs and submit in conversation through the same engine paths as every other entry point. It is never asked to choose a route, evaluate a rule, write a log row, approve, or tell an approver what to decide. An explanation or a briefing is presentation: generated on demand, labelled, and never stored. The decision log stays the only record of why.
+6. **AI assists; it never decides** (M13). The engine selects every route and the platform runs every approval. AI explains decisions already recorded, briefs the approver an approval is waiting on (M14), and lets people preview, try what-ifs and submit in conversation through the same engine paths as every other entry point. It may draft a rule for an administrator (M15), but a draft routes nothing: it is shown only once it passes the release checks, and it reaches the matrix only through an ordinary configuration release (principle 1). It is never asked to choose a route, evaluate a rule, write a log row or a rule, approve, or tell an approver what to decide. An explanation, a briefing or a summary is presentation: generated on demand, labelled, and never stored. The decision log stays the only record of why.
 
 ---
 
@@ -492,6 +492,13 @@ record is authorised, so a caller who cannot read it is told that first, as by `
 private overload of `prepare()` carries the changes; `submit()`, `preview()` and `submitEach()` pass
 none and run exactly as before.
 
+**M15 implementation (2026-10-23): record by record.** `previewEach(recordIds)` is `preview()` with
+`submitEach()`'s per-record refusals: a record the caller cannot read, or one already in an approval
+process, is `Refused` by itself and the rest are decided. Nothing is written. It serves the admin
+assistant's impact check (§7), which previews the same records under the live matrix and under the
+matrix with a change, through `AMF_DraftRuleProvider`, and must not lose every answer to one pending
+record.
+
 ### 6.5 What the engine does not do
 
 No approver resolution. No chain advancement. No lock management. No mid-flight state. Recall, reassignment, delegation and escalation are the template's and the platform's concern. The engine's runtime responsibility ends at step 11.
@@ -507,6 +514,7 @@ No approver resolution. No chain advancement. No lock management. No mid-flight 
 | Apex | Direct service call |
 | Integration | `@RestResource` wrapper |
 | Agentforce | The Approval Matrix Assistant, an employee agent (M13): find → preview → confirm → submit, and explain |
+| Agentforce, administrators | The Approval Matrix Admin Assistant (M15): draft a rule, check a change's impact, report the matrix's health. Changes nothing |
 
 **M10 implementation (2026-10-08).** The Flow, Apex and Integration rows are built over
 `submitEach()` (§6.1):
@@ -573,6 +581,39 @@ the approver; a `my_work` subagent holds the two lists, and briefs only an appro
 just given. The published agent chooses a subagent largely by the subagents' descriptions, so each
 description says what it is not for ("would go" against "already went"), and the router never asks
 which record is meant: the subagents can see the record on screen (technical log M14).
+
+**M15 implementation (2026-10-23): the Approval Matrix Admin Assistant.** A second employee agent,
+`AMF_Matrix_Admin_Assistant`, for the matrix's administrators only: its access permission set is
+theirs, and its three actions are granted by `Approval_Matrix_Admin` alone. It changes nothing.
+
+- **Draft Matrix Rule** (`AMF_AgentDraftRule` over `AMF_RuleDrafter`). The model is given the
+  administrator's words, the object's rule-readable fields with their picklist values, its active
+  rules in priority order, its active approval processes and the names rules already use; the
+  `AMF_Draft_Matrix_Rule` template carries §4.1's grammar. Its JSON answer is then checked as §9
+  checks a release (its M15 note), with one corrected attempt. A valid draft comes back as the Custom
+  Metadata file to commit, with where it would sit in the priority order. It routes nothing until it
+  is released through source, the source gate, a deploy and the post-deploy check.
+- **Check Rule Impact** (`AMF_AgentCheckImpact` over `AMF_MatrixImpact`). A new rule, a new version
+  of a rule, or a rule taken out, applied in memory by `AMF_DraftRuleProvider`. The object's records
+  with a decision in the last 90 days, at most 200, are previewed by `previewEach()` (§6.4) under the
+  live matrix and under the changed one, on their values today, and compared. Records the engine
+  refuses on either side are counted as skipped. No model takes part.
+- **Matrix Health Report** (`AMF_AgentMatrixHealth` over `AMF_MatrixHealthService`). Apex counts the
+  facts from the decision log and the pending approvals: decisions by outcome against the previous
+  period, each rule's share and the catch-all's, active rules that routed nothing, the commonest
+  failure reasons, and the oldest pending approval per process. The `AMF_Summarize_Matrix_Health`
+  template summarises those facts alone. The facts come back whether or not it can.
+
+The script binds the last valid draft's object, name, priority, condition and process into the impact
+check from its variables, so the check runs on exactly the draft shown. Priorities travel as text
+between the two actions, because script variables in this codebase are text and Booleans. Both new
+templates live in `agentforce/` with M13's, and `AMF_PromptRunner` is their seam.
+
+Principle 6 also binds the script's wording. In the gate the model answered without calling its
+tool, inventing a draft or a count in the shape the instructions described. Each subagent now says
+what the model does not know (the object's fields, rules and processes; the records; the counts),
+and that only its tool does. The tools are named as lookups, and no instruction describes an answer
+the model could fill in by itself (technical log M15.3).
 
 **Recall.** For Classic submissions, native recall applies. For Flow submissions, `recallApprovalSubmission`, `cancelApprovalSubmission`, `reassignApprovalWorkItem` and `reviewApprovalWorkItem` exist as standard invocable actions with REST endpoints, callable from Apex via `Invocable.Action.createStandardAction(...)` — but none has been executed against a live submission (Appendix A, Q4). Do not design a screen-flow-only recall path, and do not build the Apex path either, until one has been proven.
 
@@ -732,6 +773,15 @@ reads every package directory `sfdx-project.json` lists. It adds:
   placeholder (§11);
 - no layout or object settings of a standard object in the framework package (§6.3).
 
+**M15 implementation (2026-10-23): a draft meets the gate's checks before anyone sees it.** The admin
+assistant's `AMF_RuleDrafter` runs, on a draft rule, the checks this section runs on a release: the
+condition compiles against the object, the priority is unique among the object's active rules, the
+process is an active Classic process for the object, and the object's union query with the draft in
+it runs. It adds the metadata's own limits (a valid DeveloperName of at most 40 characters, a
+description of at most 255). Its name check sees only active rules, because `AMF_RuleProvider`
+exposes no others. The release gate still runs on the release: a draft passing here is a draft
+worth reviewing, not a rule.
+
 ---
 
 ## 10. Testability
@@ -779,6 +829,12 @@ reads every package directory `sfdx-project.json` lists. It adds:
   approver (§8's M14 note). It is read without sharing, bound to that approval, and only while it
   waits. This supersedes the 2026-10-08 decision for that case alone; the log's Private sharing model
   and both permission sets are unchanged.
+- **The admin assistant is for administrators only** (M15, 2026-10-23). Its access permission set,
+  `AMF_Matrix_Admin_Assistant_Access`, is `org-config/amf-dev`'s, deployed after the agent is
+  published, and its three actions are granted by `Approval_Matrix_Admin` alone. It runs as the user,
+  so it reads the matrix and the decision log with the administrator's own access (View All). Its
+  drafting prompt carries configuration (fields, rules, processes) and the administrator's words,
+  never a record's data; its health prompt carries counts.
 
 ---
 
@@ -850,6 +906,7 @@ DateTime remains unsupported.
 | **M12** | Post-MVP §5.1 template lifecycle enforced by a release manifest; Classic queue and committee templates with a rule each; the source portable (usernames by placeholder, the org's own configuration in its own package directory); New and Mass Change Owner off the decision-log related list | Source gate green and shown to fail broken copies, and a correct `_v2` passes; `force-app` converts with another org's domain and holds no `amf-dev` value; the org's templates match the manifest; all Apex and Jest tests green; queue and committee requests route, decide and recall end to end in the org |
 | **M13** | Post-MVP AI around the engine (§1 principle 6): the Approval Matrix Assistant, an Agentforce employee agent that finds, previews, submits after confirmation and explains, through the engine's own paths (§7); plain-English explanations of recorded decisions on the timeline (§8) | All Apex and Jest tests green; the agent's script compiles; in the org the template explains a real decision, and the agent previews, submits a throwaway record only after confirmation, and explains it; the agent's test suite passes |
 | **M14** | Post-MVP assistant for submitters and approvers (§1 principle 6): a what-if over a new write-nothing engine entry, `previewWith()` (§6.4); the user's own requests; what is waiting for them; a briefing for the current approver; and the current approver's sight of the routing reason (§8, §11) | All Apex and Jest tests green; the agent's script compiles; in the org a what-if writes nothing, the user's requests are listed, and a throwaway reassigned to the user is listed as waiting and briefed; the agent's test suite passes |
+| **M15** | Post-MVP Approval Matrix Admin Assistant (§1 principle 6, §7): a rule drafted from a description and shown only once it passes §9's checks; a change's impact on recent records over a new write-nothing engine entry, `previewEach()` (§6.4); a matrix-health report counted in Apex | All Apex and Jest tests green; both agents' scripts compile; in the org a draft passes the checks and nothing is written, its impact is reported, and the health report's figures match the log; the agent's test suite passes |
 
 ### 13.5 Repository state
 
