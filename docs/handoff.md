@@ -2,9 +2,9 @@
 
 **As of 2026-10-24.** `develop`, pushed to `origin` (github.com/konigtejas/Approval-Matrix), holds
 every phase through M16. The last phase commit is `a035bdb`; later commits only record SHAs and
-update this file. Every phase is built, gated in `amf-dev` and committed. The user owes five checks:
-three manual UI checks from M13 to M15, and M16's MCP login and its conversations in Claude
-(section 8). Nothing beyond M16 is authorised.
+update this file. Every phase is built, gated in `amf-dev` and committed. The user owes four checks:
+three manual UI checks from M13 to M15, and M16's conversations in Claude (section 8). Nothing beyond
+M16 is authorised.
 
 This is the detailed handoff. It is meant to let a person, or a fresh Claude session, pick the
 project up with no conversation history. Where it summarises, these are the sources:
@@ -70,7 +70,8 @@ project up with no conversation history. Where it summarises, these are the sour
   - three Einstein prompt templates;
   - two MCP servers for Claude, Approval Matrix and Approval Matrix Admin, both active (section 4.8).
 - **Owed by the user:** three manual checks in the browser, one each from M13, M14 and M15, and
-  M16's one browser login for the MCP probe and its conversations in Claude (section 8).
+  M16's conversations in claude.ai and Claude Code (section 8). M16's MCP probe passed on both
+  servers after the user's one login (M16.7).
 - **What is next:** nothing is authorised. The largest part of the target design still unbuilt is
   Flow approvals (section 10.1).
 
@@ -227,7 +228,7 @@ Round 2).
 | M13 | The Approval Matrix Assistant, and plain-English explanations on the timeline | 334/334, 75/75 Jest, 9/9 agent cases | `e81f487` |
 | M14 | The assistant for submitters and approvers: what-if, my requests, my approvals, briefings; current approvers see why | 371/371, 14 cases 42/42 twice | `74ea4ed` |
 | M15 | The Approval Matrix Admin Assistant: draft a rule, check a change's impact, the matrix's health | 404/404, 6 cases 18/18 twice | `11941dc` |
-| M16 | The Claude connector: two Salesforce-hosted MCP servers, Claude writing from Apex's facts, a signed preview token for submitting | 451/451, REST smoke on real records; MCP login owed | `a035bdb` |
+| M16 | The Claude connector: two Salesforce-hosted MCP servers, Claude writing from Apex's facts, a signed preview token for submitting | 451/451, REST smoke on real records; MCP probe on both servers (M16.7) | `a035bdb` (+ M16.7) |
 
 Every phase also has a follow-up commit recording its SHA in the technical log. The handoff has its
 own commits.
@@ -565,8 +566,12 @@ every call runs as the signed-in user. `docs/claude-connector.md` is the guide.
 
 **Checks:**
 - **REST:** the same Apex answers through the REST Actions API, `/services/data/v66.0/actions/custom/apex/AMF_Mcp*`.
-- **MCP:** `scripts/mcp-probe.mjs` is an MCP client that needs one browser login. Its first run was
-  waiting on that login when the phase was committed (section 8.0).
+- **MCP:** `scripts/mcp-probe.mjs` is an MCP client. It needs one browser login per org, and later
+  runs reuse it. On 2026-10-24 (M16.7):
+  - both servers initialised and listed their tools with the right annotations;
+  - `preview_route` answered;
+  - a forged `submit_for_approval` was refused;
+  - `get_health_facts` gave the log's figures.
 
 ---
 
@@ -842,22 +847,23 @@ New content makes a new version, which Einstein does not use until the source na
 ## 8. Owed by the user: the manual UI checks
 
 Do these in the browser as Tejas Vernekar, who has every licence and access set. Record 8.0's
-results in the technical log as **M16.7**, and the three UI checks as **M15.7**.
+results in the technical log as **M16.8**, and the three UI checks as **M15.7**.
 
-### 8.0 M16, gate steps 7 and 8: the Claude connector
+### 8.0 M16, gate step 8: the Claude connector
 
-**Step 7, the MCP probe (one login).** From the project root, in PowerShell:
+**Step 7, the MCP probe, passed on 2026-10-24** (M16.7). To run it again (no login needed while the
+saved token in `.mcp-probe/` is valid), from the project root, in PowerShell:
 
 ```powershell
 & 'C:\Program Files\sf\client\bin\node.exe' scripts/mcp-probe.mjs --server https://api.salesforce.com/platform/mcp/v1/custom/AMFApprovalMatrix --instance https://orgfarm-e5ccbd7218-dev-ed.develop.my.salesforce.com --client-id <client ID> --tool preview_route --args '{\"record\":\"PR-00000047\"}'
 ```
 
-The client ID is printed by the setup script. The browser opens once: log in to `amf-dev`, after
-logging out of any other Salesforce org, and choose **Allow**.
+The client ID is printed by the setup script. Without a saved token the browser opens once: log in
+to `amf-dev`, after logging out of any other Salesforce org, and choose **Allow**.
 - **Expect:** `initialize: AMFApprovalMatrix`, then eight tools with seven `readOnly=true` and
   `submit_for_approval` `destructive=true`, then the preview of PR-00000047.
-- **Then** run the same against `AMFApprovalMatrixAdmin`, with `--tool get_health_facts --args '{}'`.
-  The saved login carries over.
+- **Against `AMFApprovalMatrixAdmin`**, use `--tool get_health_facts --args '{}'`. The saved login
+  carries over.
 
 **Step 8, Claude itself.** Connect claude.ai and Claude Code as `docs/claude-connector.md` §3
 says. Then, in each:
@@ -949,7 +955,7 @@ If claude.ai fails after a good login, Claude Code connects directly (`docs/clau
 
 | Item | Owner | Source |
 |---|---|---|
-| M16's MCP probe login and its conversations in Claude (section 8.0) | user | M16.6 |
+| M16's conversations in claude.ai and Claude Code (section 8.0); its MCP probe passed (M16.7) | user | M16.6, M16.7 |
 | claude.ai's connector broker has had Salesforce login failures (anthropics/claude-ai-mcp #184, #251, both closed); Claude Code connects directly | step 8.0 | M16.6 |
 | The MCP server definitions deploy only through the setup script, at Metadata API 67.0; if `sourceApiVersion` rises to 67.0, the `.forceignore` line and the throwaway project can go | whoever raises it | M16.1 |
 | `AMF_McpRuleContext.GUIDE` repeats the drafting template's grammar; keep them in step | whoever edits either | M16.6 |
@@ -1058,7 +1064,7 @@ removes PR-00000014 to -25 and their guards.
 
 ## 11. Decisions waiting on the user
 
-1. **M16's MCP login and conversations, and the three manual UI checks** (section 8).
+1. **M16's conversations in Claude, and the three manual UI checks** (section 8).
 2. **Whether to turn on the Trust Layer's prompt-injection and toxicity detection** in `amf-dev`.
 3. **Who else gets access to the assistants and the Claude connector,** starting with Pallab Saikia
    (5.2). The connector needs no licence.

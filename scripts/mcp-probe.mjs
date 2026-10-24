@@ -7,8 +7,8 @@
 //
 // The first run opens the browser once for the user to log in and allow access; the callback is
 // http://localhost:1717/OauthRedirect, registered on the AMFClaudeConnector External Client App.
-// Later runs reuse the saved refresh token in .mcp-probe/ (git-ignored), and keep the rotated
-// replacement, because the app rotates refresh tokens.
+// Later runs, against either server of the org, reuse the saved refresh token in .mcp-probe/
+// (git-ignored), and keep the rotated replacement, because the app rotates refresh tokens.
 //
 // --args is ONE tool input; the probe wraps it as {"inputs": [ ... ]}, the shape every invocable
 // Apex tool takes (technical log M16.1). Needs only Node 22's standard library.
@@ -28,8 +28,12 @@ const server = required('server');
 const instance = required('instance').replace(/\/$/, '');
 const clientId = args['client-id'] || process.env.SF_CONSUMER_KEY || fail('--client-id is required');
 
+// One login per org: the token is the External Client App's, and reaches every server in the org.
 const cacheDir = '.mcp-probe';
-const cacheFile = `${cacheDir}/token.${server.split('/').pop()}.json`;
+const cacheFile = `${cacheDir}/token.${new URL(instance).host}.json`;
+
+// Declared before the first request: the top-level awaits below run before any later line.
+let nextId = 2;
 
 const token = await accessToken();
 const session = await initialize(token);
@@ -54,6 +58,9 @@ if (args.prompt) {
 }
 
 if (args.tool) {
+    const listed = tools.tools.find((tool) => tool.name === args.tool);
+    if (!listed) fail(`${args.tool} is not one of this server's tools`);
+    log(`${args.tool} inputSchema: ${JSON.stringify(listed.inputSchema)}`);
     const input = args.args ? JSON.parse(args.args) : {};
     const called = await rpc(token, session, 'tools/call', { name: args.tool, arguments: { inputs: [input] } });
     console.log(JSON.stringify(called.structuredContent ?? called, null, 2));
@@ -77,7 +84,6 @@ async function initialize(bearer) {
     return sessionId;
 }
 
-let nextId = 2;
 async function rpc(bearer, sessionId, method, params) {
     const response = await post(bearer, sessionId, { jsonrpc: '2.0', id: nextId++, method, params });
     const message = await bodyOf(response);

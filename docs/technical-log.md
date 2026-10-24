@@ -111,7 +111,7 @@ session needs. Update the row when a phase completes.
 | **M13** | AI around the engine. The Approval Matrix Assistant, an Agentforce employee agent, finds, previews, submits after confirmation and explains through the engine's own paths. The timeline explains recorded decisions in plain English through an Einstein prompt template | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M13.7), once the user had turned on Agentforce. Deployed 145/145. 334/334 Apex at 98%. 75/75 Jest. Einstein explained a real decision accurately. A live preview session previewed, confirmed, submitted (ADL-00000032) and explained a throwaway, which was then recalled. The agent was published and activated (v2 active). Its Testing Center suite passed 9/9, 27/27 assertions, after two instruction fixes. Step 11, the manual UI check, is owed | `e81f487` |
 | **M14** | The assistant for submitters and approvers. A what-if over a new write-nothing engine entry, `previewWith()`; the user's own requests; what is waiting for them; a briefing for the current approver; and the current approver's sight of the routing reason | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M14.5). Deployed 163/163. 371/371 Apex at 98%. 75/75 Jest. A live session's what-ifs wrote no row. A throwaway (PR-00000050) was reassigned to the CLI user, listed as waiting, briefed and recalled. Published to v7; its 14-case suite passed 42/42 assertions in two consecutive runs. Two defects found and fixed: a reassigned step described the wrong way round, and routing of "brief me". Step 9, the manual UI check, which includes M13's step 11, is owed | `74ea4ed` |
 | **M15** | The Approval Matrix Admin Assistant, a second agent for administrators. A rule drafted from a description and shown only once it passes the release checks; a change's impact on recent records over a new write-nothing engine entry, `previewEach()`; a matrix-health report counted in Apex | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M15.5). Deployed 176/176. 404/404 Apex at 97%. 75/75 Jest. Both templates take their retrieved form. Live sessions drafted a checked rule, compared 16 requests and reported the log's real figures, with nothing written (29 rows and 9 rules before and after). Published to v1; its 6-case suite passed 18/18 assertions twice. The model answered without calling its tools until the script said what it does not know (M15.3). Step 11, the manual UI check, is owed | `11941dc` |
-| **M16** | The Claude connector. Two Salesforce-hosted MCP servers, for everyone and for administrators, over the existing actions and seams. Claude writes from facts Apex returns, and submits only with a signed preview token after the user confirms | **Complete, bar the MCP login and the manual check.** Gate run 2026-10-24 (M16.5). Source gate unchanged. 75/75 Jest. The setup script deployed everything and activated both servers, with all twelve tools annotated. 451/451 Apex at 97%. Check-only 221/221. On real records every tool answered as expected over REST, a forged token and a wrong process were refused, and nothing was written. Steps 7 (one browser login for the MCP probe) and 8 (the conversations in claude.ai and Claude Code) are owed | `a035bdb` |
+| **M16** | The Claude connector. Two Salesforce-hosted MCP servers, for everyone and for administrators, over the existing actions and seams. Claude writes from facts Apex returns, and submits only with a signed preview token after the user confirms | **Complete, bar the manual check.** Gate run 2026-10-24 (M16.5). Source gate unchanged. 75/75 Jest. The setup script deployed everything and activated both servers, with all twelve tools annotated. 451/451 Apex at 97%. Check-only 221/221. On real records every tool answered as expected over REST, a forged token and a wrong process were refused, and nothing was written. Step 7 passed over MCP on both servers after the user's one login (M16.7): the tools listed with their annotations, a preview answered, a forged submit was refused. Step 8, the conversations in claude.ai and Claude Code, is owed | `a035bdb` + M16.7 |
 
 ### Superseded — the v1.0 plan
 
@@ -5591,7 +5591,8 @@ thin slice       mcp deploy 0Afaj00000ozbFZCAY (after (a)); REST preview of "PR-
                                                 "Finance" not an active process, the condition does not compile
                  check_change_impact            ran: 17 checked, 0 changed, 7 skipped
                  get_health_facts, 90 days      30 decisions, 1 blocked, 0 failed; 13 fact lines
-7  MCP probe     waiting on the user's one browser login (the probe listens on localhost:1717)
+7  MCP probe     waiting on the user's one browser login (the probe listens on localhost:1717);
+                 passed later the same day (M16.7)
 8  manual        owed: claude.ai and Claude Code, docs/claude-connector.md sections 3 and 4
 ```
 
@@ -5618,3 +5619,42 @@ This table supersedes M15.6's.
 | MCP prompts were dropped on the documentation's word (M16.1); a live check would settle it | if wanted |
 | The decision log cannot tell which rows came through Claude: it has no channel field | a later phase, if wanted |
 | M15.6's items carry unchanged, except the CLAUDE.md publish-command item, which M16 did | as there |
+
+### M16.7 Gate step 7: the MCP probe (2026-10-24)
+
+The user logged in once, in the browser the probe opened, and allowed access. Every run after that
+reused the saved refresh token. As the user, over Salesforce Hosted MCP:
+
+```
+AMFApprovalMatrix
+  initialize    AMFApprovalMatrix 1.0.0, protocol 2025-06-18
+  tools/list    8 tools. find_record, get_briefing_facts, get_decision_facts, list_my_approvals,
+                list_my_requests, preview_route, what_if_route: readOnly=true destructive=false
+                idempotent=true openWorld=false. submit_for_approval: readOnly=false
+                destructive=true idempotent=false openWorld=false
+  prompts/list  0 prompts
+  inputSchema   preview_route: {"inputs": [{"record": string, required, with its description}]}
+  tools/call    preview_route "PR-00000047": Routable, PR_Two_Level_Mgmt via PR_Catch_All
+                (priority 9999, version 1), the record's URL and a submit token
+  tools/call    submit_for_approval with a forged token: submitted false, Refused, "This submission
+                does not come from a preview of this record, so nothing was submitted. ..."
+AMFApprovalMatrixAdmin
+  initialize    AMFApprovalMatrixAdmin 1.0.0, protocol 2025-06-18
+  tools/list    4 tools, all readOnly=true destructive=false idempotent=true openWorld=false
+  prompts/list  0 prompts
+  tools/call    get_health_facts {"days": 90}: reported, 30 decisions, 1 blocked, 0 failed;
+                "Times are in America/Los_Angeles."
+decision log    30 rows before and after
+```
+
+The first real run found two faults in the probe, both fixed:
+- **(a) A variable used before its declaration.** `let nextId` was declared below the top-level
+  awaits that first called `rpc()`. A module's top level runs in order, so the first `tools/list`
+  met the variable in its temporal dead zone: "Cannot access 'nextId' before initialization". This
+  came after the login and `initialize` had both succeeded. It is now declared with the constants.
+- **(b) One login per server.** The saved login was keyed by server, so the admin server would have
+  asked for a second one. The token is the External Client App's and reaches every server in the
+  org, so it is now keyed by the org's host.
+
+Step 7 passed. Step 8, the conversations in claude.ai and Claude Code, is owed. M16.6's table stands,
+less its first row.

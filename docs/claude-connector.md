@@ -270,8 +270,9 @@ in the engine and in M13 to M15's classes, which M16 did not change.
 ```
 
 The first run opens the browser once to log in. It keeps the refresh token in `.mcp-probe/`, which
-git ignores. It lists the tools with their annotations, lists the prompts, and calls a tool.
-Arguments for an Apex tool go in an `inputs` array; the probe wraps the one input it is given.
+git ignores, one per org, so later runs against either server need no login. It lists the tools with
+their annotations, lists the prompts, prints the called tool's input schema, and calls it. Arguments
+for an Apex tool go in an `inputs` array; the probe wraps the one input it is given.
 
 The same Apex can be called without MCP through the REST Actions API, as the CLI user:
 `POST /services/data/v66.0/actions/custom/apex/AMF_McpPreviewRoute` with

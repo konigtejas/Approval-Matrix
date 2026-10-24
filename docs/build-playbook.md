@@ -1113,7 +1113,11 @@ Acceptance:
   - RunLocalTests 451/451 at 97%, every new class at 97% or more.
   - Check-only deploy 221/221.
   - The REST smoke test gave the expected answers, with 30 rows and 9 rules before and after.
-- Step 7 waits on the user's one browser login.
+- Step 7 passed after the user's one browser login (M16.7).
+  - Both servers initialised over MCP and listed their tools with the right annotations.
+  - `preview_route` answered.
+  - A forged `submit_for_approval` was refused, with nothing written.
+  - `get_health_facts` gave the log's figures.
 - Step 8 is owed.
 
 ---
