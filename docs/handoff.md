@@ -228,7 +228,7 @@ Round 2).
 | M13 | The Approval Matrix Assistant, and plain-English explanations on the timeline | 334/334, 75/75 Jest, 9/9 agent cases | `e81f487` |
 | M14 | The assistant for submitters and approvers: what-if, my requests, my approvals, briefings; current approvers see why | 371/371, 14 cases 42/42 twice | `74ea4ed` |
 | M15 | The Approval Matrix Admin Assistant: draft a rule, check a change's impact, the matrix's health | 404/404, 6 cases 18/18 twice | `11941dc` |
-| M16 | The Claude connector: two Salesforce-hosted MCP servers, Claude writing from Apex's facts, a signed preview token for submitting | 451/451, REST smoke on real records; MCP probe on both servers (M16.7) | `a035bdb` (+ M16.7) |
+| M16 | The Claude connector: two Salesforce-hosted MCP servers, Claude writing from Apex's facts, a signed preview token for submitting | 451/451, REST smoke on real records; MCP probe on both servers (M16.7) | `a035bdb` (+ M16.7, `72ad84f`) |
 
 Every phase also has a follow-up commit recording its SHA in the technical log. The handoff has its
 own commits.
