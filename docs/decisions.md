@@ -8,6 +8,18 @@ Format: `YYYY-MM-DD — <what changed> — <why>`
 
 ---
 
+2026-10-24 — **The Claude connector runs on Salesforce Hosted MCP Servers, as two servers** (§7's M16 note; technical log M16) — the user's choice of the four Claude integrations proposed, and of two servers over one: `AMFApprovalMatrix` for everyone, `AMFApprovalMatrixAdmin` for administrators. Salesforce hosts the endpoint and the OAuth, so nothing is hosted elsewhere, and every call runs as the signed-in user.
+
+2026-10-24 — **Through the connector, Claude writes the words, from facts Apex returns** (§1 principle 6, §8) — the user's choice, over passing Einstein's text through. `AMF_McpFactsOnly` and two `AMF_PromptRunner`s put Claude where Einstein sits, so every visibility rule, the current-approver rule and every §9 check still run in Apex, and no Einstein licence is needed per user. Nothing is generated in Salesforce, and Claude's text is not stored there.
+
+2026-10-24 — **A connector submission needs a signed preview token, and refuses a changed route** (§6.4, §7, §11; technical log M16) — an MCP client has no script to bind Submit to the record just previewed, so Apex does: an HMAC over the org, user, record, process and time, with a key in the protected setting `AMF_Mcp_Settings__c`, valid for 15 minutes. Unlike the agent, which submits a changed route and says so (M13), the connector refuses one, because the user approved a call that named the process.
+
+2026-10-24 — **The tools are `global` facades, `AMF_Mcp*`; M13 to M15's actions stay `public` and unchanged** (§7; technical log M16.1) — a Hosted MCP Server offers only a `global` invocable as a tool, and builds its schema from `global` members alone. Wrapping the existing actions keeps them as they are and puts the MCP-only additions (references, links, the token) in one place.
+
+2026-10-24 — **The MCP server definitions deploy at Metadata API 67.0, outside the project's deploys** (technical log M16.1) — their tool annotations exist only from 67.0, and a deploy at the project's `sourceApiVersion`, 66.0, resets them to false. `.forceignore` keeps the definitions out, and `scripts/setup-claude-connector.ps1` deploys them from a throwaway project at 67.0, as `publish-agent.ps1` does for the agents. `sourceApiVersion` stays 66.0, and Apex stays 62.0.
+
+2026-10-24 — **No MCP prompts** (technical log M16.1) — the user authorised starter prompts only if Salesforce served them without generating. A Hosted MCP Server's prompts are Prompt Builder templates run through Einstein, and they consume credits per invocation, so they were dropped. This rests on Salesforce's documentation, not a live test. The guide's "Things to ask" takes their place.
+
 2026-10-23 — **The admin features are a second employee agent, `AMF_Matrix_Admin_Assistant`, for administrators only** (§7, §11; technical log M15) — the user's choice, over admin-only actions inside the submitters' assistant. Its access permission set is `org-config/amf-dev`'s and assigned to administrators; its three actions are granted by `Approval_Matrix_Admin` alone. Submitters never meet admin features, and neither agent's routing has to tell the two audiences apart.
 
 2026-10-23 — **Principle 6 extended: AI may draft a rule, but a draft routes nothing** (§1, §9; technical log M15). A model-drafted rule is shown only once Apex has run the release gate's checks on it (compile, a free priority, an active process, the engine's union query, the metadata's own limits), with one corrected attempt and then a plain refusal. A valid draft is a Custom Metadata file for the administrator to commit and release through the ordinary gate (principle 1); the assistant cannot deploy or activate anything.

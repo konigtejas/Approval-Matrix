@@ -1051,6 +1051,71 @@ wording: what the model does not know, tools named as lookups, and no answer tem
 
 Step 11, the manual UI check, is owed.
 
+### M16 — The Claude connector (post-MVP)
+
+**Goal:** Claude, in claude.ai, Claude Desktop, the mobile apps and Claude Code, works with the matrix
+as the signed-in user, smoothly: records named as people name them, a link in every answer, and a
+submission that takes one confirmation. Principle 6 holds: the engine routes, approvers decide, and
+Claude writes from facts Apex returns (architecture §1, §7's M16 note).
+
+**Build:**
+- **`mcp/`, a fourth package directory:**
+  - twelve `global` invocable facades, `AMF_Mcp*`, over the existing actions and services, with
+    `AMF_McpSupport` (references, links, the preview token) and `AMF_McpFactsOnly`;
+  - `AMF_Mcp_Settings__c`, a protected hierarchy setting holding the preview key;
+  - `AMF_Claude_Connector_User` (eight tools) and `AMF_Claude_Connector_Admin` (all twelve);
+  - two `McpServerDefinition`s, `AMFApprovalMatrix` and `AMFApprovalMatrixAdmin`, `.forceignore`d
+    because they deploy at Metadata API 67.0.
+- **`org-config/amf-dev`:** the External Client App `AMFClaudeConnector`, with its OAuth settings and
+  a hardened policy.
+- **`scripts/`:** `setup-claude-connector.ps1` (deploy, servers at 67.0, activate, key, access, how
+  to connect), `setup-mcp.apex` (the key) and `mcp-probe.mjs` (an MCP client for the gate).
+- **`docs/claude-connector.md`:** the guide.
+
+No engine, M13 to M15 class, existing object, field, rule, template or LWC changes, and neither agent.
+
+**Gate, in order.** In `amf-dev`:
+
+1. The source gate: unchanged counts.
+2. Jest, 75 tests, unchanged.
+3. `scripts/setup-claude-connector.ps1 -Admin`: every step succeeds; all twelve tools are listed
+   with their annotations (eleven read-only, `submit_for_approval` destructive); both servers active.
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 30 -r human -c`: all green, every new class at
+   90% or more.
+5. A check-only deploy of every package directory: no errors.
+6. **REST smoke, as the CLI user,** through `/services/data/v66.0/actions/custom/apex/AMF_Mcp*`,
+   counting decision log rows and matrix rules before and after:
+   - `preview_route` "PR-00000047": `PR_Two_Level_Mgmt` via `PR_Catch_All`, a link and a token;
+   - `what_if_route` 120,000 in APAC: `PR_Three_Level_Finance` via `PR_High_Value_APAC`;
+   - `get_decision_facts` "PR-00000042": its newest decision's facts;
+   - `get_briefing_facts` "PR-00000045": not waiting on the user;
+   - `submit_for_approval` with a forged token, and with a real token for another process: refused;
+   - both lists, `find_record`, and the four admin tools on the EMEA draft;
+   - nothing written.
+7. **MCP:** `scripts/mcp-probe.mjs` against both servers, with one browser login: `initialize`,
+   `tools/list` with the annotations, and `tools/call preview_route`.
+8. **Manual, owed by the user:** connect claude.ai and Claude Code (`docs/claude-connector.md` §3)
+   and run the conversations in its section 4, including a throwaway submitted through Claude after
+   confirming, reassigned to the tester, briefed and recalled.
+
+Acceptance:
+- Every route, rule, figure and approver Claude is given comes from an existing action or service.
+- A submission needs a preview token for the same user, record and process within 15 minutes, and
+  the route unchanged; otherwise nothing is written.
+- The read tools write nothing.
+- No tool approves, rejects, recalls or reassigns.
+
+**Gate run 2026-10-24 (technical log M16.5).**
+- Steps 1 to 6 passed.
+  - Source gate unchanged.
+  - Jest 75/75.
+  - The setup script succeeded, with all twelve tools annotated.
+  - RunLocalTests 451/451 at 97%, every new class at 97% or more.
+  - Check-only deploy 221/221.
+  - The REST smoke test gave the expected answers, with 30 rows and 9 rules before and after.
+- Step 7 waits on the user's one browser login.
+- Step 8 is owed.
+
 ---
 
 ## Part 4 — When Things Go Wrong
@@ -1129,6 +1194,18 @@ Lightning types, for richer cards in the agent panel, are a possible follow-up t
 approver briefing, "where are my requests", "what is waiting for me" and a what-if became **M14**;
 the rule-writing assistant, a rule-change impact check and the matrix-health report became **M15**,
 in a second agent for administrators. Both are in Part 3.
+
+### M16 — The Claude connector *(authorised and built 2026-10-24; its MCP login and manual checks are owed)*
+
+Moved to Part 3. Of the Claude integrations proposed on 2026-10-24, the user chose the matrix as an
+MCP server, over Salesforce Hosted MCP Servers. Still proposals, each needing its own authorisation:
+- **Claude as Agentforce's model.** The prompt templates and agents name a Claude model where the org
+  offers one, inside the Trust Layer.
+- **Claude behind `AMF_PromptRunner`.** An Apex runner over the Claude API, for structured outputs
+  and PDF citations, in orgs without Agentforce.
+- **A policy conformance check.** Claude reads a written approval policy and tests the matrix at its
+  thresholds through the connector's previews. It is now mostly a matter of instructions.
+- **Rule changes reviewed in CI**, and a scheduled matrix guardian on Claude Managed Agents.
 
 ### Grammar and validator hardening *(small; can join M10 or M11)*
 

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ExternalClientApplication xmlns="http://soap.sforce.com/2006/04/metadata">
+    <contactEmail>amf-admin@example.com</contactEmail>
+    <description>The Claude connector (M16): lets Claude (claude.ai, Desktop, mobile and Claude Code) reach this org's Approval Matrix MCP servers as the signed-in user.</description>
+    <distributionState>Local</distributionState>
+    <isProtected>false</isProtected>
+    <label>Approval Matrix Claude Connector</label>
+</ExternalClientApplication>

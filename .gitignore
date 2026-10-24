@@ -5,6 +5,9 @@
 # Salesforce cache
 .sf/
 .sfdx/
+
+# The Claude connector's MCP probe tokens (M16, scripts/mcp-probe.mjs)
+.mcp-probe/
 .localdevserver/
 deploy-options.json
 

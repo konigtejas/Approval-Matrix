@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Preview_Key__c</fullName>
+    <description>A random 256-bit key, Base64. AMF_McpSupport signs every preview_route answer with it, and submit_for_approval accepts only a signature it made. Never shown to Claude or written to the log. Replacing it invalidates every preview not yet submitted.</description>
+    <externalId>false</externalId>
+    <label>Preview Key</label>
+    <length>64</length>
+    <required>false</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

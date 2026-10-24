@@ -110,6 +110,19 @@ A draft must compile and pass the validator's checks before anyone sees it, and 
 the admin releases it as an ordinary configuration release, through source and the gate. Nothing in
 M15 writes a rule, a log row or a record. Its access permission set and test definition are
 org-config/amf-dev's, as M13's are.
+M16 (authorised 2026-10-24) connects Claude (claude.ai, Desktop, mobile, Claude Code) to the matrix
+through Salesforce Hosted MCP Servers, under principle 6. Two custom servers, AMFApprovalMatrix for
+everyone and AMFApprovalMatrixAdmin for administrators, expose global invocable facades (AMF_Mcp*)
+over the engine's existing paths and M13–M15's actions and seams: find, preview, what-if, submit,
+the facts behind an explanation or a briefing, my requests and my approvals; and the matrix context,
+a rule draft's checks, a change's impact and the health facts. Claude writes the words from facts
+Apex returns, in place of Einstein behind AMF_ExplanationGenerator and AMF_PromptRunner. No tool
+approves, rejects, recalls or reassigns. A submission needs a signed preview token from the same
+user's preview of that record and process within 15 minutes. The facades, a protected custom setting
+holding the token key, both server definitions and two connector permission sets live in a new
+package directory, mcp; the External Client App is org-config/amf-dev's. MCP prompts were not added:
+Salesforce runs them through Einstein (technical log M16.1). M16 adds that one custom setting and changes no engine
+class, no M13–M15 class, no existing object, field, rule, template or LWC, and neither agent.
 
 ## MVP SCOPE — build ONLY these
 - One object: Purchase_Request__c (Amount__c, Region__c, Risk_Level__c)
@@ -150,17 +163,25 @@ DateTime fields and literals.
 - Naming: AMF_ on Apex classes, amf on LWC. ApexDoc header cites its § section.
 
 ## Environment
-- Org alias: amf-dev. Deploy: sf project deploy start -o amf-dev, which deploys all three package
-  directories (force-app, agentforce, org-config/amf-dev). It needs AMF_USERNAME_DOMAIN set first, to
-  amf.00daj000012gj9b.dev for amf-dev (PowerShell: $env:AMF_USERNAME_DOMAIN = '...'); without it
+- Org alias: amf-dev. Deploy: sf project deploy start -o amf-dev, which deploys all four package
+  directories (force-app, agentforce, mcp, org-config/amf-dev). It needs AMF_USERNAME_DOMAIN set first,
+  to amf.00daj000012gj9b.dev for amf-dev (PowerShell: $env:AMF_USERNAME_DOMAIN = '...'); without it
   the CLI refuses the deploy. Another org: deploy --source-dir force-app only, with that org's domain,
-  and add --source-dir agentforce if that org has Einstein generative AI and Agentforce on.
-- The agent (M13): after a deploy that changes the bundle, publish and activate it with
-  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-agent.ps1. sf agent publish
-  reads only the default package directory, so the script publishes from a throwaway project, with
-  --skip-retrieve to keep the generated Bot and planner metadata out of force-app. Each publish is
-  a new version. In a fresh org, org-config/amf-dev deploys only after the first publish, because
-  its access permission set and test definition name the agent (playbook M13).
+  and add --source-dir agentforce if that org has Einstein generative AI and Agentforce on, and
+  --source-dir mcp if it has Salesforce Hosted MCP Servers (Enterprise Edition and above, Developer).
+- The agents (M13, M15): after a deploy that changes a bundle, publish and activate it with
+  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-agent.ps1, adding
+  -AgentName AMF_Matrix_Admin_Assistant for the admin agent. sf agent publish reads only the default
+  package directory, so the script publishes from a throwaway project, with --skip-retrieve to keep
+  the generated Bot and planner metadata out of force-app. Each publish is a new version. In a fresh
+  org, org-config/amf-dev deploys only after the first publish, because its access permission sets and
+  test definitions name the agents (playbook M13).
+- The Claude connector (M16): powershell -NoProfile -ExecutionPolicy Bypass -File
+  scripts/setup-claude-connector.ps1 [-Admin] deploys mcp and the External Client App, deploys the two
+  MCP server definitions from a throwaway project at Metadata API 67.0 (their tool annotations do not
+  exist at 66.0, and a 66.0 deploy resets them, so .forceignore keeps the definitions out of every
+  project deploy), activates both servers, seeds the preview key and prints how to connect Claude.
+  Activation and the key are per org. docs/claude-connector.md is the guide.
 - A prompt template deploys with no active version unless its source names one. After changing the
   template's content, retrieve it and take the retrieved form, with activeVersionIdentifier, into
   source (technical log M13.7a).

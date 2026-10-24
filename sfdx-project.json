@@ -8,6 +8,9 @@
       "path": "agentforce"
     },
     {
+      "path": "mcp"
+    },
+    {
       "path": "org-config/amf-dev"
     }
   ],

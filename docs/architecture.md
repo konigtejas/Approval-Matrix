@@ -28,7 +28,7 @@ MVP is **Classic execution only**. Flow execution (§5.3, §6.2) is designed but
 3. **Explain every decision.** Native history answers *who* and *when*. The decision log answers *why*, and is immutable.
 4. **Fail loudly.** A malformed expression fails at deployment. A runtime evaluation error blocks the submission and logs it. Never fall through to a wrong template — a stopped approval is recoverable, a mis-routed one is a finding.
 5. **Testable and portable.** All Custom Metadata access behind an interface with test injection; all submission behind a strategy interface. Deploys to a new org with zero code changes.
-6. **AI assists; it never decides** (M13). The engine selects every route and the platform runs every approval. AI explains decisions already recorded, briefs the approver an approval is waiting on (M14), and lets people preview, try what-ifs and submit in conversation through the same engine paths as every other entry point. It may draft a rule for an administrator (M15), but a draft routes nothing: it is shown only once it passes the release checks, and it reaches the matrix only through an ordinary configuration release (principle 1). It is never asked to choose a route, evaluate a rule, write a log row or a rule, approve, or tell an approver what to decide. An explanation, a briefing or a summary is presentation: generated on demand, labelled, and never stored. The decision log stays the only record of why.
+6. **AI assists; it never decides** (M13). The engine selects every route and the platform runs every approval. AI explains decisions already recorded, briefs the approver an approval is waiting on (M14), and lets people preview, try what-ifs and submit in conversation through the same engine paths as every other entry point. It may draft a rule for an administrator (M15), but a draft routes nothing: it is shown only once it passes the release checks, and it reaches the matrix only through an ordinary configuration release (principle 1). It is never asked to choose a route, evaluate a rule, write a log row or a rule, approve, or tell an approver what to decide. An explanation, a briefing or a summary is presentation: generated on demand, labelled, and never stored. The decision log stays the only record of why. Through the Claude connector (M16, §7), Claude is the model: it writes from facts Apex returns, and every check, refusal and route is the same Apex's.
 
 ---
 
@@ -515,6 +515,7 @@ No approver resolution. No chain advancement. No lock management. No mid-flight 
 | Integration | `@RestResource` wrapper |
 | Agentforce | The Approval Matrix Assistant, an employee agent (M13): find → preview → confirm → submit, and explain |
 | Agentforce, administrators | The Approval Matrix Admin Assistant (M15): draft a rule, check a change's impact, report the matrix's health. Changes nothing |
+| Claude (MCP) | The Claude connector (M16): two Salesforce-hosted MCP servers, one for everyone and one for administrators, over the same actions. Submits only with a signed preview token, after the user confirms |
 
 **M10 implementation (2026-10-08).** The Flow, Apex and Integration rows are built over
 `submitEach()` (§6.1):
@@ -614,6 +615,58 @@ tool, inventing a draft or a count in the shape the instructions described. Each
 what the model does not know (the object's fields, rules and processes; the records; the counts),
 and that only its tool does. The tools are named as lookups, and no instruction describes an answer
 the model could fill in by itself (technical log M15.3).
+
+**M16 implementation (2026-10-24): the Claude connector.** Claude (claude.ai, Claude Desktop, the
+mobile apps, Claude Code) reaches the matrix through **Salesforce Hosted MCP Servers**: Salesforce
+hosts the MCP endpoint and its OAuth, and every call runs as the signed-in user. Two custom servers
+are defined in `mcp/` (a fourth package directory):
+
+- **`AMFApprovalMatrix`**, for everyone: `find_record`, `preview_route`, `what_if_route`,
+  `submit_for_approval`, `get_decision_facts`, `get_briefing_facts`, `list_my_requests` and
+  `list_my_approvals`.
+- **`AMFApprovalMatrixAdmin`**, for administrators: `get_matrix_context`, `check_rule_draft`,
+  `check_change_impact` and `get_health_facts`.
+
+Each tool is a thin `global` invocable, `AMF_Mcp*`, over an action or service that already exists:
+M13's and M14's actions, M15's drafter, impact check and health service. A Hosted MCP Server offers
+only a `global` invocable as a tool, which is why the M13 to M15 actions, all `public`, are wrapped
+rather than changed. The facades add three things an MCP client needs:
+
+- **A record as a person names it.** Every tool takes a number, a name or an Id, read through Find
+  Governed Record; several matches come back as a choice, never a guess. Every answer carries the
+  record's link.
+- **Claude in Einstein's place.** `AMF_McpFactsOnly` is an `AMF_ExplanationGenerator` that hands back
+  the facts it is given, so `get_decision_facts` and `get_briefing_facts` return exactly what §8's
+  explanation and briefing would have sent Einstein, with every visibility rule and the
+  current-approver rule applied by `AMF_DecisionExplainer` as before. The admin tools drive
+  `AMF_RuleDrafter` through two `AMF_PromptRunner`s: one keeps the context it would have sent the
+  model and stops, the other hands it Claude's draft as the model's answer, so every §9 check runs
+  on Claude's draft unchanged and the file to commit exists only for a draft that passed.
+  `get_health_facts` is `AMF_MatrixHealthService.factsOf()`. No Einstein licence is needed, and
+  nothing is generated in Salesforce.
+- **The server's half of "preview, confirm, submit".** In Agentforce the script binds Submit to the
+  record just previewed; an MCP client has no script. So `preview_route` returns a token, signed
+  with HMAC-SHA256 over the org, the user, the record, the process shown and the time, with a key
+  Claude never sees (`AMF_Mcp_Settings__c`, seeded by `scripts/setup-mcp.apex`).
+  `submit_for_approval` accepts only such a token for the same user, record and process, within 15
+  minutes. It then previews again, and submits through Submit Previewed Route, so M10's
+  `submitEach()` writes the row, only if the route is still the one confirmed. Where the agent submits
+  a changed route and says so, the connector refuses it, because the user approved a call that named
+  the process. The user's half is the client's: the tool is annotated destructive, so Claude asks
+  before calling it.
+
+Tool descriptions follow the M15 lesson: each is written as a lookup, says what Claude does not know
+that only the tool does, and says what it is not for. The read tools are annotated read-only and
+idempotent, so clients may run them without asking. The annotations exist only from Metadata API
+67.0, and a deploy at this project's `sourceApiVersion` (66.0) resets them, so the definitions are
+`.forceignore`d and `scripts/setup-claude-connector.ps1` deploys them from a throwaway project at
+67.0, then activates both servers (activation is a runtime record, per org). The External Client App,
+`AMFClaudeConnector`, is `org-config/amf-dev`'s: scopes `mcp_api` and `refresh_token`, PKCE, JWT
+access tokens for named users, refresh tokens for 30 days, and admission only for holders of
+`AMF_Claude_Connector_User` or `AMF_Claude_Connector_Admin`. MCP prompts were not added: a Hosted MCP
+Server's prompts run Prompt Builder templates through Einstein, which this connector avoids
+(technical log M16.1). No tool approves, rejects, recalls or reassigns. `docs/claude-connector.md`
+is the guide.
 
 **Recall.** For Classic submissions, native recall applies. For Flow submissions, `recallApprovalSubmission`, `cancelApprovalSubmission`, `reassignApprovalWorkItem` and `reviewApprovalWorkItem` exist as standard invocable actions with REST endpoints, callable from Apex via `Invocable.Action.createStandardAction(...)` — but none has been executed against a live submission (Appendix A, Q4). Do not design a screen-flow-only recall path, and do not build the Apex path either, until one has been proven.
 
@@ -907,6 +960,7 @@ DateTime remains unsupported.
 | **M13** | Post-MVP AI around the engine (§1 principle 6): the Approval Matrix Assistant, an Agentforce employee agent that finds, previews, submits after confirmation and explains, through the engine's own paths (§7); plain-English explanations of recorded decisions on the timeline (§8) | All Apex and Jest tests green; the agent's script compiles; in the org the template explains a real decision, and the agent previews, submits a throwaway record only after confirmation, and explains it; the agent's test suite passes |
 | **M14** | Post-MVP assistant for submitters and approvers (§1 principle 6): a what-if over a new write-nothing engine entry, `previewWith()` (§6.4); the user's own requests; what is waiting for them; a briefing for the current approver; and the current approver's sight of the routing reason (§8, §11) | All Apex and Jest tests green; the agent's script compiles; in the org a what-if writes nothing, the user's requests are listed, and a throwaway reassigned to the user is listed as waiting and briefed; the agent's test suite passes |
 | **M15** | Post-MVP Approval Matrix Admin Assistant (§1 principle 6, §7): a rule drafted from a description and shown only once it passes §9's checks; a change's impact on recent records over a new write-nothing engine entry, `previewEach()` (§6.4); a matrix-health report counted in Apex | All Apex and Jest tests green; both agents' scripts compile; in the org a draft passes the checks and nothing is written, its impact is reported, and the health report's figures match the log; the agent's test suite passes |
+| **M16** | Post-MVP Claude connector (§1 principle 6, §7): two Salesforce-hosted MCP servers over the existing actions and seams, Claude writing from facts Apex returns, and a submission only with a signed preview token after the user confirms | All Apex and Jest tests green; source gate unchanged; every tool answers over REST on real records with nothing written; both servers active with their annotations; a real MCP client lists and calls the tools; a forged or stale token submits nothing |
 
 ### 13.5 Repository state
 

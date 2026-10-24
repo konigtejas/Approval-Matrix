@@ -111,6 +111,7 @@ session needs. Update the row when a phase completes.
 | **M13** | AI around the engine. The Approval Matrix Assistant, an Agentforce employee agent, finds, previews, submits after confirmation and explains through the engine's own paths. The timeline explains recorded decisions in plain English through an Einstein prompt template | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M13.7), once the user had turned on Agentforce. Deployed 145/145. 334/334 Apex at 98%. 75/75 Jest. Einstein explained a real decision accurately. A live preview session previewed, confirmed, submitted (ADL-00000032) and explained a throwaway, which was then recalled. The agent was published and activated (v2 active). Its Testing Center suite passed 9/9, 27/27 assertions, after two instruction fixes. Step 11, the manual UI check, is owed | `e81f487` |
 | **M14** | The assistant for submitters and approvers. A what-if over a new write-nothing engine entry, `previewWith()`; the user's own requests; what is waiting for them; a briefing for the current approver; and the current approver's sight of the routing reason | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M14.5). Deployed 163/163. 371/371 Apex at 98%. 75/75 Jest. A live session's what-ifs wrote no row. A throwaway (PR-00000050) was reassigned to the CLI user, listed as waiting, briefed and recalled. Published to v7; its 14-case suite passed 42/42 assertions in two consecutive runs. Two defects found and fixed: a reassigned step described the wrong way round, and routing of "brief me". Step 9, the manual UI check, which includes M13's step 11, is owed | `74ea4ed` |
 | **M15** | The Approval Matrix Admin Assistant, a second agent for administrators. A rule drafted from a description and shown only once it passes the release checks; a change's impact on recent records over a new write-nothing engine entry, `previewEach()`; a matrix-health report counted in Apex | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M15.5). Deployed 176/176. 404/404 Apex at 97%. 75/75 Jest. Both templates take their retrieved form. Live sessions drafted a checked rule, compared 16 requests and reported the log's real figures, with nothing written (29 rows and 9 rules before and after). Published to v1; its 6-case suite passed 18/18 assertions twice. The model answered without calling its tools until the script said what it does not know (M15.3). Step 11, the manual UI check, is owed | `11941dc` |
+| **M16** | The Claude connector. Two Salesforce-hosted MCP servers, for everyone and for administrators, over the existing actions and seams. Claude writes from facts Apex returns, and submits only with a signed preview token after the user confirms | **Complete, bar the MCP login and the manual check.** Gate run 2026-10-24 (M16.5). Source gate unchanged. 75/75 Jest. The setup script deployed everything and activated both servers, with all twelve tools annotated. 451/451 Apex at 97%. Check-only 221/221. On real records every tool answered as expected over REST, a forged token and a wrong process were refused, and nothing was written. Steps 7 (one browser login for the MCP probe) and 8 (the conversations in claude.ai and Claude Code) are owed | recorded on commit |
 
 ### Superseded — the v1.0 plan
 
@@ -126,7 +127,7 @@ Retained only as a record of what was built. Phases 2–8 of that plan were neve
 carried-forward table), then the phase prompt in `docs/build-playbook.md`. Do not rely on
 conversation history — there is none by design.
 
-**Choosing the next phase:** nothing further is authorised after M15. `docs/build-playbook.md`
+**Choosing the next phase:** nothing further is authorised after M16. `docs/build-playbook.md`
 Part 5 holds the rest of the proposed roadmap (Flow approvals, the smaller items), with the
 decisions each needs first. It authorises nothing; `CLAUDE.md` does. `docs/handoff.md` is the
 short version.
@@ -5395,3 +5396,225 @@ This table supersedes M14.6's.
 | PR-00000014 to -20 and -23 to -25 carry *Matrix Submission* with no pending approval (M15.3g) | the Flow phase's teardown |
 | Einstein's Trust Layer prompt-injection detection is still off; the admin agent passes administrators' words and rule descriptions to the model | user |
 | M14.6's other items carry unchanged | as there |
+
+## Phase M16 — The Claude connector
+
+**Commit:** recorded in the status board. **Status:** complete, bar two checks that need a person:
+the MCP login (gate step 7) and the manual conversations in Claude (step 8).
+Authorised in `CLAUDE.md` on 2026-10-24, on the user's "implement option 3 in detail and make it very
+fluidic to use", and planned first (plan approved the same day).
+
+The user asked for an AI or Agentforce use with a Claude connection to Salesforce. Of the four
+integrations proposed, they chose the matrix as an MCP server. The plan's research found that
+`amf-dev` already has **Salesforce Hosted MCP Servers** (the `McpServerDefinition` type exists,
+generally available since April 2026). Salesforce hosts the endpoint and the OAuth, so nothing is
+hosted elsewhere. The user then chose: two servers (users and administrators); Claude writing the
+words from recorded facts; claude.ai and Claude Code as the clients to prove; and starter prompts
+only if Salesforce served them without generating.
+
+### M16.1 What the first tool established about the platform
+
+The plan's step 1 built one tool (`preview_route`) end to end before the rest, because Salesforce's
+developer documentation refuses automated reads (HTTP 403). The sources were the org itself, the
+public example repository SalesforceDiariesBySanket/Salesforce-Hosted-Custom-Mcp-Server, the
+mdhamoda/custom-mcp-skill reference (which marks each claim as observed in an org or documented),
+Salesforce's own `salesforce/sf-pi` ECA generator, and the Tooling API describe. What was confirmed
+in `amf-dev`:
+
+| Question | Answer |
+|---|---|
+| Which Apex becomes a tool? | A `global` `@InvocableMethod`, identified as `aa:apex-<ClassName>`, `apiSource` `API_CATALOG`, `operation` the class name. Its catalog entry is made on deploy. The schema is built from `global` members, so the request and result classes and their fields are `global` too |
+| Can a class name have underscores? | Yes: `aa:apex-AMF_McpPreviewRoute` validated and works. A **server's** name cannot (letters and digits only), so the servers are `AMFApprovalMatrix` and `AMFApprovalMatrixAdmin` |
+| The server URL in a Developer Edition | `https://api.salesforce.com/platform/mcp/v1/custom/<DeveloperName>`; a sandbox or scratch org adds `/sandbox/` after `/v1/`. Unauthenticated, it answers 401 and publishes OAuth metadata naming `login.salesforce.com` and the scopes `mcp_api`, `refresh_token` |
+| Tool annotations | `McpServerToolDefinition` has `ReadOnly`, `Destructive`, `Idempotent`, `OpenWorld`, `ReturnDirect` and `UiResource` only from API 67.0; at 66.0 they do not exist. See (a) below |
+| Activation | Not metadata. A Tooling API row, `McpServerAccess`, with `Active` and the definition's `McpServerId`. A POST creates it; deploying never activates |
+| Redeploying an active server | Works: the setup script redeployed `AMFApprovalMatrix` while it was active, with no deactivation |
+| The External Client App by metadata | Three files deploy together (`.eca`, `.ecaGlblOauth`, `.ecaOauth`), and the platform creates a fourth, the policy. In metadata the scope is `MCP`, not `mcp_api`. `isNamedUserJwtEnabled` must be set: it defaults to false. Callback URLs go in one element, one per line. The consumer key is generated by the org and retrieved, never authored |
+| Admission by permission set | `permittedUsersPolicyType` `AdminApprovedPreAuthorized` with `commaSeparatedPermissionSet` accepted permission set **names**, and stored them sorted, although the schema's description says Ids |
+| How a client calls an Apex tool | Arguments go in an `inputs` array, one object per call, because the invocable takes a list |
+| MCP prompts | A server's `<prompts>` are Prompt Builder Flex templates. Salesforce's documentation says they consume credits at invocation, as from the UI: they run through Einstein. The user's condition was "without generating", so none were added. Not tested live |
+| Interactive widgets (MCP Apps) | `UiResource` exists on the tool definition, but no documented way serves a custom server's widget. Not pursued |
+
+**(a) The annotations and the API version.** The first server deploy, at the project's
+`sourceApiVersion` 66.0, succeeded, but a retrieve came back without the four annotation elements,
+and the tool's flags read false. `sf project deploy start --api-version 67.0` changed nothing: the
+flag sets the connection's version, not the package's. A throwaway project at `sourceApiVersion`
+67.0, holding only the definition, deployed them: `ReadOnly true, Idempotent true`. A later deploy at
+66.0 reset them all to false. Without them a client treats every tool as destructive and asks first,
+and the submit tool loses its warning. So the definitions are `.forceignore`d, and
+`scripts/setup-claude-connector.ps1` deploys them from a throwaway project at 67.0, as
+`publish-agent.ps1` does for the agents. Raising the project's `sourceApiVersion` was the
+alternative; it would have touched every package directory for one metadata type, and CLAUDE.md pins
+it at 66.0. The Apex stays at 62.0.
+
+### M16.2 File-level changes
+
+| File | Change | Notes |
+|---|---|---|
+| `mcp/main/default/classes/AMF_McpSupport.cls` | **new** | a reference read through Find Governed Record; the record's link; the preview token (sign, check) |
+| `…/AMF_McpFindRecord.cls`, `AMF_McpPreviewRoute.cls`, `AMF_McpWhatIfRoute.cls`, `AMF_McpSubmitRoute.cls`, `AMF_McpDecisionFacts.cls`, `AMF_McpBriefingFacts.cls`, `AMF_McpMyRequests.cls`, `AMF_McpMyApprovals.cls` | **new** | the eight user tools |
+| `…/AMF_McpRuleContext.cls`, `AMF_McpCheckRuleDraft.cls`, `AMF_McpCheckImpact.cls`, `AMF_McpHealthFacts.cls` | **new** | the four admin tools |
+| `…/AMF_McpFactsOnly.cls` | **new** | an `AMF_ExplanationGenerator` that hands the facts back |
+| thirteen `…Test.cls` suites | **new** | 47 tests (M16.5) |
+| `mcp/main/default/objects/AMF_Mcp_Settings__c/` | **new** | protected hierarchy setting, `Preview_Key__c` |
+| `mcp/main/default/permissionsets/AMF_Claude_Connector_User…`, `…_Admin…` | **new** | eight and twelve classes |
+| `mcp/main/default/mcpServerDefinitions/AMFApprovalMatrix…`, `AMFApprovalMatrixAdmin…` | **new** | tools, descriptions (at most 1,024 characters; 418 to 882 used) and annotations |
+| `org-config/amf-dev/main/default/externalClientApps/AMFClaudeConnector…`, `extlClntAppGlobalOauthSets/…`, `extlClntAppOauthSettings/…`, `extlClntAppOauthPolicies/AMFClaudeConnector_defaultPolicy…` | **new** | the connector's OAuth client and hardened policy |
+| `scripts/setup-claude-connector.ps1`, `scripts/setup-mcp.apex`, `scripts/mcp-probe.mjs` | **new** | setup; the key; an MCP client for the gate |
+| `sfdx-project.json` | modified | the `mcp` package directory |
+| `.forceignore` | modified | `**/mcpServerDefinitions/**` (M16.1a) |
+| `.gitignore` | modified | `.mcp-probe/`, the probe's tokens |
+| `docs/claude-connector.md` | **new** | the guide |
+| `CLAUDE.md`, `docs/architecture.md` (§1, §7, §13.4), `docs/build-playbook.md`, `docs/decisions.md`, this file | modified | M16 authorised, designed, gated and recorded; CLAUDE.md's Environment also gains the admin agent's publish command (handoff §9) |
+
+No engine class, no M13 to M15 class, no existing object, field, rule, template or LWC, and neither
+agent was changed.
+
+### M16.3 Design choices worth recording
+
+`docs/decisions.md` holds the approved choices. The reasoning behind the rest:
+
+**(a) Facades, not changes.** The M13 to M15 actions are `public`, and a tool must be `global`
+throughout. Making them `global` would have changed eleven classes from three phases, and fixed their
+Agentforce-tuned inputs as an MCP contract. The facades delegate to them call for call, so every
+sentence, outcome and refusal is theirs, and add only what an MCP client needs: resolution, links,
+the token.
+
+**(b) A record as a person names it, in every tool.** `AMF_McpSupport.resolve()` sends each
+reference to Find Governed Record, which already handles an Id, an exact name, the search index and a
+contains-match, among governed objects in user mode. So "Where would PR-00000047 go?" is one tool
+call, not find-then-preview. A reference that is several records comes back `Ambiguous` with the
+numbered list, never a guess. `get_decision_facts` also takes a decision log row's name.
+
+**(c) Claude in Einstein's place, through the seams that exist.** `AMF_DecisionExplainer` takes an
+`AMF_ExplanationGenerator`; `AMF_McpFactsOnly` returns the facts it is given. So the facts are byte
+for byte what the Explain button's template receives, and the explainer still decides what the reader
+may see, including M14's current-approver rule for a briefing. `AMF_RuleDrafter` takes an
+`AMF_PromptRunner`. `get_matrix_context` gives it one that keeps the `Context` input and throws, so
+the context is the drafter's own. `check_rule_draft` gives it one that returns Claude's draft as the
+answer, so every §9 check runs on it, and the file exists only for a draft that passed. The grammar
+Claude needs is in the drafting template, which Apex cannot read without running it; `GUIDE` repeats
+it in the same words, with a note to keep the two in step.
+
+**(d) The preview token.** The threat is a model submitting what its user was never shown, not the
+user, who can submit from the record page. The token is
+`issuedAt + "." + hex(HMAC-SHA256(key, orgId|userId|recordId|process|issuedAt))`, with the key in a
+protected setting the model never reaches. It is issued only when the preview can be submitted, and
+checked for the same user (the payload names them), the same record (as an 18-character Id), the
+same process (blank for a block), within 15 minutes, allowing a minute of clock skew. It is not
+single-use: M8's check refuses a record already in approval, so a second submission fails anyway. A
+key change invalidates every preview not yet submitted.
+
+**(e) A changed route is refused, not submitted.** Submit Previewed Route submits a changed route and
+says so (M13), because there the platform asks the user to confirm the action, not a process. Here the
+user approves a call whose arguments name the process, so a different process was never approved.
+`submit_for_approval` previews again first and refuses with the new route. The submission itself is
+Submit Previewed Route's, so M10's `submitEach()` writes the row.
+
+**(f) Tool descriptions as lookups.** Each says what Claude does not know that only the tool does,
+what it is not for, and what to give the user; no description sketches an answer Claude could fill in
+(M15.3f). The submit tool spells out the order: preview, tell the user the process, ask, then call.
+
+**(g) Access is the permission set.** The ECA admits only holders of a connector set
+(`AdminApprovedPreAuthorized`), refresh tokens last 30 days (the platform default was 365), and only
+PKCE and JWT named-user tokens are on. Class access to the facades is the connector sets'; record and
+field access stays `Approval_Matrix_User`'s and `_Admin`'s.
+
+**(h) No Einstein, no licence.** Nothing in the connector calls Einstein, so it needs no Agentforce or
+Prompt Template licence per user. The prompts were dropped for the same reason (M16.1).
+
+### M16.4 Issues encountered
+
+**(a) `found` and `FOUND`.** Apex names are case-insensitive, so a local `found` shadowed
+`AMF_McpSupport.FOUND`: "Illegal assignment from AMF_AgentFindRecord.Result to String". Renamed
+`lookup`.
+
+**(b) `url` and `URL`.** The same in a test: a local `url` hid the `URL` class ("Method does not
+exist… getOrgDomainUrl() from the type String"). Renamed `link`.
+
+**(c) `number` is reserved,** as M13.3b and M15.3a found, in four tests. Renamed `prNumber`.
+
+**(d) Null assertion messages,** as M15.3c found. The first run gave 47 tests, 8 failures:
+`Message parameter cannot be null` and `Argument 3 cannot be null`, from passing `result.summary` as
+the message where a success leaves it null. Every bare-field message became `'' + field`.
+
+**(e) The smoke script and PowerShell's `$input`.** The first REST smoke script passed every tool an
+empty input: `$input` is an automatic variable in PowerShell. Renamed `$values`. The tools were never
+at fault.
+
+**(f) The annotations' API version** (M16.1a).
+
+**(g) A decision log row not from M16.** The log had 30 rows, not the handoff's 29: ADL-00000034,
+submitted by Grok Bot (the UI suite's user) at 2026-10-24 15:20 UTC on `a02aj00000jiH9uAAE`. M16
+submitted nothing; the gate counts before and after.
+
+### M16.5 Verification evidence, and the gate as run (2026-10-24)
+
+```
+thin slice       mcp deploy 0Afaj00000ozbFZCAY (after (a)); REST preview of "PR-00000047":
+                 Routable, PR_Two_Level_Mgmt via PR_Catch_All, recordUrl, submitToken
+                 server deploy 0Afaj00000ozbQrCAI (66.0: annotations dropped, M16.1a);
+                 throwaway at 67.0: ReadOnly true, Idempotent true; a 66.0 redeploy reset them
+                 ECA: 3/3; OauthScopesMCP_API true, OauthScopesREFRESH_TOKEN true;
+                 isNamedUserJwtEnabled true, isPkceRequired true, consumer key generated
+                 McpServerAccess 1fzaj000004V6MzAAK: AMFApprovalMatrix active
+                 unauthenticated initialize: HTTP 401; protected-resource metadata as M16.1
+                 policy: AdminApprovedPreAuthorized, both sets by name, 30 days
+1  source gate   "passed for 8 active rule(s), 6 approval process(es) guard-checked, 6 of 6
+                 template(s) released and unchanged, and 5 layout(s) of 2 governed object(s)"
+2  jest          Test Suites: 5 passed, 5 total; Tests: 75 passed, 75 total
+3  setup script  setup-claude-connector.ps1 -Admin, with AMF_USERNAME_DOMAIN unset:
+                 mcp 18 components; ECA 4; servers 2 (at 67.0); the Admin server activated;
+                 12 tools: 11 read-only, submit_for_approval destructive; key kept
+4  RunLocalTests 707aj00001NZwa2: Passed, 451/451, org-wide 97%
+                 (the MCP suites alone: 47/47; AMF_McpBriefingFacts, _CheckImpact, _FactsOnly,
+                 _FindRecord, _HealthFacts, _MyApprovals, _MyRequests, _RuleContext, _WhatIfRoute
+                 100%; _SubmitRoute 99%; _CheckRuleDraft 98%; _PreviewRoute, _Support,
+                 _DecisionFacts 97%)
+5  check-only    all four directories, 0Afaj00000ozjTFCAY: Succeeded, 221/221, 0 errors
+6  REST smoke    as the CLI user; decision log 30 rows, matrix 9 rules (8 active), before and after:
+                 preview_route "PR-00000047"    Routable -> PR_Two_Level_Mgmt via PR_Catch_All, token
+                 what_if_route 120000 / APAC    changed -> PR_Three_Level_Finance via
+                                                PR_High_Value_APAC; today PR_Two_Level_Mgmt
+                 get_decision_facts PR-00000042 Facts, ADL-00000027, 11 lines
+                 get_briefing_facts PR-00000045 No_Facts: "... is not waiting on you for approval ..."
+                 submit, forged token           Refused: "This submission does not come from a preview ..."
+                 submit, real token, other process  Refused, the same
+                 list_my_requests               16, "6 still waiting for approval"
+                 list_my_approvals              0, "Nothing governed by the approval matrix is waiting on you"
+                 find_record "PR-00000046"      Found
+                 get_matrix_context             Context, Purchase_Request__c; guide 2521, context 2681 chars
+                 check_rule_draft, EMEA         valid, Add v1, priority 15, "tried after
+                                                PR_High_Value_APAC (10) and before PR_High_Risk (20)",
+                                                force-app/main/default/customMetadata/Approval_Matrix_Rule.PR_EMEA_Over_500k.md-meta.xml
+                 check_rule_draft, bad          not valid, no file; three problems: priority 10 taken,
+                                                "Finance" not an active process, the condition does not compile
+                 check_change_impact            ran: 17 checked, 0 changed, 7 skipped
+                 get_health_facts, 90 days      30 decisions, 1 blocked, 0 failed; 13 fact lines
+7  MCP probe     waiting on the user's one browser login (the probe listens on localhost:1717)
+8  manual        owed: claude.ai and Claude Code, docs/claude-connector.md sections 3 and 4
+```
+
+New tests by suite: `AMF_McpSupportTest` 10, `AMF_McpSubmitRouteTest` 8, `AMF_McpPreviewRouteTest`
+5, `AMF_McpDecisionFactsTest` 4, `AMF_McpCheckRuleDraftTest` 4, `AMF_McpBriefingFactsTest` 3,
+`AMF_McpRuleContextTest` 3, `AMF_McpHealthFactsTest` 3, `AMF_McpWhatIfRouteTest` 2,
+`AMF_McpFindRecordTest` 2, `AMF_McpMyRequestsTest` 1, `AMF_McpMyApprovalsTest` 1,
+`AMF_McpCheckImpactTest` 1. That is 47, so 404 + 47 = 451.
+
+**Left in `amf-dev` by the gate:** both servers, active; the External Client App; the preview key;
+`AMF_Claude_Connector_Admin` assigned to the CLI user. No rule, row or record was written.
+
+### M16.6 Carried into later phases
+
+This table supersedes M15.6's.
+
+| Item | Owner |
+|---|---|
+| Gate step 7: one browser login for `scripts/mcp-probe.mjs` (`docs/claude-connector.md` §7.4), then `initialize`, `tools/list` with annotations and `tools/call` on both servers. Record as M16.7 | user, then a session |
+| Gate step 8: connect claude.ai and Claude Code (§3) and run §4's conversations, including a throwaway submitted through Claude after confirming, reassigned to the tester, briefed and recalled | user |
+| claude.ai's connector broker has had Salesforce login failures (anthropics/claude-ai-mcp #184 and #251, both closed). If claude.ai fails after a good login, Claude Code connects directly | step 8 |
+| The server definitions deploy only through the setup script, at Metadata API 67.0 (M16.1a). If the project's `sourceApiVersion` rises to 67.0 or above, the `.forceignore` line and the script's throwaway project can go | whoever raises it |
+| `GUIDE` in `AMF_McpRuleContext` repeats the drafting template's grammar; keep them in step | whoever edits either |
+| MCP prompts were dropped on the documentation's word (M16.1); a live check would settle it | if wanted |
+| The decision log cannot tell which rows came through Claude: it has no channel field | a later phase, if wanted |
+| M15.6's items carry unchanged, except the CLAUDE.md publish-command item, which M16 did | as there |
