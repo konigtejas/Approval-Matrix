@@ -233,9 +233,9 @@ Round 2).
 | M10 | The Flow invocable and REST over `submitEach()`; chunked, isolated submission; the log written after the platform answers | 255/255 | `393d9d5` (+ M10.7, M10.8) |
 | M11 | Opportunity, a second governed object | 264/264 | `96e5692` |
 | M12 | Template lifecycle (release manifest), queue and committee templates, portability. M12.6: the first UI test run, two timeline fixes. M12.7: the re-run. M12.8: Request Name and two list views | 274/274 | `bcedf6f` (+ `72f4dfd`, `0049677`, `c59e758`) |
-| M13 | The Approval Matrix Assistant, and plain-English explanations on the timeline | 334/334, 75/75 Jest, 9/9 agent cases; manual check passed (M15.7) | `e81f487` (+ M15.7) |
-| M14 | The assistant for submitters and approvers: what-if, my requests, my approvals, briefings; current approvers see why | 371/371, 14 cases 42/42 twice; manual check passed (M15.7) | `74ea4ed` (+ M15.7) |
-| M15 | The Approval Matrix Admin Assistant: draft a rule, check a change's impact, the matrix's health. M15.7: the manual checks of M13 to M15, run by Grok Bot | 404/404, 6 cases 18/18 twice; manual check passed (M15.7) | `11941dc` (+ M15.7) |
+| M13 | The Approval Matrix Assistant, and plain-English explanations on the timeline | 334/334, 75/75 Jest, 9/9 agent cases; manual check passed (M15.7) | `e81f487` (+ M15.7, `449c38f`) |
+| M14 | The assistant for submitters and approvers: what-if, my requests, my approvals, briefings; current approvers see why | 371/371, 14 cases 42/42 twice; manual check passed (M15.7) | `74ea4ed` (+ M15.7, `449c38f`) |
+| M15 | The Approval Matrix Admin Assistant: draft a rule, check a change's impact, the matrix's health. M15.7: the manual checks of M13 to M15, run by Grok Bot | 404/404, 6 cases 18/18 twice; manual check passed (M15.7) | `11941dc` (+ M15.7, `449c38f`) |
 | M16 | The Claude connector: two Salesforce-hosted MCP servers, Claude writing from Apex's facts, a signed preview token for submitting | 451/451, REST smoke on real records; MCP probe on both servers (M16.7) | `a035bdb` (+ M16.7, `72ad84f`) |
 
 Every phase also has a follow-up commit recording its SHA in the technical log. The handoff has its
