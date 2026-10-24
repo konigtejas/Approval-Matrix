@@ -1,8 +1,9 @@
 # Handoff — the Approval Matrix Framework, in full, after M15
 
-**As of 2026-10-24.** `develop` is at `f316c78`, pushed to `origin`
-(github.com/konigtejas/Approval-Matrix). Every phase through M15 is built, gated in `amf-dev` and
-committed. Three manual UI checks are owed by the user (section 8). Nothing beyond M15 is authorised.
+**As of 2026-10-24.** `develop`, pushed to `origin` (github.com/konigtejas/Approval-Matrix), holds
+every phase through M15. The last phase commit is `11941dc`; later commits only record SHAs and
+update this file. Every phase is built, gated in `amf-dev` and committed. Three manual UI checks are
+owed by the user (section 8). Nothing beyond M15 is authorised.
 
 This is the detailed handoff. It is meant to let a person, or a fresh Claude session, pick the
 project up with no conversation history. Where it summarises, these are the sources:
