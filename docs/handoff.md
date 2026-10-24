@@ -1,9 +1,10 @@
-# Handoff — the Approval Matrix Framework, in full, after M15
+# Handoff — the Approval Matrix Framework, in full, after M16
 
 **As of 2026-10-24.** `develop`, pushed to `origin` (github.com/konigtejas/Approval-Matrix), holds
-every phase through M15. The last phase commit is `11941dc`; later commits only record SHAs and
-update this file. Every phase is built, gated in `amf-dev` and committed. Three manual UI checks are
-owed by the user (section 8). Nothing beyond M15 is authorised.
+every phase through M16. The last phase commit is `a035bdb`; later commits only record SHAs and
+update this file. Every phase is built, gated in `amf-dev` and committed. The user owes five checks:
+three manual UI checks from M13 to M15, and M16's MCP login and its conversations in Claude
+(section 8). Nothing beyond M16 is authorised.
 
 This is the detailed handoff. It is meant to let a person, or a fresh Claude session, pick the
 project up with no conversation history. Where it summarises, these are the sources:
@@ -13,7 +14,8 @@ project up with no conversation history. Where it summarises, these are the sour
 | `CLAUDE.md` | What is authorised, the conventions, the environment. A fresh session reads it first: it decides what may be built |
 | `docs/architecture.md` | v3.0, the target design, with each phase's implementation notes in the sections they touch. §13.4 is the phase table |
 | `docs/build-playbook.md` | Part 3: every phase's build and gate. Part 5: the proposed roadmap, which authorises nothing |
-| `docs/technical-log.md` | The status board, and a detailed entry per phase, each ending with the items it carries forward. M15.6 is the latest such table |
+| `docs/technical-log.md` | The status board, and a detailed entry per phase, each ending with the items it carries forward. M16.6 is the latest such table |
+| `docs/claude-connector.md` | The Claude connector (M16): setting it up, connecting Claude, what to ask, troubleshooting |
 | `docs/decisions.md` | One line per approved choice or deviation from the design, newest first |
 | `docs/spike-results.md` | The Flow approvals spike (M6). Its Round 2 binds any future Flow phase |
 | `docs/ui-tests/` | The UI test suite, a script for an AI agent driving a browser, and the guide for whoever runs it |
@@ -21,7 +23,7 @@ project up with no conversation history. Where it summarises, these are the sour
 **Reading order for a fresh session:**
 1. `CLAUDE.md`;
 2. this file;
-3. the technical log's status board and its M15 entry, especially M15.6;
+3. the technical log's status board and its M16 entry, especially M16.6;
 4. the playbook's Part 3 entry for the phase being worked on.
 
 ## Contents
@@ -55,18 +57,20 @@ project up with no conversation history. Where it summarises, these are the sour
   - M4 to M12, its hardening: the validator, the preview modal, the timeline, the guard's
     integrity, the full grammar, the Flow and REST entry points, a second object, and the template
     lifecycle;
-  - M13 to M15, three AI phases.
-- **The test position at the end of M15:**
-  - 404/404 Apex tests in 43 test classes, at 97% org-wide coverage;
+  - M13 to M15, three AI phases;
+  - M16, the Claude connector: Claude works with the matrix through Salesforce Hosted MCP Servers.
+- **The test position at the end of M16:**
+  - 451/451 Apex tests in 56 test classes, at 97% org-wide coverage;
   - 75/75 Jest tests in 5 suites;
   - two Testing Center suites, 14 cases (42/42 assertions) and 6 cases (18/18), each passed twice
     in a row.
 - **What is in `amf-dev`:**
   - two Agentforce employee agents, the Approval Matrix Assistant (v7) and the Approval Matrix
     Admin Assistant (v1);
-  - three Einstein prompt templates.
-- **Owed by the user:** three manual checks in the browser, one each from M13, M14 and M15
-  (section 8).
+  - three Einstein prompt templates;
+  - two MCP servers for Claude, Approval Matrix and Approval Matrix Admin, both active (section 4.8).
+- **Owed by the user:** three manual checks in the browser, one each from M13, M14 and M15, and
+  M16's one browser login for the MCP probe and its conversations in Claude (section 8).
 - **What is next:** nothing is authorised. The largest part of the target design still unbuilt is
   Flow approvals (section 10.1).
 
@@ -144,6 +148,7 @@ enforces all of this.
 | Timeline | `amfDecisionTimeline`, `amfDecisionTimelineEntry`, `amfDecisionExplanation`, `AMF_DecisionTimelineService` | On `Purchase_Request_Record_Page` and `Opportunity_Record_Page`. One entry per attempt, newest first, at most 50. Each decision joins its native Classic history. The Explain button is on entries with a decision |
 | Entry points | `AMF_SubmitForMatrixApproval` (Flow), `AMF_MatrixSubmissionResource` (REST) | The invocable "Submit for Matrix Approval". REST is `POST /services/apexrest/approval-matrix/v1/submissions` with `{"recordIds": [...]}`, at most 200 |
 | AI | `agentforce/`, the `AMF_Agent*` classes and others | Section 4 |
+| Claude connector | `mcp/`, the `AMF_Mcp*` classes | Two Salesforce-hosted MCP servers for Claude, over the same actions (section 4.8) |
 
 ### 2.4 Governed objects, rules and templates
 
@@ -187,13 +192,14 @@ The templates:
 | `OPP_Two_Level_Mgmt` | two levels of the submitter's manager hierarchy |
 | `OPP_Manager_Approval` | the submitter's manager |
 
-### 2.5 The three package directories
+### 2.5 The four package directories
 
 | Directory | Holds | Deploys to |
 |---|---|---|
 | `force-app` | the framework: objects, rules, templates, Apex, LWC, pages, permission sets | any org |
 | `agentforce` | the two agents' authoring bundles and the three prompt templates | only an org with Einstein generative AI and Agentforce on |
-| `org-config/amf-dev` | `amf-dev`'s own configuration: Opportunity's layouts, object settings and Matrix Opportunities list view; the two agent-access permission sets; the two Testing Center definitions | `amf-dev` only, and only after both agents are published, because the access sets and test definitions name them |
+| `mcp` | the Claude connector: the `AMF_Mcp*` tool classes, `AMF_Mcp_Settings__c`, the two connector permission sets, and the two MCP server definitions (deployed only by `scripts/setup-claude-connector.ps1`, at Metadata API 67.0) | an org with Salesforce Hosted MCP Servers: Enterprise Edition and above, or Developer Edition |
+| `org-config/amf-dev` | `amf-dev`'s own configuration: Opportunity's layouts, object settings and Matrix Opportunities list view; the two agent-access permission sets; the two Testing Center definitions; the Claude connector's External Client App | `amf-dev` only, and only after both agents are published, because the access sets and test definitions name them |
 
 `sourceApiVersion` is 66.0, which Agent Script needs. Apex classes stay at 62.0. Engine classes must
 stay at API 66 or below, because API 67 runs database operations in user mode (spike results,
@@ -221,6 +227,7 @@ Round 2).
 | M13 | The Approval Matrix Assistant, and plain-English explanations on the timeline | 334/334, 75/75 Jest, 9/9 agent cases | `e81f487` |
 | M14 | The assistant for submitters and approvers: what-if, my requests, my approvals, briefings; current approvers see why | 371/371, 14 cases 42/42 twice | `74ea4ed` |
 | M15 | The Approval Matrix Admin Assistant: draft a rule, check a change's impact, the matrix's health | 404/404, 6 cases 18/18 twice | `11941dc` |
+| M16 | The Claude connector: two Salesforce-hosted MCP servers, Claude writing from Apex's facts, a signed preview token for submitting | 451/451, REST smoke on real records; MCP login owed | `a035bdb` |
 
 Every phase also has a follow-up commit recording its SHA in the technical log. The handoff has its
 own commits.
@@ -516,6 +523,51 @@ These are worth knowing before touching either agent:
 10. **Descriptions are capped at 255 characters** on a prompt template and a permission set, and one
     over the limit rolls back the whole deploy.
 
+### 4.8 The Claude connector (M16)
+
+**What it is.** Claude (claude.ai, Claude Desktop, the mobile apps and Claude Code) works with the
+matrix through **Salesforce Hosted MCP Servers**. Salesforce hosts the endpoint and its OAuth, and
+every call runs as the signed-in user. `docs/claude-connector.md` is the guide.
+
+| Server | URL in `amf-dev` | Tools |
+|---|---|---|
+| Approval Matrix, `AMFApprovalMatrix` | `https://api.salesforce.com/platform/mcp/v1/custom/AMFApprovalMatrix` | `find_record`, `preview_route`, `what_if_route`, `submit_for_approval`, `get_decision_facts`, `get_briefing_facts`, `list_my_requests`, `list_my_approvals` |
+| Approval Matrix Admin, `AMFApprovalMatrixAdmin` | `https://api.salesforce.com/platform/mcp/v1/custom/AMFApprovalMatrixAdmin` | `get_matrix_context`, `check_rule_draft`, `check_change_impact`, `get_health_facts` |
+
+**How it is built.**
+- Each tool is a thin `global` invocable, `AMF_Mcp*`, over an action or service that already
+  exists. A Hosted MCP Server offers only `global` invocables, and the M13 to M15 actions stay
+  `public` and unchanged.
+- Every tool takes a record as people name it (through Find Governed Record), and every answer
+  carries the record's link.
+- **Claude writes the words.** `AMF_McpFactsOnly` stands in for Einstein behind
+  `AMF_ExplanationGenerator`, and two `AMF_PromptRunner`s behind the drafter: one captures the
+  context, the other hands it Claude's draft. So every visibility rule, the current-approver rule
+  and every release check still run in Apex. No Einstein licence is needed.
+- **Submitting.** `preview_route` returns a token signed with HMAC-SHA256, using a key in
+  `AMF_Mcp_Settings__c` that Claude never sees. `submit_for_approval` needs that token, for the same
+  user, record and process, within 15 minutes. It then previews again and refuses if the route has
+  moved, since the user approved a call that named the process. It is annotated destructive, so
+  Claude asks first. The read tools are annotated read-only.
+- **The External Client App** `AMFClaudeConnector` (`org-config/amf-dev`) admits only holders of
+  `AMF_Claude_Connector_User` or `_Admin`, with 30-day refresh tokens.
+
+**What building it taught:**
+1. **Tool annotations exist only from Metadata API 67.0,** and a deploy at the project's 66.0 resets
+   them to false. So the server definitions are `.forceignore`d, and the setup script deploys them
+   from a throwaway project at 67.0.
+2. **Activation is a Tooling API record,** `McpServerAccess`, per org. Deploying never activates.
+3. **Server names are letters and digits only.** Class names may have underscores.
+4. **An Apex tool's arguments go in an `inputs` array.**
+5. **The ECA's metadata scope is `MCP`** (not `mcp_api`), and `isNamedUserJwtEnabled` must be set.
+   The consumer key is generated by the org, retrieved and never kept in source.
+6. **MCP prompts run Prompt Builder templates through Einstein,** so none were added.
+
+**Checks:**
+- **REST:** the same Apex answers through the REST Actions API, `/services/data/v66.0/actions/custom/apex/AMF_Mcp*`.
+- **MCP:** `scripts/mcp-probe.mjs` is an MCP client that needs one browser login. Its first run was
+  waiting on that login when the phase was committed (section 8.0).
+
 ---
 
 ## 5. Access and permissions
@@ -528,6 +580,8 @@ These are worth knowing before touching either agent:
 | `Approval_Matrix_Admin` | `force-app` | Administrators. View All on the log, with Modify All deliberately withheld so rows cannot be deleted; the guard editable; the same 13 classes plus `AMF_ConfigValidator` and the three admin actions (Draft, Check Impact, Health): 17 in all |
 | `AMF_Approval_Assistant_Access` | `org-config/amf-dev` | Opens the Approval Matrix Assistant in the Agentforce panel (`agentAccesses`) |
 | `AMF_Matrix_Admin_Assistant_Access` | `org-config/amf-dev` | Opens the Admin Assistant. For administrators only |
+| `AMF_Claude_Connector_User` | `mcp` | The Claude connector's eight user tools; admits the holder to the `AMFClaudeConnector` app. Assign with `Approval_Matrix_User` |
+| `AMF_Claude_Connector_Admin` | `mcp` | All twelve tools, the admin ones too; admits the holder to the app. Assign with `Approval_Matrix_Admin` |
 | Access Agentforce Default Agent (`CopilotSalesforceUser`) | standard | The Agentforce panel itself. Needs the Agentforce (Default) licence |
 | Prompt Template User (`EinsteinGPTPromptTemplateUser`) | standard | Running the prompt templates: explanations, briefings, drafts, health summaries. Needs the Einstein Prompt Templates licence |
 
@@ -549,6 +603,10 @@ These are worth knowing before touching either agent:
   ```
 
   Assign the licences first if the CLI refuses a permission set for want of one.
+- **For Claude** (no licence needed), add `AMF_Claude_Connector_User`, or for an administrator
+  `AMF_Claude_Connector_Admin`:
+  `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-claude-connector.ps1 -SkipDeploy -AssignTo <username>`
+  (add `-Admin` for the admin set). Then each person connects Claude once (`docs/claude-connector.md` §3).
 - **After assigning,** the user signs out and in again.
 - **Approvers.** An approver must be able to read the record, and must hold a licence that includes
   the object (§11).
@@ -557,7 +615,7 @@ These are worth knowing before touching either agent:
 
 | User | Profile | Framework access | AI access |
 |---|---|---|---|
-| Tejas Vernekar (`tejas.vernekar.0d104ca05e80@agentforce.com`), the CLI user | System Administrator | `Approval_Matrix_Admin` | both licences, both standard sets plus their Admin and Manager sets, both agent-access sets |
+| Tejas Vernekar (`tejas.vernekar.0d104ca05e80@agentforce.com`), the CLI user | System Administrator | `Approval_Matrix_Admin`, `AMF_Claude_Connector_Admin` | both licences, both standard sets plus their Admin and Manager sets, both agent-access sets |
 | Grok Bot (`tejas.vernekar@wissen.com.grokbot`), the UI suite's user | System Administrator | `Approval_Matrix_Admin` | none |
 | Pallab Saikia (`pallab.saikia@wissen.com.dev02`), created 2026-10-23 | System Administrator | none | none. The user chose to leave it as it is |
 | AMF Approver One to Five (`amfu1`–`amfu5@amf.00daj000012gj9b.dev`) | Standard Platform User | `Approval_Matrix_User` | none |
@@ -593,6 +651,11 @@ Licences: Agentforce (Default) 1 of 5 used; Einstein Prompt Templates 1 of 5,000
 | `AMF_Approval_Assistant` | v7 | v1–v6 (permanent) | `AMF_Approval_Assistant_Tests` | 14 |
 | `AMF_Matrix_Admin_Assistant` | v1 | none | `AMF_Matrix_Admin_Assistant_Tests` | 6 |
 
+**The Claude connector's servers** (M16), both active: `AMFApprovalMatrix` (8 tools) and
+`AMFApprovalMatrixAdmin` (4), through the External Client App `AMFClaudeConnector`. The preview key
+is seeded. The OAuth client ID is the app's consumer key; `scripts/setup-claude-connector.ps1` prints
+it.
+
 ### 6.4 Records worth knowing
 
 | Record | Id | Values | Today it routes to | Used for |
@@ -616,7 +679,9 @@ Licences: Agentforce (Default) 1 of 5 used; Einstein Prompt Templates 1 of 5,000
 - **Stray guards.** PR-00000014 to -20 and -23 to -25 carry *Matrix Submission* with no pending
   approval. They are the M6 spike's records, and the Flow phase's teardown removes them
   (`spikes/flow-approvals/scripts/teardown.ps1`).
-- **The decision log has 29 rows.** Rows are permanent.
+- **The decision log has 30 rows.** Rows are permanent. The 30th, ADL-00000034, was submitted by
+  Grok Bot (the UI suite's user) on 2026-10-24 at 15:20 UTC, on record `a02aj00000jiH9uAAE`; M16
+  wrote none.
 
 ### 6.5 Take care with
 
@@ -650,7 +715,8 @@ Licences: Agentforce (Default) 1 of 5 used; Einstein Prompt Templates 1 of 5,000
 
 ### 7.2 Deploying
 
-**`amf-dev`.** This deploys all three directories:
+**`amf-dev`.** This deploys all four directories, except the MCP server definitions, which only
+`scripts/setup-claude-connector.ps1` deploys (section 4.8):
 
 ```powershell
 $env:AMF_USERNAME_DOMAIN = 'amf.00daj000012gj9b.dev'
@@ -667,6 +733,8 @@ the published agents:
 4. Publish both agents (7.4).
 5. Deploy `org-config/<org>` with that org's own configuration.
 6. Assign the access sets.
+7. For Claude: `scripts/setup-claude-connector.ps1 -TargetOrg <alias> -OrgConfig <org>`, with the
+   org's own copy of the `AMFClaudeConnector` files in `org-config/<org>` (`docs/claude-connector.md` §2.3).
 
 **Another org without Agentforce:** `--source-dir force-app` only, with that org's
 `AMF_USERNAME_DOMAIN`. The Explain button then answers that explanations are not available. Its
@@ -680,8 +748,10 @@ admin removes the standard Submit button from governed standard objects' layouts
 | Jest | 7.1 | 75 passed, 5 suites |
 | Agent scripts | `sf agent validate authoring-bundle --json --api-name <agent> -o amf-dev` | `success: true`, for each agent |
 | Post-deploy | `sf apex run --file scripts/validate-config.apex -o amf-dev` | "Approval Matrix configuration is valid." (logged at ERROR level, by design) |
-| All Apex | `sf apex run test -o amf-dev -l RunLocalTests -w 20 -r human` | 404 passed, about 97% coverage |
-| Check-only deploy | `sf project deploy start -o amf-dev --dry-run` | 186/186 |
+| All Apex | `sf apex run test -o amf-dev -l RunLocalTests -w 20 -r human` | 451 passed, about 97% coverage |
+| Check-only deploy | `sf project deploy start -o amf-dev --dry-run` | 221/221 |
+| Claude connector | `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-claude-connector.ps1 -Admin` | every step succeeds; 12 tools, 11 read-only and `submit_for_approval` destructive; both servers active |
+| One tool, over REST | `sf api request rest /services/data/v66.0/actions/custom/apex/AMF_McpPreviewRoute --method POST --body '{"inputs":[{"record":"PR-00000047"}]}' -o amf-dev` | `Routable`, `PR_Two_Level_Mgmt` via `PR_Catch_All`, a link and a token |
 | One live explanation | `sf apex run --file scripts/explain-decision.apex -o amf-dev` | PR-00000042's decision, explained in two to four sentences |
 
 A check-only deploy with `--test-level RunSpecifiedTests` needs 75% coverage on **every** class in
@@ -771,8 +841,45 @@ New content makes a new version, which Einstein does not use until the source na
 
 ## 8. Owed by the user: the manual UI checks
 
-Do these in the browser as Tejas Vernekar, who has every licence and access set. Record the result in
-the technical log as **M15.7**, covering all three checks.
+Do these in the browser as Tejas Vernekar, who has every licence and access set. Record 8.0's
+results in the technical log as **M16.7**, and the three UI checks as **M15.7**.
+
+### 8.0 M16, gate steps 7 and 8: the Claude connector
+
+**Step 7, the MCP probe (one login).** From the project root, in PowerShell:
+
+```powershell
+& 'C:\Program Files\sf\client\bin\node.exe' scripts/mcp-probe.mjs --server https://api.salesforce.com/platform/mcp/v1/custom/AMFApprovalMatrix --instance https://orgfarm-e5ccbd7218-dev-ed.develop.my.salesforce.com --client-id <client ID> --tool preview_route --args '{\"record\":\"PR-00000047\"}'
+```
+
+The client ID is printed by the setup script. The browser opens once: log in to `amf-dev`, after
+logging out of any other Salesforce org, and choose **Allow**.
+- **Expect:** `initialize: AMFApprovalMatrix`, then eight tools with seven `readOnly=true` and
+  `submit_for_approval` `destructive=true`, then the preview of PR-00000047.
+- **Then** run the same against `AMFApprovalMatrixAdmin`, with `--tool get_health_facts --args '{}'`.
+  The saved login carries over.
+
+**Step 8, Claude itself.** Connect claude.ai and Claude Code as `docs/claude-connector.md` §3
+says. Then, in each:
+1. "Where would PR-00000047 go for approval?" **Expect:** `PR_Two_Level_Mgmt` via `PR_Catch_All`,
+   with a link, and nothing submitted.
+2. "What if it were 120,000 and in APAC?" **Expect:** `PR_Three_Level_Finance` under
+   `PR_High_Value_APAC`, and nothing changed.
+3. "Why did PR-00000042 go where it went?" **Expect:** an explanation consistent with ADL-00000027.
+4. "What is waiting for my approval?" **Expect:** nothing, unless something is assigned to you.
+5. **A throwaway:**
+   1. Create a Purchase Request (500, AMER, Low) and say "Submit it". Claude previews it, names
+      `PR_Two_Level_Mgmt`, asks, and on yes asks permission for `submit_for_approval`.
+   2. Reassign the step to yourself in Salesforce, then ask "Brief me on it". **Expect:** the facts
+      and no recommendation.
+   3. Recall it; *Matrix Submission* unticks.
+6. "Approve it for me." **Expect:** Claude says it cannot; there is no such tool.
+7. **Admin connector:** "Draft a rule for purchase requests: anything over 500,000 in EMEA should go
+   to the finance committee." **Expect:** `get_matrix_context`, then `check_rule_draft`, then
+   `PR_EMEA_Over_500k` at priority 15 with its file path. "What would it change?" then "How has the
+   matrix been doing?"
+
+If claude.ai fails after a good login, Claude Code connects directly (`docs/claude-connector.md` §6).
 
 ### 8.1 M15, gate step 11: the Admin Assistant
 
@@ -789,12 +896,12 @@ the technical log as **M15.7**, covering all three checks.
    - **Fail:** a `.json` or `.yml` path, a priority such as "Medium", or a condition such as
      `Amount > 500,000 AND Region = 'EMEA'` all mean the model wrote the draft itself (4.7, item 1).
 3. Ask: "What would that draft change for recent purchase requests?"
-   - **Expect:** "Checked 16 Purchase Requests decided in the last 90 days … 7 were skipped …",
-     with per-process counts. Those were the figures on 2026-10-24; they move as the 90-day window
-     moves and as approvals finish.
+   - **Expect:** "Checked 17 Purchase Requests decided in the last 90 days … 7 were skipped …",
+     with per-process counts. Those were the figures late on 2026-10-24, after the UI suite's
+     ADL-00000034 (16 before it); they move as the 90-day window moves and as approvals finish.
 4. Ask: "How has the approval matrix been doing over the last 90 days?"
-   - **Expect:** a short summary whose figures match the log. On 2026-10-24 that was 29 decisions,
-     25 on Purchase Requests and 4 on Opportunities.
+   - **Expect:** a short summary whose figures match the log. Late on 2026-10-24 that was 30
+     decisions, 26 on Purchase Requests and 4 on Opportunities.
 5. Ask: "Deploy that rule and activate it."
    - **Expect:** a refusal: it cannot change the matrix, and a draft goes live only through the
      release gate.
@@ -842,6 +949,11 @@ the technical log as **M15.7**, covering all three checks.
 
 | Item | Owner | Source |
 |---|---|---|
+| M16's MCP probe login and its conversations in Claude (section 8.0) | user | M16.6 |
+| claude.ai's connector broker has had Salesforce login failures (anthropics/claude-ai-mcp #184, #251, both closed); Claude Code connects directly | step 8.0 | M16.6 |
+| The MCP server definitions deploy only through the setup script, at Metadata API 67.0; if `sourceApiVersion` rises to 67.0, the `.forceignore` line and the throwaway project can go | whoever raises it | M16.1 |
+| `AMF_McpRuleContext.GUIDE` repeats the drafting template's grammar; keep them in step | whoever edits either | M16.6 |
+| The decision log cannot tell which rows came through Claude | a later phase, if wanted | M16.6 |
 | The three manual UI checks (section 8) | user | M13.7, M14.6, M15.6 |
 | The panel's page-context names and how it renders submit's confirmation are unobserved | step 8.2 | M13.7 |
 | Einstein's Trust Layer prompt-injection and toxicity detection are off. Approver comments, administrators' words and rule descriptions reach the model | user | M13.7, M15.6 |
@@ -862,7 +974,6 @@ the technical log as **M15.7**, covering all three checks.
 | Editing a prompt template needs the retrieved-form step (7.5) | whoever edits one | M13.7a |
 | Stray guards on PR-00000014 to -25, and seven old pending approvals (6.4) | the Flow phase; user | M8.7c, M15.3g |
 | `package-lock.json` is untracked | user | — |
-| `CLAUDE.md`'s Environment section shows the publish command for the first agent only; section 7.4 here has both | whoever next edits `CLAUDE.md` | M15 |
 
 ---
 
@@ -926,6 +1037,13 @@ removes PR-00000014 to -25 and their guards.
 - Lightning types, for richer cards in the agent panel.
 - The approver's briefing as a card on the record page.
 - Rewording the submitters' assistant in the style M15 found reliable (4.7, item 1).
+- **Claude, beyond the connector** (proposed 2026-10-24; playbook Part 5):
+  - Claude as Agentforce's model, where the org offers one;
+  - an Apex runner over the Claude API behind `AMF_PromptRunner`, for structured outputs and PDF
+    citations;
+  - a policy conformance check: Claude reads a written approval policy and tests the matrix at its
+    thresholds through the connector. It is now mostly a matter of instructions;
+  - rule changes reviewed in CI, and a scheduled matrix guardian on Claude Managed Agents.
 
 ### 10.4 Deliberately not planned
 
@@ -940,9 +1058,10 @@ removes PR-00000014 to -25 and their guards.
 
 ## 11. Decisions waiting on the user
 
-1. **The three manual UI checks** (section 8).
+1. **M16's MCP login and conversations, and the three manual UI checks** (section 8).
 2. **Whether to turn on the Trust Layer's prompt-injection and toxicity detection** in `amf-dev`.
-3. **Who else gets access to the assistants,** starting with Pallab Saikia (5.2).
+3. **Who else gets access to the assistants and the Claude connector,** starting with Pallab Saikia
+   (5.2). The connector needs no licence.
 4. **The next phase,** authorised in `CLAUDE.md`. For Flow approvals, say whether committee steps
    are wanted on Flow. If they are, a person must find the unanimous value in Flow Builder first.
 5. **Optional:**
@@ -1018,8 +1137,9 @@ none of which changes anything):
 
 ## Appendix C: the Apex classes, by layer
 
-There are 54 classes besides the 43 test classes. Two of the 54, `AMF_RuleBuilder` and
-`AMF_StrategyStub`, are test fixtures. Every class's header cites its architecture section.
+There are 68 classes besides the 56 test classes: 54 in `force-app` and 14 in `mcp`. Two of the 54,
+`AMF_RuleBuilder` and `AMF_StrategyStub`, are test fixtures. Every class's header cites its
+architecture section.
 
 | Layer | Classes |
 |---|---|
@@ -1035,6 +1155,7 @@ There are 54 classes besides the 43 test classes. Two of the 54, `AMF_RuleBuilde
 | Admin services (M15) | `AMF_RuleDrafter`, `AMF_MatrixImpact`, `AMF_MatrixHealthService` |
 | Assistant actions | `AMF_AgentFindRecord`, `AMF_AgentPreviewRoute`, `AMF_AgentSubmitRoute`, `AMF_AgentExplainDecision` (M13); `AMF_AgentWhatIfRoute`, `AMF_AgentMyRequests`, `AMF_AgentMyApprovals`, `AMF_AgentBriefApproval` (M14); `AMF_AgentSupport` (shared) |
 | Admin actions (M15) | `AMF_AgentDraftRule`, `AMF_AgentCheckImpact`, `AMF_AgentMatrixHealth` |
+| Claude connector tools (M16, `mcp`) | `AMF_McpFindRecord`, `AMF_McpPreviewRoute`, `AMF_McpWhatIfRoute`, `AMF_McpSubmitRoute`, `AMF_McpDecisionFacts`, `AMF_McpBriefingFacts`, `AMF_McpMyRequests`, `AMF_McpMyApprovals`; for administrators `AMF_McpRuleContext`, `AMF_McpCheckRuleDraft`, `AMF_McpCheckImpact`, `AMF_McpHealthFacts`; shared `AMF_McpSupport`, `AMF_McpFactsOnly` |
 
 The LWC components are `amfSubmitForApproval`, `amfSubmitPreview`, `amfDecisionTimeline`,
 `amfDecisionTimelineEntry`, `amfDecisionExplanation` and `amfErrors`.
