@@ -774,6 +774,9 @@ the reader, has its own row read for them without sharing and flagged `visibleAs
   facts therefore say "reassigned to X (first assigned to Y)". M13's "reassigned by X, for Y" read to
   the model as X handing the step to Y, the wrong way round (technical log M14).
 
+---
+
+## 9. Config Validator
 
 Runs as a required release gate and is also exposed as an invocable for post-deploy pipeline checks. The gate fails when:
 
