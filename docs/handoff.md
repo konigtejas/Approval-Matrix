@@ -1,10 +1,11 @@
 # Handoff — the Approval Matrix Framework, in full, after M16
 
 **As of 2026-10-24.** `develop`, pushed to `origin` (github.com/konigtejas/Approval-Matrix), holds
-every phase through M16. The last phase commit is `a035bdb`; later commits only record SHAs and
-update this file. Every phase is built, gated in `amf-dev` and committed. The user owes four checks:
-three manual UI checks from M13 to M15, and M16's conversations in Claude (section 8). Nothing beyond
-M16 is authorised.
+every phase through M16. The last phase commit is `a035bdb`. Later commits close M16's gate step 7,
+record SHAs, update this file, add the functional and technical documentation and the user guide,
+and restore a heading in the architecture document. Every phase is built, gated in `amf-dev` and
+committed. The user owes four checks: three manual UI checks from M13 to M15, and M16's
+conversations in Claude (section 8). Nothing beyond M16 is authorised.
 
 This is the detailed handoff. It is meant to let a person, or a fresh Claude session, pick the
 project up with no conversation history. Where it summarises, these are the sources:
@@ -16,6 +17,9 @@ project up with no conversation history. Where it summarises, these are the sour
 | `docs/build-playbook.md` | Part 3: every phase's build and gate. Part 5: the proposed roadmap, which authorises nothing |
 | `docs/technical-log.md` | The status board, and a detailed entry per phase, each ending with the items it carries forward. M16.6 is the latest such table |
 | `docs/claude-connector.md` | The Claude connector (M16): setting it up, connecting Claude, what to ask, troubleshooting |
+| `docs/functional-documentation.md` | For business readers, as of M16.7: what the framework does, its processes and business rules, the configured matrix, and its controls |
+| `docs/technical-documentation.md` | For developers, as of M16.7: the system as built, its deployment, how to extend it, and troubleshooting |
+| `docs/user-guide.md` | For submitters, approvers and matrix administrators, as of M16.7: how to use it, by task |
 | `docs/decisions.md` | One line per approved choice or deviation from the design, newest first |
 | `docs/spike-results.md` | The Flow approvals spike (M6). Its Round 2 binds any future Flow phase |
 | `docs/ui-tests/` | The UI test suite, a script for an AI agent driving a browser, and the guide for whoever runs it |
