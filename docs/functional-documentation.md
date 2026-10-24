@@ -763,7 +763,7 @@ explanation, briefing and assistant answer, because they are all built from the 
 - **Every fact comes from Salesforce logic.** Routes, rules, values, approvers and counts are worked
   out by the framework. The AI is given those facts and puts them into words.
 - **Sensitive steps are fixed in logic, not left to the model.** The assistant can submit only the
-  record it previewed, with the process it showed, after the platform asks the user to confirm.
+  record it previewed, with the process that preview found, and only after the user confirms.
   Through Claude, a signed preview token adds the same guarantee.
 - **Generated text is presentation.** It is labelled, generated when asked, and never stored. The
   decision log remains the only record of why.

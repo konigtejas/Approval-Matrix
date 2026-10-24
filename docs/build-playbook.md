@@ -889,7 +889,8 @@ fixed on the way:
 - the platform's Reverse_Engineering guardrail, and an approve request routed to preview;
 - the test definition written into `force-app`.
 
-Step 11, the manual UI check, is owed.
+Step 11, the manual UI check, passed on 2026-10-24 within M14's step 9, run by Grok Bot (technical
+log M15.7).
 
 ### M14 — The assistant for submitters and approvers (post-MVP)
 
@@ -968,7 +969,10 @@ Two defects were found and fixed on the way:
 - the published agent routed "brief me" by its descriptions, so a briefing moved to the explain
   subagent.
 
-Step 9, the manual UI check, is owed.
+Step 9, the manual UI check, which includes M13's step 11, passed on 2026-10-24. Grok Bot ran it in
+the browser with `docs/ui-tests/ai-check-scripts.md` (technical log M15.7). The panel passes the open
+record. A submission is confirmed once, in the chat, though that confirmation named the route in the
+model's own words.
 
 ### M15 — The Approval Matrix Admin Assistant (post-MVP)
 
@@ -1049,7 +1053,7 @@ Acceptance:
 The gate found that the model answered without calling its tools. The fix was in the script's
 wording: what the model does not know, tools named as lookups, and no answer templates.
 
-Step 11, the manual UI check, is owed.
+Step 11, the manual UI check, passed on 2026-10-24, run by Grok Bot (technical log M15.7).
 
 ### M16 — The Claude connector (post-MVP)
 
@@ -1161,6 +1165,8 @@ Acceptance:
 | ~~M11's manual UI check: on a throwaway Opportunity, one Submit for Approval button, the modal names the route, the timeline updates without a reload, *Matrix Submission* ticked~~ **passed 2026-10-22** in the first UI test run | technical log M12.6 |
 | ~~M12's manual UI check: a medium-risk request's modal names `PR_Credit_Risk_Queue`, the timeline shows the step with *Credit Risk*, and the Approval Decisions list offers no New button~~ **passed 2026-10-22** in the first UI test run | technical log M12.6 |
 | ~~The UI suite's re-run against M12.6, whose TC-03.4 and TC-03.6 check the two timeline fixes~~ **passed 2026-10-22** | technical log M12.7 |
+| ~~M13's, M14's and M15's manual UI checks: the Explain button, the Approval Matrix Assistant in the panel, the Admin Assistant~~ **passed 2026-10-24**, run by Grok Bot | technical log M15.7 |
+| M16's step 8: the conversations in claude.ai and Claude Code. The AI-check script's AI-04 runs claude.ai's half; Claude Code needs a person | technical log M16.6, M15.7 |
 
 ### M10 — Entry points and bulk submission *(authorised and built, 2026-10-08)*
 
@@ -1182,7 +1188,7 @@ Moved to Part 3, with its gate. The three decisions it needed were taken:
 
 The related-list buttons rode along (technical log M12).
 
-### M13 — AI around the engine *(authorised, built and gated 2026-10-23; its manual UI check is owed)*
+### M13 — AI around the engine *(authorised, built and gated 2026-10-23; its manual UI check passed 2026-10-24)*
 
 Moved to Part 3. The user chose two of the five AI use cases proposed that day: submit by chat, and
 a plain-English "why". Three more stay as proposals, each needing its own authorisation:
@@ -1199,7 +1205,7 @@ approver briefing, "where are my requests", "what is waiting for me" and a what-
 the rule-writing assistant, a rule-change impact check and the matrix-health report became **M15**,
 in a second agent for administrators. Both are in Part 3.
 
-### M16 — The Claude connector *(authorised and built 2026-10-24; its MCP login and manual checks are owed)*
+### M16 — The Claude connector *(authorised and built 2026-10-24; its MCP login passed, its conversations in Claude are owed)*
 
 Moved to Part 3. Of the Claude integrations proposed on 2026-10-24, the user chose the matrix as an
 MCP server, over Salesforce Hosted MCP Servers. Still proposals, each needing its own authorisation:

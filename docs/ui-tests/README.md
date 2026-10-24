@@ -8,7 +8,8 @@ itself:
 - there are 75 steps, or 67 without the optional tests;
 - every step has a PASS condition and a FAIL condition the agent can observe.
 
-This file is for the person who runs the agent. Give the agent `ui-test-scripts.md` only.
+This file is for the person who runs the agent. Give the agent the script only: `ui-test-scripts.md`,
+or `ai-check-scripts.md` for the AI checks (the last section).
 
 ## Where the expected values come from
 
@@ -149,3 +150,80 @@ An Approval Decision Log record's page offers **Submit for Approval**, **Edit** 
 
 The script forbids all three (hard rule 3). An explicit action list on the log's layout would remove
 them, in a later hardening pass.
+
+## The AI checks (M13 to M16)
+
+`ai-check-scripts.md` hands the AI layer's manual checks (handoff §8) to the same agent, as Grok
+Bot. It has 52 steps, or 31 without the Claude part:
+
+| Part | What it checks | Gate step | Recorded as |
+|---|---|---|---|
+| AI-01 | The Explain button | M13, step 11 | M15.7, passed |
+| AI-02 | The Approval Matrix Admin Assistant | M15, step 11 | M15.7, passed |
+| AI-03 | The Approval Matrix Assistant, with two behaviours never observed before: whether the panel passes the open record, and how a submission is confirmed | M14, step 9 | M15.7, passed |
+| AI-04 | Claude in claude.ai, through both connectors (optional) | M16, step 8, claude.ai's half | M16.8, owed |
+
+**The first run,** R20261025-0130 on 2026-10-24, ran everything but AI-04. All 31 of its steps
+passed (technical log M15.7). It answered both open questions:
+- the panel passes the open record;
+- a submission is confirmed once, in the chat, as plain text.
+
+It also led to two corrections in the script:
+- AI-02.5 now accepts each object's totals in place of the overall one;
+- AI-03.10 now says that Approval History's Assigned To column keeps the original approver.
+
+**To run the Claude part alone,** give `RUN_CLAUDE` `yes` and `PARTS` `AI-04`. The agent then runs
+AI-00, AI-04 and AI-05, and creates only throwaway C.
+
+**Where the expected values come from.** They were read on 2026-10-25, and the figures again after
+the first run:
+- the components' templates (`amfDecisionExplanation`, `amfDecisionTimelineEntry`, `amfSubmitPreview`);
+- the agents' greetings and their actions' Apex summaries;
+- `amf-dev` itself: the decision counts, the records the impact check skips, and Grok Bot's own
+  requests.
+
+They hold while nothing else changes in the org. Before a run, have AI-02.4, AI-02.5, AI-03.5,
+AI-04.20 and AI-04.21 refreshed if any of these has happened:
+- anyone has submitted a governed record since;
+- an approval has completed or been recalled since;
+- it is after 2026-11-17, when the oldest decision leaves the 90-day window.
+
+**Before a run,** as well as "Before a run" above:
+1. **Grok Bot's AI access,** as of 2026-10-25:
+   - the Agentforce (Default) and Einstein Prompt Templates licences;
+   - Access Agentforce Default Agent and Prompt Template User;
+   - `AMF_Approval_Assistant_Access` and `AMF_Matrix_Admin_Assistant_Access`;
+   - `AMF_Claude_Connector_Admin`, for AI-04.
+2. **A new session.** A change to Grok Bot's access applies from its next login, so make a new login
+   link after one.
+3. **The parameters:**
+   - `TESTER`: `Grok Bot`;
+   - `RUN`: a fresh identifier;
+   - `LOGIN_URL`: the login link;
+   - `RUN_CLAUDE`: `yes` or `no`;
+   - `PARTS`, optional: the parts to run, such as `AI-04`; all of them if left out;
+   - `CLIENT_ID`, only for `yes`: the External Client App's consumer key, which
+     `scripts/setup-claude-connector.ps1 -SkipDeploy -Admin` prints. Treat it like the login link:
+     give it to the agent at run time only, and keep it out of the scripts, commits and the report.
+4. **For AI-04 only:**
+   - The agent's browser must be signed in to claude.ai, under the account that will use the
+     connectors.
+   - That account must have no connector named Approval Matrix or Approval Matrix Admin. Remove
+     any first, or the agent stops AI-04.
+   - The connectors the agent adds sign in to Salesforce as Grok Bot. Until you disconnect them and
+     connect them as yourself, that account's Claude acts as Grok Bot: on the web, in Desktop and on
+     mobile.
+   - The connectors' login goes through `login.salesforce.com`. If it asks the agent to log in, the
+     agent stops AI-04. Connect both connectors yourself, signing in as Grok Bot, then have the agent
+     run AI-04.6 onwards.
+5. **Claude Code** cannot be driven by an agent in a browser. Run handoff §8.0 in Claude Code
+   yourself.
+
+**After a run:**
+- A full run leaves three Purchase Requests, `AICHECK {RUN} A`, `B` and `C`, all recalled, with
+  their decision log rows. Nothing needs deleting. Each submitted throwaway moves the figures, so have
+  them refreshed before the next run.
+- In the technical log, AI-01 to AI-03 closed M13's, M14's and M15's manual checks as M15.7. AI-04,
+  with the Claude Code half, closes M16's as M16.8.
+- As with its administrator profile, remove Grok Bot's AI and connector access between runs if
+  wanted.

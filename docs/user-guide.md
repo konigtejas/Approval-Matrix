@@ -375,10 +375,12 @@ approval decision in plain English. …"
 The assistant follows strict steps, and the most important ones are enforced by Salesforce rather
 than left to the AI:
 
-- **It always previews first,** and tells you the route.
-- **It can submit only the record it has just previewed,** to the route it showed you.
-- **Salesforce asks you to confirm** before anything is submitted. You may be asked twice: once by
-  the assistant in the chat, and once by Salesforce.
+- **It always previews first.** It may describe the route in its own words, such as "two-level
+  management approval", rather than give the approval process's name, its rule and the values it
+  read. To see those before you confirm, ask "Where would it go?" first.
+- **It can submit only the record it has just previewed,** to the route that preview found.
+- **You confirm once, in the chat.** The assistant says it is about to submit the record, and
+  nothing is submitted until you reply "yes". There is no separate confirmation button.
 - **If the record or the matrix changed** since the preview, it submits by the new route and says so
   clearly. Claude refuses instead (section 8).
 - **If the preview shows the record would be blocked or would fail,** it tells you that submitting

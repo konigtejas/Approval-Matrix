@@ -2171,6 +2171,10 @@ The Admin Assistant's health report, or the connector's `get_health_facts`, summ
 - **The final-approval lock's effect** on the guard update, outside an Apex test, is unmeasured.
 - **Drafted rule names** are checked against active rules only.
 - **The impact check skips** records that are in an approval process now.
+- **The assistant's confirmation can rename the route.** In the M15.7 check it asked once, in the
+  chat, with "You're about to submit this record for two-level management approval", and gave no
+  rule or values. The record and process are still bound from the preview, and Apex decides the route
+  again.
 - **No timeline on phones.** UI strings are English literals, with no Custom Labels yet.
 
 **Technical debt:**
@@ -2192,6 +2196,8 @@ The Admin Assistant's health report, or the connector's `get_health_facts`, summ
   67.0.
 - The submitters' assistant has not been reworded in the style M15 found reliable. It passes its
   suite, but fabrication is possible in principle.
+- Einstein's explanations and briefings can end with a sign-off line, which
+  `AMF_Explain_Approval_Decision` does not forbid (M15.7).
 - `package-lock.json` is untracked.
 
 **Environment (`amf-dev`):**

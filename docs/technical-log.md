@@ -108,9 +108,9 @@ session needs. Update the row when a phase completes.
 | **M10** | Entry points and bulk — the Flow action, REST, per-record `submitEach()`, chunked and isolated submission, the log written after the platform answers; since M10.7 the guard staged per record | **Complete** — org gate passed 2026-10-21 (M10.8): 255/255 Apex at 98% after the locked-record fixture was replaced by a test-only validation rule (the lock did not stop the update in an Apex test), 59/59 Jest, the invocable and REST answered in the org | `393d9d5` + M10.7, M10.8 (`a0273e9`) |
 | **M11** | A second governed object, Opportunity, by configuration alone — guard, two manager-hierarchy templates, the button off four layouts, rules, a log lookup, the timeline page; the source gate enforces §6.3, the validator runs each union query | **Complete** — gate run 2026-10-21: source gate and validator green across both objects and failing broken copies, 264/264 Apex at 98%, 59/59 Jest, UI API shows the action and no standard button, an Opportunity routed, approved and recalled in the org. The relationship limit measured as not enforced (142 joined). The manual check, step 8, passed in the first UI test run, 2026-10-22 (M12.6) | `6e3079d` + `96e5692`, M12.6 |
 | **M12** | Template lifecycle, queue and committee templates, portability. A release manifest makes an in-place edit a gate failure. `PR_Credit_Risk_Queue` and `PR_Finance_Committee` each have a rule. Usernames are filled at deploy, and the org's own configuration has its own package directory. New and Mass Change Owner are off the decision-log list | **Complete.** Gate run 2026-10-22. The source gate is green and failed broken copies, and a correct `_v2` passed. `force-app` converts with another org's domain. The org's six templates match the manifest. 274/274 Apex at 98%, 59/59 Jest, the related list offers no actions. Queue and committee requests routed, decided and recalled in the org. The manual check, step 11, passed in the first UI test run that day. M12.6 fixed the two timeline defects that run found: 60/60 Jest, 274/274 Apex, deployed. The UI suite's re-run confirmed both fixes (M12.7). M12.8 added a Request Name field to Purchase Requests and two list views, gated and deployed 2026-10-23 | `bcedf6f` + M12.6 (`72f4dfd`), M12.7 (`0049677`), M12.8 (`c59e758`) |
-| **M13** | AI around the engine. The Approval Matrix Assistant, an Agentforce employee agent, finds, previews, submits after confirmation and explains through the engine's own paths. The timeline explains recorded decisions in plain English through an Einstein prompt template | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M13.7), once the user had turned on Agentforce. Deployed 145/145. 334/334 Apex at 98%. 75/75 Jest. Einstein explained a real decision accurately. A live preview session previewed, confirmed, submitted (ADL-00000032) and explained a throwaway, which was then recalled. The agent was published and activated (v2 active). Its Testing Center suite passed 9/9, 27/27 assertions, after two instruction fixes. Step 11, the manual UI check, is owed | `e81f487` |
-| **M14** | The assistant for submitters and approvers. A what-if over a new write-nothing engine entry, `previewWith()`; the user's own requests; what is waiting for them; a briefing for the current approver; and the current approver's sight of the routing reason | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M14.5). Deployed 163/163. 371/371 Apex at 98%. 75/75 Jest. A live session's what-ifs wrote no row. A throwaway (PR-00000050) was reassigned to the CLI user, listed as waiting, briefed and recalled. Published to v7; its 14-case suite passed 42/42 assertions in two consecutive runs. Two defects found and fixed: a reassigned step described the wrong way round, and routing of "brief me". Step 9, the manual UI check, which includes M13's step 11, is owed | `74ea4ed` |
-| **M15** | The Approval Matrix Admin Assistant, a second agent for administrators. A rule drafted from a description and shown only once it passes the release checks; a change's impact on recent records over a new write-nothing engine entry, `previewEach()`; a matrix-health report counted in Apex | **Complete, bar the manual UI check.** Gate run 2026-10-23 (M15.5). Deployed 176/176. 404/404 Apex at 97%. 75/75 Jest. Both templates take their retrieved form. Live sessions drafted a checked rule, compared 16 requests and reported the log's real figures, with nothing written (29 rows and 9 rules before and after). Published to v1; its 6-case suite passed 18/18 assertions twice. The model answered without calling its tools until the script said what it does not know (M15.3). Step 11, the manual UI check, is owed | `11941dc` |
+| **M13** | AI around the engine. The Approval Matrix Assistant, an Agentforce employee agent, finds, previews, submits after confirmation and explains through the engine's own paths. The timeline explains recorded decisions in plain English through an Einstein prompt template | **Complete.** Gate run 2026-10-23 (M13.7), once the user had turned on Agentforce. Deployed 145/145. 334/334 Apex at 98%. 75/75 Jest. Einstein explained a real decision accurately. A live preview session previewed, confirmed, submitted (ADL-00000032) and explained a throwaway, which was then recalled. The agent was published and activated (v2 active). Its Testing Center suite passed 9/9, 27/27 assertions, after two instruction fixes. Step 11, the manual UI check, passed on 2026-10-24, run by Grok Bot (M15.7) | `e81f487` + M15.7 |
+| **M14** | The assistant for submitters and approvers. A what-if over a new write-nothing engine entry, `previewWith()`; the user's own requests; what is waiting for them; a briefing for the current approver; and the current approver's sight of the routing reason | **Complete.** Gate run 2026-10-23 (M14.5). Deployed 163/163. 371/371 Apex at 98%. 75/75 Jest. A live session's what-ifs wrote no row. A throwaway (PR-00000050) was reassigned to the CLI user, listed as waiting, briefed and recalled. Published to v7; its 14-case suite passed 42/42 assertions in two consecutive runs. Two defects found and fixed: a reassigned step described the wrong way round, and routing of "brief me". Step 9, the manual UI check, which includes M13's step 11, passed on 2026-10-24, run by Grok Bot (M15.7). The panel passes the open record; a submission is confirmed once, in the chat | `74ea4ed` + M15.7 |
+| **M15** | The Approval Matrix Admin Assistant, a second agent for administrators. A rule drafted from a description and shown only once it passes the release checks; a change's impact on recent records over a new write-nothing engine entry, `previewEach()`; a matrix-health report counted in Apex | **Complete.** Gate run 2026-10-23 (M15.5). Deployed 176/176. 404/404 Apex at 97%. 75/75 Jest. Both templates take their retrieved form. Live sessions drafted a checked rule, compared 16 requests and reported the log's real figures, with nothing written (29 rows and 9 rules before and after). Published to v1; its 6-case suite passed 18/18 assertions twice. The model answered without calling its tools until the script said what it does not know (M15.3). Step 11, the manual UI check, passed on 2026-10-24, run by Grok Bot (M15.7) | `11941dc` + M15.7 |
 | **M16** | The Claude connector. Two Salesforce-hosted MCP servers, for everyone and for administrators, over the existing actions and seams. Claude writes from facts Apex returns, and submits only with a signed preview token after the user confirms | **Complete, bar the manual check.** Gate run 2026-10-24 (M16.5). Source gate unchanged. 75/75 Jest. The setup script deployed everything and activated both servers, with all twelve tools annotated. 451/451 Apex at 97%. Check-only 221/221. On real records every tool answered as expected over REST, a forged token and a wrong process were refused, and nothing was written. Step 7 passed over MCP on both servers after the user's one login (M16.7): the tools listed with their annotations, a preview answered, a forged submit was refused. Step 8, the conversations in claude.ai and Claude Code, is owed | `a035bdb` + M16.7 (`72ad84f`) |
 
 ### Superseded — the v1.0 plan
@@ -5658,3 +5658,147 @@ The first real run found two faults in the probe, both fixed:
 
 Step 7 passed. Step 8, the conversations in claude.ai and Claude Code, is owed. M16.6's table stands,
 less its first row.
+
+### M15.7 The manual UI checks of M13 to M15, run by Grok Bot (2026-10-24)
+
+**Commit:** `(this commit)` · **Status:** complete. M13's gate step 11, M14's step 9 and M15's
+step 11 passed. M16's step 8 is still owed. Nothing in `force-app`, `agentforce`, `mcp` or
+`org-config` changed.
+
+It is recorded here, after M16.7, because it ran after M16. It closes the manual checks of the three
+Agentforce phases, under the number the handoff's section 8 gave them.
+
+**How it ran.** The user handed the checks to Grok Bot, the agent that runs the UI suite in a browser
+(M12.6), in place of doing them by hand.
+- **Grok Bot's access.**
+  - **Before this session (unrecorded until now):** on 2026-10-24 at 15:04 UTC, Grok Bot was given:
+    - the Agentforce (Default) and Einstein Prompt Templates licences;
+    - Access Agentforce Default Agent and Prompt Template User;
+    - both agent-access sets.
+  - **Its first, unreported try:** from 15:18 to 15:23 UTC it created PR-00000051 ("M15.7
+    throwaway"), submitted it (ADL-00000034), reassigned it to itself and recalled it. No report of
+    that try reached the repository.
+  - **This session** added `AMF_Claude_Connector_Admin` at 19:16 UTC, so that the Claude part could
+    run too.
+- **The script.** `docs/ui-tests/ai-check-scripts.md` is new.
+  - It has 52 steps, or 31 without the Claude part (AI-04).
+  - Its fixed texts were read from the components, the agents' greetings and their actions' Apex
+    summaries. Its figures were read from `amf-dev` that day.
+  - An AI-written answer is judged only by the names and numbers it must contain.
+  - Two steps record behaviour nobody had seen (O1 and O2). AI-04 records one more (O3).
+  - The UI tests README gained the operator's section.
+- **The run.** R20261025-0130, with `RUN_CLAUDE` `no`.
+  - Grok Bot signed in at 19:57 UTC, after every access change.
+  - The agent used that session, because it was given no login link.
+  - Its records date from 20:22 to 20:29 UTC.
+
+**(a) Results.** 31 steps, all PASS; nothing blocked; AI-04 not run.
+
+| Part | Verdict | What it showed |
+|---|---|---|
+| AI-00 | PASS | Signed in as Grok Bot, in an existing session |
+| AI-01 | PASS | PR-00000042's Explain card: the badge, "Written by Einstein … ADL-00000027", the facts right. It was written again on the refresh icon |
+| AI-02 | PASS | The draft `PR_EMEA_Over_500k` at priority 15; its impact: 17 checked, none changed, 7 skipped; the health figures; a refusal to deploy; nine rules in Setup |
+| AI-03 | PASS | PR-00000047 previewed without being named, then the what-if. 9 requests, none waiting; nothing waiting for approval. A (PR-00000052): submitted with the button, reassigned to Grok Bot, listed, briefed without a recommendation, recalled. B (PR-00000053): submitted through the assistant after one confirmation, recalled |
+| AI-04 | NOT RUN | `RUN_CLAUDE` was `no` |
+| AI-05 | PASS | Both throwaways recalled, the guard false |
+
+**(b) The two behaviours nobody had seen.**
+- **O1: the panel passes the open record.**
+  - "Where would this go?" on PR-00000047, and "Submit it." on B, were answered about the record on
+    screen, without asking which record.
+  - The panel fills `currentRecordId` and `currentObjectApiName` under those names. The `.agent`
+    declarations stand, and the user guide's §7.1 holds.
+- **O2: one confirmation, in the chat, without the route's name.**
+  - **The confirmation:** after "Submit it.", the only request to confirm was plain chat text with
+    no buttons, and not a question: "You're about to submit this record for two-level management
+    approval." No preview summary came before it.
+  - **The answer:** after "Yes, submit it.", the assistant gave the action's own summary: "Purchase
+    Request PR-00000053 is now submitted and entered approval process PR_Two_Level_Mgmt. It is
+    waiting on AMF Approver One. Rule PR_Catch_All (version 1) decided the route. Decision log:
+    ADL-00000036."
+  - **The safeguards held:**
+    - `submit` is offered only after a preview that reached a decision (`can_submit`), so the
+      preview ran;
+    - the runtime bound the record and the expected process from that preview;
+    - Apex decided the route again;
+    - nothing was submitted before the tester's yes.
+  - **The instructions were not followed.** The model did not give the preview's summary "without
+    changing any name, rule, value or process". It renamed `PR_Two_Level_Mgmt` "two-level
+    management approval", and showed neither the rule nor the values. This is the assistant that
+    M15.6 left without the rewording M15.3f found reliable.
+  - **The user guide is corrected.** It said a user "may be asked twice", and that the assistant
+    "always previews first, and tells you the route". It now says the user is asked once, in the
+    chat, and tells them how to see the exact route first.
+
+**(c) The notes, none of them a failure.**
+- **AI-01.** Each explanation ended with a line such as "I appreciate your prompt attention to this
+  record." The facts were right. The line is a habit of the model that the template does not forbid.
+  Carried.
+- **AI-02.4.** A typing lag sent the question cut off, as "What woul". The agent still answered with
+  the impact figures, reading it in context as the impact question. Nothing was written either way.
+- **AI-02.5.** The health summary gave each object's figures, Purchase Requests 26 (25 routed, 1
+  blocked) and Opportunities 4, but not the total of 30.
+  - Every figure matches the log, which is the handoff's test.
+  - The script had asked for the total itself. It now accepts either the total or each object's.
+- **AI-03.10.** After the reassign, Approval History's Assigned To column still showed AMF Approver
+  One, while the timeline read "Waiting on Grok Bot".
+  - The step's rows explain it: Reassigned, with Actor Grok Bot and OriginalActor AMF Approver One.
+  - The column names the step's original approver. The script now says so.
+- **AI-03.11.** The first new conversation showed "Something went wrong. Refresh and try again."
+  - That is the panel's own message, not the agent's, which reads "Sorry, something went wrong.
+    Please try again."
+  - It worked after the panel's Refresh.
+- **AI-03.16.** B's entry appeared once the timeline's refresh button was clicked. That is as
+  designed: the panel cannot raise the page's `RefreshEvent` (M13.7). Matrix Submission showed
+  ticked after one reload, which the script allows.
+
+**(d) The org after the run:**
+
+```
+records     PR-00000052 "AICHECK R20261025-0130 A" and PR-00000053 "... B": 500, AMER, Low, by Grok Bot
+log rows    ADL-00000035 (A) and ADL-00000036 (B): Submitted, PR_Catch_All v1 -> PR_Two_Level_Mgmt,
+            by Grok Bot. 32 rows in all, 30 before
+approvals   A: Started; Reassigned (Actor Grok Bot, OriginalActor AMF Approver One); Removed (recall)
+            B: Started; Removed (recall)
+afterwards  the guard false on both; no work item for Grok Bot; the same seven old pending approvals;
+            nine rules, all at version 1, and no PR_EMEA_Over_500k
+licences    Agentforce (Default) 2 of 5, Einstein Prompt Templates 2 of 5,000: Tejas Vernekar and Grok Bot
+```
+
+**(e) The script after the run.** Its figures were read again, so the next run starts from them:
+- AI-02.4 now expects 19 checked and 7 skipped.
+- AI-02.5 now expects 32 decisions: Purchase Requests 28, of which 27 routed and 1 blocked.
+- AI-03.5 now expects Grok Bot's 11 requests, with 10 of them listed.
+- AI-04's sums now start from 19 and 32.
+
+A new `PARTS` parameter runs the Claude part alone (AI-00, AI-04, AI-05). AI-00.1 now accepts an
+existing session.
+
+| File | Change | Notes |
+|---|---|---|
+| `docs/ui-tests/ai-check-scripts.md` | **new** | the AI checks for the agent; corrected and refreshed after the run (c, e) |
+| `docs/ui-tests/README.md` | **modified** | the AI checks: what they cover, before and after a run, the first run, the Claude part alone |
+| `docs/user-guide.md` | **modified** | §7.3: one confirmation, in the chat; how to see the exact route before confirming |
+| `docs/functional-documentation.md` | **modified** | §10.3: the process the preview found, not "showed" |
+| `docs/technical-documentation.md` | **modified** | §19: the confirmation's wording; the explanations' sign-off line |
+| `docs/build-playbook.md` | **modified** | M13's, M14's and M15's manual checks passed; Part 5 |
+| `docs/handoff.md`, this file | **modified** | the checks recorded; Grok Bot's access; section 8 |
+
+### M15.7 Carried into later phases
+
+This table supersedes M16.6's.
+
+| Item | Owner |
+|---|---|
+| M16's gate step 8: the conversations in claude.ai and Claude Code (`docs/claude-connector.md` §3 and §4; handoff 8.0). The AI-check script's AI-04 runs claude.ai's half (`RUN_CLAUDE` `yes`, `PARTS` `AI-04`); Claude Code needs a person. Record as M16.8 | user |
+| The assistant's confirmation names the route in its own words, with no rule or values (O2). Rewording its submit branch, with M15.3f's lesson, so that the preview's summary comes before the confirmation would close it. It is an agent change, so it needs a phase | a later phase |
+| Einstein's explanations and briefings can end with a sign-off line. One instruction in `AMF_Explain_Approval_Decision` would stop it. Editing the template needs the retrieved-form step (M13.7a) | a later phase |
+| Grok Bot holds System Administrator, both AI licences, the two standard user sets, both agent-access sets and `AMF_Claude_Connector_Admin`. Remove what is not needed between runs | user |
+| The AI-check script's figures date from after this run. Refresh them after any submission or completed approval in the org, and by 2026-11-17, when the oldest decision leaves the 90-day window | whoever runs it next |
+| A connector that Grok Bot adds in claude.ai acts as Grok Bot for that claude.ai account until it is reconnected | whoever runs AI-04 |
+| A `PermissionSetAssignment` query lists the standard AI sets only when it selects `IsActive` | whoever checks access |
+| ~~M13's step 11, M14's step 9 and M15's step 11, the manual UI checks~~ | **passed in M15.7** |
+| ~~The panel's page-context names, and how it renders submit's confirmation, unobserved since M13.7~~ | **observed in M15.7** |
+| ~~The UI test suite has no M13, M14 or M15 case~~ | **closed in M15.7 by `docs/ui-tests/ai-check-scripts.md`** |
+| M16.6's other items carry unchanged | as there |

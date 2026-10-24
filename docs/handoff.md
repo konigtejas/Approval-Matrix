@@ -1,11 +1,14 @@
 # Handoff — the Approval Matrix Framework, in full, after M16
 
-**As of 2026-10-24.** `develop`, pushed to `origin` (github.com/konigtejas/Approval-Matrix), holds
-every phase through M16. The last phase commit is `a035bdb`. Later commits close M16's gate step 7,
-record SHAs, update this file, add the functional and technical documentation and the user guide,
-and restore a heading in the architecture document. Every phase is built, gated in `amf-dev` and
-committed. The user owes four checks: three manual UI checks from M13 to M15, and M16's
-conversations in Claude (section 8). Nothing beyond M16 is authorised.
+**As of 2026-10-25.** `develop`, pushed to `origin` (github.com/konigtejas/Approval-Matrix), holds
+every phase through M16. The last phase commit is `a035bdb`. Later commits:
+- close M16's gate step 7, and the manual UI checks of M13 to M15 (M15.7, run by Grok Bot);
+- record SHAs and update this file;
+- add the functional and technical documentation, the user guide and the AI-check script;
+- restore a heading in the architecture document.
+
+Every phase is built, gated in `amf-dev` and committed. The user owes one check: M16's conversations
+in Claude (section 8.0). Nothing beyond M16 is authorised.
 
 This is the detailed handoff. It is meant to let a person, or a fresh Claude session, pick the
 project up with no conversation history. Where it summarises, these are the sources:
@@ -15,19 +18,20 @@ project up with no conversation history. Where it summarises, these are the sour
 | `CLAUDE.md` | What is authorised, the conventions, the environment. A fresh session reads it first: it decides what may be built |
 | `docs/architecture.md` | v3.0, the target design, with each phase's implementation notes in the sections they touch. §13.4 is the phase table |
 | `docs/build-playbook.md` | Part 3: every phase's build and gate. Part 5: the proposed roadmap, which authorises nothing |
-| `docs/technical-log.md` | The status board, and a detailed entry per phase, each ending with the items it carries forward. M16.6 is the latest such table |
+| `docs/technical-log.md` | The status board, and a detailed entry per phase, each ending with the items it carries forward. M15.7, recorded after M16.7, holds the latest such table |
 | `docs/claude-connector.md` | The Claude connector (M16): setting it up, connecting Claude, what to ask, troubleshooting |
 | `docs/functional-documentation.md` | For business readers, as of M16.7: what the framework does, its processes and business rules, the configured matrix, and its controls |
 | `docs/technical-documentation.md` | For developers, as of M16.7: the system as built, its deployment, how to extend it, and troubleshooting |
 | `docs/user-guide.md` | For submitters, approvers and matrix administrators, as of M16.7: how to use it, by task |
 | `docs/decisions.md` | One line per approved choice or deviation from the design, newest first |
 | `docs/spike-results.md` | The Flow approvals spike (M6). Its Round 2 binds any future Flow phase |
-| `docs/ui-tests/` | The UI test suite, a script for an AI agent driving a browser, and the guide for whoever runs it |
+| `docs/ui-tests/` | Two scripts for an AI agent driving a browser, the UI suite and the AI checks, and the guide for whoever runs them |
 
 **Reading order for a fresh session:**
 1. `CLAUDE.md`;
 2. this file;
-3. the technical log's status board and its M16 entry, especially M16.6;
+3. the technical log's status board, its M16 entry, and M15.7 after it, especially M15.7's carried
+   table;
 4. the playbook's Part 3 entry for the phase being worked on.
 
 ## Contents
@@ -39,7 +43,7 @@ project up with no conversation history. Where it summarises, these are the sour
 5. Access and permissions
 6. The org, `amf-dev`
 7. How to work on it
-8. Owed by the user: the manual UI checks
+8. The manual checks
 9. Open items and known limits
 10. What remains of the target design
 11. Decisions waiting on the user
@@ -73,9 +77,9 @@ project up with no conversation history. Where it summarises, these are the sour
     Admin Assistant (v1);
   - three Einstein prompt templates;
   - two MCP servers for Claude, Approval Matrix and Approval Matrix Admin, both active (section 4.8).
-- **Owed by the user:** three manual checks in the browser, one each from M13, M14 and M15, and
-  M16's conversations in claude.ai and Claude Code (section 8). M16's MCP probe passed on both
-  servers after the user's one login (M16.7).
+- **Owed by the user:** M16's conversations in claude.ai and Claude Code (section 8.0). M16's MCP
+  probe passed on both servers after the user's one login (M16.7). The manual checks of M13, M14 and
+  M15 passed on 2026-10-24, run in the browser by Grok Bot (M15.7).
 - **What is next:** nothing is authorised. The largest part of the target design still unbuilt is
   Flow approvals (section 10.1).
 
@@ -229,9 +233,9 @@ Round 2).
 | M10 | The Flow invocable and REST over `submitEach()`; chunked, isolated submission; the log written after the platform answers | 255/255 | `393d9d5` (+ M10.7, M10.8) |
 | M11 | Opportunity, a second governed object | 264/264 | `96e5692` |
 | M12 | Template lifecycle (release manifest), queue and committee templates, portability. M12.6: the first UI test run, two timeline fixes. M12.7: the re-run. M12.8: Request Name and two list views | 274/274 | `bcedf6f` (+ `72f4dfd`, `0049677`, `c59e758`) |
-| M13 | The Approval Matrix Assistant, and plain-English explanations on the timeline | 334/334, 75/75 Jest, 9/9 agent cases | `e81f487` |
-| M14 | The assistant for submitters and approvers: what-if, my requests, my approvals, briefings; current approvers see why | 371/371, 14 cases 42/42 twice | `74ea4ed` |
-| M15 | The Approval Matrix Admin Assistant: draft a rule, check a change's impact, the matrix's health | 404/404, 6 cases 18/18 twice | `11941dc` |
+| M13 | The Approval Matrix Assistant, and plain-English explanations on the timeline | 334/334, 75/75 Jest, 9/9 agent cases; manual check passed (M15.7) | `e81f487` (+ M15.7) |
+| M14 | The assistant for submitters and approvers: what-if, my requests, my approvals, briefings; current approvers see why | 371/371, 14 cases 42/42 twice; manual check passed (M15.7) | `74ea4ed` (+ M15.7) |
+| M15 | The Approval Matrix Admin Assistant: draft a rule, check a change's impact, the matrix's health. M15.7: the manual checks of M13 to M15, run by Grok Bot | 404/404, 6 cases 18/18 twice; manual check passed (M15.7) | `11941dc` (+ M15.7) |
 | M16 | The Claude connector: two Salesforce-hosted MCP servers, Claude writing from Apex's facts, a signed preview token for submitting | 451/451, REST smoke on real records; MCP probe on both servers (M16.7) | `a035bdb` (+ M16.7, `72ad84f`) |
 
 Every phase also has a follow-up commit recording its SHA in the technical log. The handoff has its
@@ -298,11 +302,15 @@ agents. They run as the logged-in user, so every action has that user's access a
 - "Is anything waiting for my approval?" (with a throwaway reassigned to the user) → "One request is
   waiting on you … PR-00000050 … step "Manager" …"
 
-**Unobserved until the manual check (section 8):**
-- whether the Lightning panel passes the open record to the agent as `currentRecordId` and
-  `currentObjectApiName`, as Testing Center does;
-- how the panel renders submit's confirmation. The platform asks, and the instructions also tell
-  the agent to ask, so the user might be asked twice.
+**Observed in the manual check (M15.7):**
+- **The Lightning panel passes the open record** as `currentRecordId` and `currentObjectApiName`, as
+  Testing Center does. "Where would this go?" and "Submit it." were answered about the record on
+  screen.
+- **A submission is confirmed once,** in the chat, as plain text with no buttons. In that run the
+  confirmation read "You're about to submit this record for two-level management approval." It gave
+  no rule or values, though the instructions say to give the preview's summary with every name
+  unchanged. The safeguards held: the preview ran, the record and process were bound from it, and
+  nothing was submitted before the user's yes (section 9).
 
 ### 4.3 Explanations, briefings and the current-approver rule
 
@@ -620,17 +628,20 @@ every call runs as the signed-in user. `docs/claude-connector.md` is the guide.
 - **Approvers.** An approver must be able to read the record, and must hold a licence that includes
   the object (§11).
 
-### 5.3 Who has what in `amf-dev` (2026-10-24)
+### 5.3 Who has what in `amf-dev` (2026-10-25)
 
 | User | Profile | Framework access | AI access |
 |---|---|---|---|
 | Tejas Vernekar (`tejas.vernekar.0d104ca05e80@agentforce.com`), the CLI user | System Administrator | `Approval_Matrix_Admin`, `AMF_Claude_Connector_Admin` | both licences, both standard sets plus their Admin and Manager sets, both agent-access sets |
-| Grok Bot (`tejas.vernekar@wissen.com.grokbot`), the UI suite's user | System Administrator | `Approval_Matrix_Admin` | none |
+| Grok Bot (`tejas.vernekar@wissen.com.grokbot`), the user of the UI suite and the AI checks | System Administrator | `Approval_Matrix_Admin`, `AMF_Claude_Connector_Admin` (2026-10-25) | both licences, both standard user sets, both agent-access sets (2026-10-24) |
 | Pallab Saikia (`pallab.saikia@wissen.com.dev02`), created 2026-10-23 | System Administrator | none | none. The user chose to leave it as it is |
 | AMF Approver One to Five (`amfu1`–`amfu5@amf.00daj000012gj9b.dev`) | Standard Platform User | `Approval_Matrix_User` | none |
 | AMF Framework Service (`amfsvc@…`) | Standard Platform User | none | none |
 
-Licences: Agentforce (Default) 1 of 5 used; Einstein Prompt Templates 1 of 5,000 used.
+Licences: Agentforce (Default) 2 of 5 used; Einstein Prompt Templates 2 of 5,000 used.
+
+A query of `PermissionSetAssignment` lists the standard AI sets only when it selects `IsActive`.
+Without it, they seem to be missing.
 
 ---
 
@@ -676,6 +687,9 @@ it.
 | PR-00000048 | `a02aj00000jdD8OAAU` | 150,000, APAC, Low | `PR_Three_Level_Finance` via `PR_High_Value_APAC` | agent test cases; never submitted |
 | PR-00000049 | `a02aj00000jdc3VAAQ` | M13 gate throwaway | recalled | — |
 | PR-00000050 | `a02aj00000jds3RAAQ` | M14 gate throwaway, 500, AMER, Low | recalled (ADL-00000033) | — |
+| PR-00000051 | `a02aj00000jiH9uAAE` | M15.7 throwaway, 500, AMER, Low | recalled (ADL-00000034) | Grok Bot's first try at the AI checks, unreported |
+| PR-00000052 | `a02aj00000jipL3AAI` | AICHECK R20261025-0130 A, 500, AMER, Low | recalled (ADL-00000035) | M15.7: submitted by the modal, reassigned, briefed |
+| PR-00000053 | `a02aj00000jipbBAAQ` | AICHECK R20261025-0130 B, 500, AMER, Low | recalled (ADL-00000036) | M15.7: submitted by the assistant |
 
 - **Pending approvals,** all from earlier phases, none needed by an open check:
   - PR-00000002, -03, -07, -27 and -28, in `PR_Three_Level_Finance`;
@@ -688,8 +702,8 @@ it.
 - **Stray guards.** PR-00000014 to -20 and -23 to -25 carry *Matrix Submission* with no pending
   approval. They are the M6 spike's records, and the Flow phase's teardown removes them
   (`spikes/flow-approvals/scripts/teardown.ps1`).
-- **The decision log has 30 rows.** Rows are permanent. The 30th, ADL-00000034, was submitted by
-  Grok Bot (the UI suite's user) on 2026-10-24 at 15:20 UTC, on record `a02aj00000jiH9uAAE`; M16
+- **The decision log has 32 rows.** Rows are permanent. ADL-00000034 was Grok Bot's first try at
+  the AI checks, on 2026-10-24 at 15:20 UTC (PR-00000051). ADL-00000035 and -36 are M15.7's run. M16
   wrote none.
 
 ### 6.5 Take care with
@@ -699,8 +713,8 @@ it.
 - **Before running the assistant's suite,** make sure nothing is assigned to the CLI user: the case
   "Is anything waiting for my approval?" expects nothing. Recall any throwaway first.
 - **Grok Bot's profile, permission set, manager, locale and time zone are load-bearing** for the UI
-  suite (`docs/ui-tests/README.md`). Return its System Administrator profile to Standard User
-  between runs, if wanted.
+  suite, and its AI access for the AI checks (`docs/ui-tests/README.md`). Between runs, return its
+  System Administrator profile to Standard User and remove its AI and connector access, if wanted.
 
 ---
 
@@ -848,10 +862,17 @@ New content makes a new version, which Einstein does not use until the source na
 
 ---
 
-## 8. Owed by the user: the manual UI checks
+## 8. The manual checks
 
-Do these in the browser as Tejas Vernekar, who has every licence and access set. Record 8.0's
-results in the technical log as **M16.8**, and the three UI checks as **M15.7**.
+**M13's, M14's and M15's passed on 2026-10-24** (technical log M15.7). Grok Bot ran them in the
+browser with `docs/ui-tests/ai-check-scripts.md` (section 8.1).
+
+**M16's is owed:** section 8.0. Record its results in the technical log as **M16.8**.
+- **claude.ai's half:** the script's AI-04 can run it. Give Grok Bot `RUN_CLAUDE` `yes`,
+  `PARTS` `AI-04` and the client ID (`docs/ui-tests/README.md`).
+- **Claude Code's half:** needs a person.
+
+Grok Bot and Tejas Vernekar both hold every licence and access set the checks need (section 5.3).
 
 ### 8.0 M16, gate step 8: the Claude connector
 
@@ -878,80 +899,57 @@ says. Then, in each:
 3. "Why did PR-00000042 go where it went?" **Expect:** an explanation consistent with ADL-00000027.
 4. "What is waiting for my approval?" **Expect:** nothing, unless something is assigned to you.
 5. **A throwaway:**
-   1. Create a Purchase Request (500, AMER, Low) and say "Submit it". Claude previews it, names
-      `PR_Two_Level_Mgmt`, asks, and on yes asks permission for `submit_for_approval`.
+   1. Create a Purchase Request (500, AMER, Low) and say "Submit PR-000000NN for approval", with its
+      number: Claude cannot see the screen. Claude previews it, names `PR_Two_Level_Mgmt`, asks,
+      and on yes asks permission for `submit_for_approval`.
    2. Reassign the step to yourself in Salesforce, then ask "Brief me on it". **Expect:** the facts
       and no recommendation.
    3. Recall it; *Matrix Submission* unticks.
 6. "Approve it for me." **Expect:** Claude says it cannot; there is no such tool.
 7. **Admin connector:** "Draft a rule for purchase requests: anything over 500,000 in EMEA should go
    to the finance committee." **Expect:** `get_matrix_context`, then `check_rule_draft`, then
-   `PR_EMEA_Over_500k` at priority 15 with its file path. "What would it change?" then "How has the
-   matrix been doing?"
+   `PR_EMEA_Over_500k` at priority 15 with its file path.
+   - "What would it change?" **Expect:** none changed, 7 skipped, and 19 checked, plus one for each
+     throwaway you have recalled.
+   - "How has the matrix been doing over the last 90 days?" **Expect:** 32 decisions plus your
+     throwaways (Purchase Requests 28 plus yours, 1 of them blocked; Opportunities 4), none failed.
+
+   These figures are from after M15.7's run.
 
 If claude.ai fails after a good login, Claude Code connects directly (`docs/claude-connector.md` §6).
 
-### 8.1 M15, gate step 11: the Admin Assistant
+### 8.1 M13 to M15: passed on 2026-10-24 (M15.7)
 
-1. From any page, open the Agentforce panel and choose **Approval Matrix Admin Assistant**.
-2. Ask: "Draft a rule for purchase requests: anything over 500,000 in EMEA should go to the finance
-   committee."
-   - **Expect:**
-     - a draft such as `PR_EMEA_Over_500k`, with condition
-       `Amount__c > 500000 && Region__c == 'EMEA'`;
-     - process `PR_Finance_Committee`, priority 15, "tried after PR_High_Value_APAC (10) and before
-       PR_High_Risk (20)";
-     - a file path under `force-app/main/default/customMetadata/`, and the metadata;
-     - "It routes nothing until you release it".
-   - **Fail:** a `.json` or `.yml` path, a priority such as "Medium", or a condition such as
-     `Amount > 500,000 AND Region = 'EMEA'` all mean the model wrote the draft itself (4.7, item 1).
-3. Ask: "What would that draft change for recent purchase requests?"
-   - **Expect:** "Checked 17 Purchase Requests decided in the last 90 days … 7 were skipped …",
-     with per-process counts. Those were the figures late on 2026-10-24, after the UI suite's
-     ADL-00000034 (16 before it); they move as the 90-day window moves and as approvals finish.
-4. Ask: "How has the approval matrix been doing over the last 90 days?"
-   - **Expect:** a short summary whose figures match the log. Late on 2026-10-24 that was 30
-     decisions, 26 on Purchase Requests and 4 on Opportunities.
-5. Ask: "Deploy that rule and activate it."
-   - **Expect:** a refusal: it cannot change the matrix, and a draft goes live only through the
-     release gate.
-6. Check that Setup → Custom Metadata Types → Approval Matrix Rule → Manage Records shows the same
-   nine rules.
+Grok Bot ran `docs/ui-tests/ai-check-scripts.md` as R20261025-0130. It ran AI-00 to AI-03 and
+AI-05, 31 steps, and every step passed. AI-04, the Claude part, was not run.
 
-### 8.2 M14, gate step 9: the Assistant's new questions
+**The Explain button (M13's step 11).**
+- PR-00000042's card had the badge and "Written by Einstein … from decision log ADL-00000027".
+- Its facts were right, and they were right again when the refresh icon wrote it anew.
+- Each text ended with a line such as "I appreciate your prompt attention to this record." (section
+  9).
 
-1. Open PR-00000047 and choose **Approval Matrix Assistant** in the panel.
-2. "Where would this go?"
-   - **Expect:** `PR_Two_Level_Mgmt` via `PR_Catch_All`, and nothing submitted.
-   - **If it asks which record you mean,** the panel passes the page context under other names.
-     Only the two `current…` declarations in the `.agent` file then need changing.
-3. "What if the amount were 120000 and the region APAC?"
-   - **Expect:** `PR_Three_Level_Finance` under `PR_High_Value_APAC`, "today" `PR_Two_Level_Mgmt`,
-     and nothing changed or submitted.
-4. "Where do my requests stand?"
-   - **Expect:** your recent requests, those still waiting first, each with its approver and date.
-5. "What is waiting for my approval?"
-   - **Expect:** nothing, unless something is assigned to you.
-6. **The briefing:**
-   1. Create a throwaway Purchase Request: 500, AMER, Low.
-   2. Click **Submit for Approval**. The modal names `PR_Two_Level_Mgmt`; confirm. The approval now
-      waits on AMF Approver One.
-   3. In its Approval History, **Reassign** the step to yourself.
-   4. Ask "What is waiting for my approval?". **Expect:** the throwaway, at step "Manager".
-   5. Ask "Brief me on it". **Expect:** `PR_Catch_All`, `PR_Two_Level_Mgmt`, the step reassigned
-      to you, and no recommendation to approve or reject.
-   6. **Recall** the throwaway. *Matrix Submission* unticks.
-7. **Optional: submit through the assistant.** On another throwaway, "Submit it" asks for
-   confirmation. Note whether you are asked once or twice. The timeline shows the new entry after
-   its refresh button; the panel cannot refresh the page. Recall it afterwards.
+**The Admin Assistant (M15's step 11).**
+- It drafted `PR_EMEA_Over_500k` at priority 15, which passed the release checks.
+- The draft's impact: 17 checked, none changed, 7 skipped.
+- The health report's figures matched the log. It gave them per object, without the overall total.
+- It refused to deploy, and Setup still showed the nine rules.
 
-### 8.3 M13, gate step 11: the Explain button
+**The Approval Matrix Assistant (M14's step 9).**
+- It answered "Where would this go?" about PR-00000047 without asking which record.
+- It handled the what-if and both lists.
+- **Throwaway A (PR-00000052):** submitted with the button, reassigned to Grok Bot, listed as
+  waiting, briefed without a recommendation, then recalled.
+- **Throwaway B (PR-00000053):** submitted by "Submit it." after one confirmation in the chat, then
+  recalled.
 
-1. Open PR-00000042. In the Approval Timeline, open the newest entry's details.
-2. Click **Explain in plain English**.
-   - **Expect:** "Einstein is writing…", then a card with an *AI-generated* badge and "Written by
-     Einstein at … from decision log ADL-00000027". The recorded rule, condition and values stay
-     below it, and the refresh icon writes it again.
+**Notes, none of them a failure:**
+- once, the panel's first new conversation said "Something went wrong. Refresh and try again", and
+  the panel's own Refresh cleared it;
+- after a reassign, the Approval History card's Assigned To column keeps showing the step's original
+  approver, while the timeline names the current one;
+- after the assistant submits, the timeline shows the entry only once its refresh button is clicked,
+  and Matrix Submission may need a page reload.
 
 ---
 
@@ -959,27 +957,28 @@ If claude.ai fails after a good login, Claude Code connects directly (`docs/clau
 
 | Item | Owner | Source |
 |---|---|---|
-| M16's conversations in claude.ai and Claude Code (section 8.0); its MCP probe passed (M16.7) | user | M16.6, M16.7 |
+| M16's conversations in claude.ai and Claude Code (section 8.0); its MCP probe passed (M16.7). The AI-check script's AI-04 can run claude.ai's half | user | M16.6, M16.7, M15.7 |
 | claude.ai's connector broker has had Salesforce login failures (anthropics/claude-ai-mcp #184, #251, both closed); Claude Code connects directly | step 8.0 | M16.6 |
 | The MCP server definitions deploy only through the setup script, at Metadata API 67.0; if `sourceApiVersion` rises to 67.0, the `.forceignore` line and the throwaway project can go | whoever raises it | M16.1 |
 | `AMF_McpRuleContext.GUIDE` repeats the drafting template's grammar; keep them in step | whoever edits either | M16.6 |
 | The decision log cannot tell which rows came through Claude | a later phase, if wanted | M16.6 |
-| The three manual UI checks (section 8) | user | M13.7, M14.6, M15.6 |
-| The panel's page-context names and how it renders submit's confirmation are unobserved | step 8.2 | M13.7 |
+| The assistant's confirmation of a submission names the route in its own words ("two-level management approval") and gives no rule or values (section 4.2). Giving the preview's summary before the confirmation would close it; that is an agent change | a later phase | M15.7 |
+| Einstein's explanations and briefings can end with a sign-off line, such as "I appreciate your prompt attention to this record." One instruction in the template would stop it (7.5) | a later phase | M15.7 |
 | Einstein's Trust Layer prompt-injection and toxicity detection are off. Approver comments, administrators' words and rule descriptions reach the model | user | M13.7, M15.6 |
-| Pallab Saikia, or any other user, has no access to the assistants (5.2) | user | 2026-10-23 |
+| Pallab Saikia has no access to the assistants (5.2). Grok Bot has, for the AI checks (5.3) | user | 2026-10-23, M15.7 |
+| Grok Bot holds System Administrator, both AI licences and the connector admin set; remove what is not needed between runs | user | M12.6, M15.7 |
+| The AI-check script's figures date from after M15.7's run. Refresh them after any submission or completed approval in the org, and by 2026-11-17, when the oldest decision leaves the 90-day window | whoever runs it next | M15.7 |
 | A drafted rule's name is checked against active rules only; widening `AMF_RuleProvider` would close it | a later phase | M15, decisions |
 | Releasing a draft is the administrator's own configuration release | administrator | M15 |
-| The impact check skips records in an approval process now: 7 of 23 in `amf-dev` | as designed | M15.6 |
+| The impact check skips records in an approval process now: 7 of 26 in `amf-dev` | as designed | M15.6, M15.7 |
 | Topic assertions depend on the platform's model; two consecutive passes are the bar | whoever reruns | M14.6 |
-| The submitters' assistant was not reworded after M15's lesson (4.7, item 1). It passes its suite, but fabrication is possible in principle | a later phase | M15.6 |
+| The submitters' assistant was not reworded after M15's lesson (4.7, item 1). It passes its suite, but fabrication is possible in principle, and its confirmation renamed the route in M15.7 | a later phase | M15.6, M15.7 |
 | A follow-up what-if ("And would it …") carries the earlier values over; the answer says so | as designed | M14.5 |
 | Real approvers would each need an Agentforce licence to use briefings and "my approvals" | user | M14.6 |
 | After the assistant submits, the timeline needs its refresh button | if wanted | M13.7 |
 | The timeline LWC words a `Reassigned` row "X, for Y" | a later LWC change | M14.3f |
 | `AMF_AgentSubmitRoute` keeps its own approver-name lookup, duplicated by `AMF_AgentSupport.actorNamesOf()` | a hardening pass | M14.6 |
 | `amfSubmitForApproval` and `amfDecisionTimeline` keep their own `messageOf`; `c/amfErrors` exists for them | a hardening pass | M7.6, M13.7 |
-| The UI test suite has no M13, M14 or M15 case | the next UI run | M13.7 |
 | The agent test specs and definitions name `amf-dev`'s records; another org needs its own | whoever runs them elsewhere | M13.7 |
 | Editing a prompt template needs the retrieved-form step (7.5) | whoever edits one | M13.7a |
 | Stray guards on PR-00000014 to -25, and seven old pending approvals (6.4) | the Flow phase; user | M8.7c, M15.3g |
@@ -1046,7 +1045,9 @@ removes PR-00000014 to -25 and their guards.
 
 - Lightning types, for richer cards in the agent panel.
 - The approver's briefing as a card on the record page.
-- Rewording the submitters' assistant in the style M15 found reliable (4.7, item 1).
+- Rewording the submitters' assistant in the style M15 found reliable (4.7, item 1), including its
+  submit branch, so that a confirmation shows the preview's process, rule and values (M15.7).
+- One instruction in the explanation template against a closing sign-off line (M15.7).
 - **Claude, beyond the connector** (proposed 2026-10-24; playbook Part 5):
   - Claude as Agentforce's model, where the org offers one;
   - an Apex runner over the Claude API behind `AMF_PromptRunner`, for structured outputs and PDF
@@ -1068,16 +1069,17 @@ removes PR-00000014 to -25 and their guards.
 
 ## 11. Decisions waiting on the user
 
-1. **M16's conversations in Claude, and the three manual UI checks** (section 8).
+1. **M16's conversations in Claude** (section 8.0). Grok Bot can run claude.ai's half; Claude Code
+   needs a person.
 2. **Whether to turn on the Trust Layer's prompt-injection and toxicity detection** in `amf-dev`.
 3. **Who else gets access to the assistants and the Claude connector,** starting with Pallab Saikia
    (5.2). The connector needs no licence.
 4. **The next phase,** authorised in `CLAUDE.md`. For Flow approvals, say whether committee steps
    are wanted on Flow. If they are, a person must find the unanimous value in Flow Builder first.
 5. **Optional:**
-   - reword the submitters' assistant (10.3);
+   - reword the submitters' assistant, and the explanation template's sign-off (10.3);
    - widen `AMF_RuleProvider` for drafted rule names;
-   - add M13 to M15 cases to the UI suite;
+   - remove Grok Bot's AI and connector access between runs (5.3);
    - commit or ignore `package-lock.json`.
 
 ---
