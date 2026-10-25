@@ -12,3 +12,9 @@ package.xml
 **/__tests__/**
 
 node_modules/
+
+# Claude connector MCP servers (M16). Their tool annotations (readOnly, destructive, idempotent,
+# openWorld) exist only from Metadata API 67.0, and a deploy at this project's sourceApiVersion
+# (66.0) silently resets them to false. So the project never deploys them;
+# scripts/setup-claude-connector.ps1 does, from a throwaway project at 67.0 (technical log M16.1).
+**/mcpServerDefinitions/**

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <description>Confirmation modal opened by amfSubmitForApproval: shows the route the matrix previewed, and why, before anything is submitted (arch doc 6.4, 7).</description>
+    <isExposed>false</isExposed>
+</LightningComponentBundle>

@@ -1,0 +1,36 @@
+{
+  "description": "Released approval templates (arch doc 5.1, M12). A released template is never edited in place: scripts/validate-approval-matrix-source.ps1 fails one whose fingerprint no longer matches, so the one change it may undergo is deactivation. A change is a new version, <name>_v2, released here beside it, with the rules repointed and the previous version deactivated. To release a template, add the line the gate prints for it. Never edit a fingerprint.",
+  "fingerprint": "SHA-256 of the template's XML with its <active> element removed, insignificant whitespace dropped and line endings normalised, as Get-TemplateFingerprint computes it. Source is in the form a retrieve returns, so a retrieve does not disturb it.",
+  "templates": [
+    {
+      "template": "Purchase_Request__c.PR_Two_Level_Mgmt",
+      "releasedIn": "M3",
+      "sha256": "d26b2f09a085ef6a3f614a14067e31a7b0462c9080329fdee4f0f8ce36cee373"
+    },
+    {
+      "template": "Purchase_Request__c.PR_Three_Level_Finance",
+      "releasedIn": "M3",
+      "sha256": "4cadeb6b392c4a252a900b45800c75ff66a2d47a22f5ab1020319d610ef3a850"
+    },
+    {
+      "template": "Opportunity.OPP_Manager_Approval",
+      "releasedIn": "M11",
+      "sha256": "418519c55a5e9b0ad1ac480ebc14612d0c7110d7feb01a8fc62dc9b596dee7fd"
+    },
+    {
+      "template": "Opportunity.OPP_Two_Level_Mgmt",
+      "releasedIn": "M11",
+      "sha256": "a1234dd4f876dfc33aed189ec1af8dcaa23ee4d91e06e95c533876f99ea60272"
+    },
+    {
+      "template": "Purchase_Request__c.PR_Credit_Risk_Queue",
+      "releasedIn": "M12",
+      "sha256": "3023d868a452f485407699dfeaf0100e22ee685c0da5ba6c0711e4606eff2cf3"
+    },
+    {
+      "template": "Purchase_Request__c.PR_Finance_Committee",
+      "releasedIn": "M12",
+      "sha256": "5b8c771862aedc89247491a4a24faa09aa4d995e3cf94d402d94f3980847cf39"
+    }
+  ]
+}

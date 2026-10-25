@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<PermissionSet xmlns="http://soap.sforce.com/2006/04/metadata">
+    <label>Approval Matrix Claude Connector User</label>
+    <description>Claude (M16): the eight Approval Matrix tools, for submitters and approvers. Assign with Approval_Matrix_User, which grants the records and fields. Pre-authorises the AMFClaudeConnector app.</description>
+    <hasActivationRequired>false</hasActivationRequired>
+    <classAccesses>
+        <apexClass>AMF_McpBriefingFacts</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>AMF_McpDecisionFacts</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>AMF_McpFindRecord</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>AMF_McpMyApprovals</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>AMF_McpMyRequests</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>AMF_McpPreviewRoute</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>AMF_McpSubmitRoute</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+    <classAccesses>
+        <apexClass>AMF_McpWhatIfRoute</apexClass>
+        <enabled>true</enabled>
+    </classAccesses>
+</PermissionSet>

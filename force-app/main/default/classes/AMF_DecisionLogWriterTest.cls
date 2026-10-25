@@ -1,0 +1,284 @@
+/**
+ * The audit artefact's own suite: one row per outcome, in the shapes 3.3
+ * describes.
+ *
+ * Architecture section: 3.3, 6.1 step 8 (and its M10 note), 8.
+ *
+ * AMF_DecisionLogLockTest (M1) covers the validation rule. Since M10 the
+ * writer performs no update for it to police: the engine saves each row once
+ * the platform has answered, with Execution_Ref_Id__c already on it.
+ */
+@IsTest
+private class AMF_DecisionLogWriterTest {
+
+    private static final String OBJECT_NAME = 'Purchase_Request__c';
+
+    private static AMF_RuleDefinition rule() {
+        return new AMF_RuleBuilder()
+            .named('PR_High_Value_APAC')
+            .withExpression('Amount__c > 100000 && Region__c == \'APAC\'')
+            .routingTo('PR_Three_Level_Finance')
+            .atVersion(7)
+            .build();
+    }
+
+    private static Purchase_Request__c governedRecord() {
+        Purchase_Request__c record = new Purchase_Request__c(
+            Amount__c = 250000,
+            Region__c = 'APAC',
+            Risk_Level__c = 'Low'
+        );
+        insert record;
+        return record;
+    }
+
+    @IsTest
+    static void aSubmittedRowSnapshotsTheRuleRatherThanReferencingIt() {
+        Purchase_Request__c record = governedRecord();
+
+        Approval_Decision_Log__c row = AMF_DecisionLogWriter.forSubmission(
+            record.Id,
+            OBJECT_NAME,
+            rule(),
+            '{"Amount__c":250000,"Region__c":"APAC"}'
+        );
+        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>{ row });
+
+        Approval_Decision_Log__c saved = [
+            SELECT
+                Record_Id__c,
+                Object_API_Name__c,
+                Matched_Rule__c,
+                Rule_Version__c,
+                Expression_Snapshot__c,
+                Selected_Process__c,
+                Evaluated_Values__c,
+                Execution_Ref_Id__c,
+                Outcome__c,
+                Submitted_By__c,
+                Submitted_At__c
+            FROM Approval_Decision_Log__c
+            WHERE Id = :row.Id
+        ];
+
+        Assert.areEqual('Submitted', saved.Outcome__c);
+        Assert.areEqual(String.valueOf(record.Id), saved.Record_Id__c);
+        Assert.areEqual(OBJECT_NAME, saved.Object_API_Name__c);
+        Assert.areEqual('PR_High_Value_APAC', saved.Matched_Rule__c);
+        Assert.areEqual(7, saved.Rule_Version__c);
+        Assert.areEqual(
+            'Amount__c > 100000 && Region__c == \'APAC\'',
+            saved.Expression_Snapshot__c,
+            '3.3: the expression text as evaluated, so a later edit cannot rewrite history'
+        );
+        Assert.areEqual('PR_Three_Level_Finance', saved.Selected_Process__c);
+        Assert.areEqual('{"Amount__c":250000,"Region__c":"APAC"}', saved.Evaluated_Values__c);
+        Assert.areEqual(UserInfo.getUserId(), saved.Submitted_By__c);
+        Assert.isNotNull(saved.Submitted_At__c);
+        Assert.isNull(
+            saved.Execution_Ref_Id__c,
+            'The writer leaves the reference to the engine, which sets it once the platform answers (M10)'
+        );
+    }
+
+    @IsTest
+    static void theGovernedRecordLookupIsPopulatedAlongsideTheTextReference() {
+        // Record_Id__c is the provenance and is object-agnostic; the lookup is the
+        // navigational convenience that gives Purchase_Request__c a related list.
+        // The engine finds it by describe, so a second governed object is a new
+        // lookup field and no change to this class.
+        Purchase_Request__c record = governedRecord();
+
+        Approval_Decision_Log__c row = AMF_DecisionLogWriter.forSubmission(
+            record.Id,
+            OBJECT_NAME,
+            rule(),
+            '{}'
+        );
+        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>{ row });
+
+        Approval_Decision_Log__c saved = [
+            SELECT Record_Id__c, Purchase_Request__c, Purchase_Request__r.Name
+            FROM Approval_Decision_Log__c
+            WHERE Id = :row.Id
+        ];
+
+        Assert.areEqual(record.Id, saved.Purchase_Request__c, 'The lookup points at the governed record');
+        Assert.areEqual(
+            String.valueOf(record.Id),
+            saved.Record_Id__c,
+            'And Record_Id__c still carries the same reference as text'
+        );
+        Assert.isNotNull(saved.Purchase_Request__r.Name, 'The relationship traverses');
+    }
+
+    @IsTest
+    static void everyOutcomeCarriesTheLookupNotJustSubmissions() {
+        // A blocked or failed row is about a record too, so it belongs in that
+        // record's related list -- arguably more than a successful one does.
+        Purchase_Request__c blocked = governedRecord();
+        Purchase_Request__c failed = governedRecord();
+
+        AMF_DecisionLogWriter.save(
+            new List<Approval_Decision_Log__c>{
+                AMF_DecisionLogWriter.forNoMatch(blocked.Id, OBJECT_NAME, '{}', 'nothing matched'),
+                AMF_DecisionLogWriter.forFailure(failed.Id, OBJECT_NAME, rule(), '{}', 'boom')
+            }
+        );
+
+        Map<Id, Approval_Decision_Log__c> byParent = new Map<Id, Approval_Decision_Log__c>();
+        for (Approval_Decision_Log__c row : [
+            SELECT Purchase_Request__c, Outcome__c
+            FROM Approval_Decision_Log__c
+            WHERE Purchase_Request__c IN :new List<Id>{ blocked.Id, failed.Id }
+        ]) {
+            byParent.put(row.Purchase_Request__c, row);
+        }
+
+        Assert.areEqual('Blocked_No_Match', byParent.get(blocked.Id).Outcome__c);
+        Assert.areEqual('Failed', byParent.get(failed.Id).Outcome__c);
+    }
+
+    @IsTest
+    static void anObjectWithNoLookupStillGetsItsTextReference() {
+        // The lookup is optional by design. An object the log carries no lookup to
+        // -- every object but Purchase_Request__c today -- must still be auditable,
+        // because Record_Id__c is what the audit trail actually rests on.
+        Account ungoverned = new Account(Name = 'No lookup exists for me');
+        insert ungoverned;
+
+        Approval_Decision_Log__c row = AMF_DecisionLogWriter.forNoMatch(
+            ungoverned.Id,
+            'Account',
+            '{}',
+            'not governed'
+        );
+        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>{ row });
+
+        Approval_Decision_Log__c saved = [
+            SELECT Record_Id__c, Object_API_Name__c, Purchase_Request__c
+            FROM Approval_Decision_Log__c
+            WHERE Id = :row.Id
+        ];
+
+        Assert.areEqual(String.valueOf(ungoverned.Id), saved.Record_Id__c, 'Provenance is unconditional');
+        Assert.areEqual('Account', saved.Object_API_Name__c);
+        Assert.isNull(saved.Purchase_Request__c, 'And no unrelated lookup was populated');
+    }
+
+    @IsTest
+    static void aNoMatchRowNamesNoRuleAndNoProcess() {
+        Purchase_Request__c record = governedRecord();
+
+        Approval_Decision_Log__c row = AMF_DecisionLogWriter.forNoMatch(
+            record.Id,
+            OBJECT_NAME,
+            '{"Risk_Level__c":"Low"}',
+            'No active rule matched.'
+        );
+        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>{ row });
+
+        Approval_Decision_Log__c saved = [
+            SELECT Outcome__c, Matched_Rule__c, Selected_Process__c, Evaluated_Values__c, Failure_Detail__c
+            FROM Approval_Decision_Log__c
+            WHERE Id = :row.Id
+        ];
+
+        Assert.areEqual('Blocked_No_Match', saved.Outcome__c);
+        Assert.isNull(saved.Matched_Rule__c);
+        Assert.isNull(saved.Selected_Process__c);
+        Assert.areEqual('No active rule matched.', saved.Failure_Detail__c);
+        Assert.areEqual(
+            '{"Risk_Level__c":"Low"}',
+            saved.Evaluated_Values__c,
+            'With no winner, the row still shows what the engine read'
+        );
+    }
+
+    @IsTest
+    static void aFailedRowNamesTheRuleThatWasUnderEvaluation() {
+        Purchase_Request__c record = governedRecord();
+
+        Approval_Decision_Log__c row = AMF_DecisionLogWriter.forFailure(
+            record.Id,
+            OBJECT_NAME,
+            rule(),
+            '{}',
+            'System.SObjectException: SObject row was retrieved via SOQL without querying Amount__c'
+        );
+        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>{ row });
+
+        Approval_Decision_Log__c saved = [
+            SELECT Outcome__c, Matched_Rule__c, Rule_Version__c, Expression_Snapshot__c, Failure_Detail__c
+            FROM Approval_Decision_Log__c
+            WHERE Id = :row.Id
+        ];
+
+        Assert.areEqual('Failed', saved.Outcome__c);
+        Assert.areEqual('PR_High_Value_APAC', saved.Matched_Rule__c);
+        Assert.areEqual(7, saved.Rule_Version__c);
+        Assert.isTrue(
+            saved.Failure_Detail__c.contains('SObjectException'),
+            '4.6: the exception text is kept, not summarised away'
+        );
+    }
+
+    @IsTest
+    static void aFailureWithNoRuleYetStillGetsARow() {
+        Purchase_Request__c record = governedRecord();
+
+        Approval_Decision_Log__c row = AMF_DecisionLogWriter.forFailure(
+            record.Id,
+            OBJECT_NAME,
+            null,
+            '{}',
+            'Failed before any rule was reached'
+        );
+        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>{ row });
+
+        Approval_Decision_Log__c saved = [
+            SELECT Outcome__c, Matched_Rule__c, Expression_Snapshot__c
+            FROM Approval_Decision_Log__c
+            WHERE Id = :row.Id
+        ];
+
+        Assert.areEqual('Failed', saved.Outcome__c);
+        Assert.isNull(saved.Matched_Rule__c);
+        Assert.isNull(saved.Expression_Snapshot__c);
+    }
+
+    @IsTest
+    static void anOverlongFailureIsTruncatedRatherThanRejectedByTheField() {
+        // Failure_Detail__c is Long Text(4000); a stack trace is not bounded.
+        // Losing the row to a STRING_TOO_LONG would be the worst of both worlds.
+        Purchase_Request__c record = governedRecord();
+
+        Approval_Decision_Log__c row = AMF_DecisionLogWriter.forFailure(
+            record.Id,
+            OBJECT_NAME,
+            rule(),
+            '{}',
+            'x'.repeat(5000)
+        );
+        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>{ row });
+
+        Approval_Decision_Log__c saved = [
+            SELECT Failure_Detail__c
+            FROM Approval_Decision_Log__c
+            WHERE Id = :row.Id
+        ];
+        Assert.areEqual(4000, saved.Failure_Detail__c.length(), 'Truncated to the field width');
+    }
+
+    @IsTest
+    static void emptyWorkIsNotWork() {
+        AMF_DecisionLogWriter.save(null);
+        AMF_DecisionLogWriter.save(new List<Approval_Decision_Log__c>());
+
+        Assert.areEqual(
+            0,
+            [SELECT COUNT() FROM Approval_Decision_Log__c],
+            'No rows, no DML, no exception'
+        );
+    }
+}

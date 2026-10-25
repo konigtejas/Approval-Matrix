@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Matched_Rule__c</fullName>
+    <description>DeveloperName of the winning Approval_Matrix_Rule__mdt row. Text rather than a lookup is platform-forced: no relationship type exists from a custom object to a custom metadata record (arch doc 3.3).</description>
+    <externalId>false</externalId>
+    <label>Matched Rule</label>
+    <length>80</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

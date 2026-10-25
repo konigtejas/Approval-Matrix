@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Request_Name__c</fullName>
+    <description>A readable name for the request (M12.8). The PR- auto-number stays the record name, so the timeline, the decision log and the UI suite are unchanged. No matrix rule reads this field.</description>
+    <externalId>false</externalId>
+    <inlineHelpText>A short name that says what the request is for.</inlineHelpText>
+    <label>Request Name</label>
+    <length>80</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

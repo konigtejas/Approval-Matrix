@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Purchase_Request__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Navigational lookup to the governed record, so a Purchase Request carries a related list of the decisions made about it. A CONVENIENCE, NOT THE PROVENANCE: Record_Id__c remains the canonical reference and is never null, because it is object-agnostic and this field cannot be (Salesforce has no custom polymorphic lookup, so one lookup binds to one object). The engine finds this field by describe rather than by name, so governing a second object is a new lookup field here and no code change. SetNull, never cascade: the audit row must outlive the record it explains (arch doc 3.3, 8).</description>
+    <label>Purchase Request</label>
+    <referenceTo>Purchase_Request__c</referenceTo>
+    <relationshipLabel>Approval Decisions</relationshipLabel>
+    <relationshipName>Approval_Decisions</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Process_API_Name__c</fullName>
+    <description>The Classic ProcessDefinition DeveloperName this rule routes to. Changing this one value reroutes the rule with no Apex deployed, which is the claim the MVP exists to prove (arch doc 3.1, 6.2).</description>
+    <externalId>false</externalId>
+    <fieldManageability>DeveloperControlled</fieldManageability>
+    <label>Process API Name</label>
+    <length>80</length>
+    <required>true</required>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

@@ -1,0 +1,65 @@
+<template>
+    <lightning-modal-header label="Confirm approval route"></lightning-modal-header>
+    <lightning-modal-body>
+        <p class="slds-text-color_weak">This record will be submitted to</p>
+        <p class="slds-text-heading_medium slds-m-bottom_medium" data-id="process">{preview.selectedProcess}</p>
+
+        <dl class="slds-dl_horizontal">
+            <dt class="slds-dl_horizontal__label">Matched rule</dt>
+            <dd class="slds-dl_horizontal__detail" data-id="rule">{preview.matchedRule}</dd>
+            <template lwc:if={hasDescription}>
+                <dt class="slds-dl_horizontal__label">Description</dt>
+                <dd class="slds-dl_horizontal__detail" data-id="description">{preview.matchedRuleDescription}</dd>
+            </template>
+            <dt class="slds-dl_horizontal__label">Priority</dt>
+            <dd class="slds-dl_horizontal__detail" data-id="priority">{preview.rulePriority}</dd>
+            <dt class="slds-dl_horizontal__label">Version</dt>
+            <dd class="slds-dl_horizontal__detail" data-id="version">{preview.ruleVersion}</dd>
+            <dt class="slds-dl_horizontal__label">Condition</dt>
+            <dd class="slds-dl_horizontal__detail"><code data-id="expression">{preview.matchedExpression}</code></dd>
+        </dl>
+
+        <h2 class="slds-text-title_caps slds-m-top_medium slds-m-bottom_x-small">Values the rule read</h2>
+        <template lwc:if={hasValues}>
+            <table class="slds-table slds-table_bordered slds-table_cell-buffer" data-id="values">
+                <thead>
+                    <tr class="slds-line-height_reset">
+                        <th scope="col">Field</th>
+                        <th scope="col">Value</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <template for:each={values} for:item="row">
+                        <tr key={row.path} data-id="value-row">
+                            <td data-label="Field">{row.path}</td>
+                            <td data-label="Value">
+                                <template lwc:if={row.isNumber}>
+                                    <lightning-formatted-number value={row.value}></lightning-formatted-number>
+                                </template>
+                                <template lwc:else>{row.display}</template>
+                            </td>
+                        </tr>
+                    </template>
+                </tbody>
+            </table>
+        </template>
+        <template lwc:else>
+            <p data-id="no-values">This rule's condition reads no fields, so it matches every record.</p>
+        </template>
+
+        <p class="slds-text-body_small slds-text-color_weak slds-m-top_medium">
+            Rules are checked in priority order, and the first one whose condition is true decides the
+            route. Nothing has been submitted yet.
+        </p>
+    </lightning-modal-body>
+    <lightning-modal-footer>
+        <lightning-button label="Cancel" data-id="cancel" onclick={handleCancel}></lightning-button>
+        <lightning-button
+            variant="brand"
+            label="Submit for Approval"
+            class="slds-m-left_x-small"
+            data-id="submit"
+            onclick={handleSubmit}
+        ></lightning-button>
+    </lightning-modal-footer>
+</template>

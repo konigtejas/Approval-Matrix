@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Expression_Snapshot__c</fullName>
+    <description>The expression text exactly as evaluated. Survives later edits to the rule, which is the flaw this framework exists to fix: keeping routing current must not destroy the historical record (arch doc 3.3, 8).</description>
+    <label>Expression Snapshot</label>
+    <length>2000</length>
+    <trackTrending>false</trackTrending>
+    <type>LongTextArea</type>
+    <visibleLines>5</visibleLines>
+</CustomField>

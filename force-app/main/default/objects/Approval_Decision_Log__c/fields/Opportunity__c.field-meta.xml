@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Opportunity__c</fullName>
+    <deleteConstraint>SetNull</deleteConstraint>
+    <description>Navigational lookup to a governed Opportunity, so it carries a related list of the decisions made about it (M11). A CONVENIENCE, NOT THE PROVENANCE: Record_Id__c remains the canonical reference and is never null. The engine finds this field by describe, exactly as it finds Purchase_Request__c, so governing Opportunity needed this field and no code change (M3.12). SetNull, never cascade: the audit row must outlive the record it explains (arch doc 3.3, 8).</description>
+    <label>Opportunity</label>
+    <referenceTo>Opportunity</referenceTo>
+    <relationshipLabel>Approval Decisions</relationshipLabel>
+    <relationshipName>Approval_Decisions</relationshipName>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Lookup</type>
+</CustomField>

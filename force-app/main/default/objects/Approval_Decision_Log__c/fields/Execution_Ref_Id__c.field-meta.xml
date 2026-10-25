@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Execution_Ref_Id__c</fullName>
+    <description>ProcessInstance.Id, stamped back after submit. The only field Lock_Decision_Log lets the engine write post-insert, and only once, blank to populated (arch doc 3.3, 6.1 step 11, 8).</description>
+    <externalId>false</externalId>
+    <label>Execution Ref Id</label>
+    <length>18</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

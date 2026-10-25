@@ -3,10 +3,26 @@
     {
       "path": "force-app",
       "default": true
+    },
+    {
+      "path": "agentforce"
+    },
+    {
+      "path": "mcp"
+    },
+    {
+      "path": "org-config/amf-dev"
     }
   ],
   "name": "Approval Matrix",
   "namespace": "",
   "sfdcLoginUrl": "https://login.salesforce.com",
-  "sourceApiVersion": "66.0"
+  "sourceApiVersion": "66.0",
+  "replacements": [
+    {
+      "glob": "approvalProcesses/*.approvalProcess-meta.xml",
+      "stringToReplace": "{{AMF_USERNAME_DOMAIN}}",
+      "replaceWithEnv": "AMF_USERNAME_DOMAIN"
+    }
+  ]
 }

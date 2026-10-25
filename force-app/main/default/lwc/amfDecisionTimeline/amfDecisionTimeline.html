@@ -1,0 +1,53 @@
+<template>
+    <lightning-card title="Approval Timeline" icon-name="standard:approval">
+        <lightning-button-icon
+            slot="actions"
+            icon-name="utility:refresh"
+            alternative-text="Refresh the approval timeline"
+            title="Refresh"
+            disabled={isLoading}
+            onclick={handleRefresh}
+            data-id="refresh"
+        ></lightning-button-icon>
+
+        <div class="slds-is-relative slds-p-horizontal_medium amf-timeline__body">
+            <template lwc:if={isLoading}>
+                <lightning-spinner
+                    alternative-text="Loading the approval timeline"
+                    size="small"
+                    data-id="spinner"
+                ></lightning-spinner>
+            </template>
+
+            <template lwc:if={error}>
+                <p class="slds-text-color_error" role="alert" data-id="error">{error}</p>
+            </template>
+            <template lwc:elseif={isEmpty}>
+                <p class="slds-text-color_weak" data-id="empty">
+                    This record has not been submitted for approval. When it is, this timeline shows which rule
+                    routed it, why, and every approval step that follows.
+                </p>
+            </template>
+
+            <template lwc:if={hasEntries}>
+                <ul class="slds-timeline" data-id="timeline">
+                    <template for:each={items} for:item="item">
+                        <li key={item.key}>
+                            <c-amf-decision-timeline-entry
+                                entry={item.entry}
+                                expanded={item.expanded}
+                            ></c-amf-decision-timeline-entry>
+                        </li>
+                    </template>
+                </ul>
+            </template>
+
+            <template lwc:if={hasMore}>
+                <p class="slds-text-body_small slds-text-color_weak slds-m-top_small" data-id="has-more">
+                    Only the most recent entries are shown. The Approval Decisions and Approval History related
+                    lists hold the full record.
+                </p>
+            </template>
+        </div>
+    </lightning-card>
+</template>

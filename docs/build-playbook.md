@@ -1,0 +1,1263 @@
+# Building the Approval Matrix MVP with Claude Code — Phased Playbook
+
+Four phases, **M0–M3**, each small enough to review in one sitting and each built in its
+own chat session. Every phase has a goal, a paste-able prompt, machine-checkable
+acceptance criteria, and a manual QA step **you** do in the org before committing.
+
+`docs/architecture.md` (**v3.0**) is the single source of truth. Every prompt below points
+Claude Code at specific § sections instead of restating the design, which is what keeps the
+phases consistent with each other. §13 of that document is the MVP scope; anything in
+§1–§12 that §13 does not list is **not built yet**.
+
+> **This file replaces the v1.0 nine-phase plan.** That plan built chained single-step
+> approval processes, approver resolution, the Group Work Item pattern, an Approval Inbox
+> and an SLA batch — all of which left the design at the v2.1 pivot and are recorded in
+> `docs/architecture.md` Appendix B. Phases 0 and 1 of the old plan are history, at commits
+> `e3ac256` and `a69e3c9`; Phases 2–8 were cancelled and never built.
+
+---
+
+## Part 1 — Working Rhythm (applies to every phase)
+
+**The loop per phase:**
+
+1. `/clear` — start each phase with a clean context. Claude Code re-reads `CLAUDE.md`,
+   `docs/architecture.md` and the most recent `docs/technical-log.md` entry; carrying four
+   phases of conversation history degrades output and spends context on stale detail.
+2. **Plan mode first** (Shift+Tab). Paste the phase prompt, let it produce a plan, and
+   *read the plan* before approving. This is where you catch it inventing schema or drifting
+   from the doc — two minutes here saves an hour of unwinding.
+3. **Implement** — approve the plan, let it work.
+4. **Gate** — Claude Code runs the acceptance commands itself and shows you passing output.
+   Never accept "this should work."
+5. **Manual QA** — you click through the org check listed in the phase. Claude Code cannot
+   see the approval UI; work items, record locking and email notifications need human eyes.
+6. **Log and commit** — a full `docs/technical-log.md` entry, the status board updated, then
+   one commit per phase, message `Phase MN: <name>`, pushed to `develop`. If a phase went
+   sideways, `git checkout .` and re-running it with a sharper prompt beats asking it to
+   patch a mess.
+
+**Guardrails to state once and enforce:**
+
+- Never edit files outside the phase scope — each prompt lists allowed paths.
+- Never "improve" the architecture. Deviations are proposed as questions, not committed as
+  code. An approved one gets a line in `docs/decisions.md` and a fix to the doc itself.
+- All org interaction through the `sf` CLI against `amf-dev`, never another alias.
+- Out-of-MVP items (`CLAUDE.md`'s exclusion list) are not built, not stubbed, not mentioned
+  in code comments as "future".
+
+**Machine environment notes (this workstation):**
+
+- `sf data query` fails under the Bash tool with `'C:\Program' is not recognized` — a
+  Windows path-quoting failure in the Git Bash shim, not a CLI or org problem. When the
+  PowerShell tool is available, verification queries go through it; when it is not,
+  they go through anonymous Apex (`sf apex run --file`). `sf org display`,
+  `sf org list metadata`, `sf project deploy` and `sf apex run` all work under Bash.
+- `sf data query -t` is `--use-tooling-api`, not a table-format flag. Querying a `__mdt`
+  through Tooling reports fields as missing that are present.
+- The Bash tool collapses `\\` to `\` even inside a quoted heredoc, so anonymous Apex written that
+  way loses its escapes (`split('\\.')` arrives as an illegal `split('\.')`). Write such files with
+  the file tools, or avoid the backslash (technical log M11.3c).
+- The session scratchpad's path is long enough that a full copy of `force-app` beneath it passes
+  Windows' 260-character limit. Copy only the folders a check needs, under short names
+  (technical log M12.3c).
+
+---
+
+## Part 2 — What the MVP has to prove
+
+One sentence, from §13: **an admin changes one Custom Metadata row, the next submission
+routes to a different approval process, and a log record explains why.**
+
+Everything else — Flow execution, the preview modal, the timeline LWC, the config
+validator, bulk chunking, recall, a second object — is hardening, and is out of scope
+until that demo passes.
+
+The MVP's moving parts:
+
+```
+Submit quick action (LWC)
+      ▼
+AMF_ApprovalMatrixService
+   ├── RuleProvider ◄── AMF_CmdtRuleProvider (SOQL, never getAll)  §3.1
+   ├── AMF_ExprCache ► AMF_ExprCompiler ► AMF_Lexer, AMF_Parser     §4.2
+   ├── AMF_Evaluator                                                §4.2
+   ├── AMF_FieldPathResolver  (one dynamic SOQL per object)         §4.4
+   ├── AMF_DecisionLogWriter                                        §3.3
+   └── SubmissionStrategy ◄── AMF_ClassicProcessStrategy            §6.2
+      ▼
+PR_Two_Level_Mgmt  |  PR_Three_Level_Finance     (native Classic processes, §5.2)
+```
+
+---
+
+## Part 3 — The Phases
+
+### M0 — Baseline & cleanup
+
+**Goal:** the repo and `amf-dev` both hold exactly the surviving Phase 0/1 work plus the
+guard field, and nothing from the v1.0 design. Nothing new is designed in this phase.
+
+**Prompt:**
+> Phase M0. Bring repo and org to the v3.0 baseline. (1) Add `Matrix_Submission__c`
+> (Checkbox, default false) to `Purchase_Request__c` per §3.4, with read/edit FLS in both
+> permission sets — §1.4d of the technical log establishes that a field deployed without
+> FLS is invisible even to the deploying admin, so FLS is a runtime prerequisite, not
+> packaging. (2) Retire the last v1.0 metadata: `Approval_Chain__c` and its
+> `Lock_Terminal_Chain` validation rule, and the `AMF_Bypass_Chain_Lock` custom permission
+> with its grant in `Approval_Matrix_Admin` — from the repo and destructively from the org.
+> (3) Delete the `AMF_Spike_Approval` draft flow from the org; Appendix A says to delete or
+> complete it and Flow execution is out of MVP scope. (4) Re-run `scripts/seed-data.apex`
+> and confirm it is still idempotent and that `Q_Credit_Risk` still supports
+> `Purchase_Request__c`. Allowed paths: `force-app`, `docs`, `CLAUDE.md`. Do not create the
+> CMDT, the decision log, or any Apex.
+>
+> Acceptance: full-package deploy green; `Approval_Chain__c` absent from
+> `sf org list metadata -m CustomObject`; anonymous-Apex describe confirms
+> `Matrix_Submission__c` exists as a Checkbox and is visible to the running user; seed
+> reports zero creations.
+
+**Gate:** deploy + seed green, guard field describes clean.
+
+**You verify:** before this phase can finish, erase the soft-deleted
+`Purchase_Request__c.Active_Chain_del__c` — Setup → Object Manager → Purchase Request →
+Fields & Relationships → Deleted Fields → **Erase**. It holds a relationship to
+`Approval_Chain__c` from the recycle bin, where the Metadata API cannot see it, and it is
+the reason the object survived the v2.1 revert.
+
+---
+
+### M1 — Data model
+
+**Goal:** the matrix itself, the audit artefact, and the only sanctioned way to read
+Custom Metadata.
+
+**Prompt:**
+> Phase M1. Build §3 for the MVP, §13.1's subset only. (1) `Approval_Matrix_Rule__mdt`
+> with every field in the §3.1 table **except `Execution_Type__c`** (see
+> `docs/decisions.md` — Classic-only in MVP), plus an `All` list view surfacing every
+> field. (2) `Approval_Decision_Log__c` with every field in the §3.3 table except
+> `Execution_Type__c`, the immutability validation rule, and the `AMF_Bypass_Log_Lock`
+> custom permission it excepts — a custom permission, not a profile name, per §3.3.
+> (3) Extend both permission sets to the new object and CMDT with explicit FLS;
+> `Approval_Matrix_Admin` takes View All plus edit and **no** Modify All, because the
+> platform makes Modify All depend on Delete and the log must not be deletable (§3.3).
+> (4) `RuleProvider` interface, `AMF_RuleDefinition` DTO, and `AMF_CmdtRuleProvider`
+> loading rules by **SOQL** — never `getAll()`/`getInstance()`, which truncate Long Text
+> Area to 255 characters and would silently corrupt `Expression__c` (§3.1). Sort by
+> `Priority__c` then `DeveloperName` **in Apex**, not SOQL: CMDT SOQL rejects `ORDER BY` on
+> a parent relationship field and Apex ordering is what makes §6.1 step 2 deterministic.
+> (5) Three sample rules as deployable CMDT records, written as expressions:
+> high-value APAC, high-risk, and a priority-9999 `TRUE` catch-all (§3.2).
+> Allowed paths: `force-app`, `docs`.
+>
+> Acceptance: deploy green; a test whose `Expression__c` **exceeds 255 characters** round
+> trips through `AMF_CmdtRuleProvider` intact — this is the phase's headline gate; the
+> provider is covered by tests that inject in-memory rules and touch no org CMDT row.
+
+**Gate:** the >255-character expression test passes. If it passes with `getAll()`, the
+test is wrong.
+
+**You verify:** open the three CMDT records in Setup. They should read like a routing
+matrix a bank admin would recognise, in priority order, with the catch-all visibly last.
+
+---
+
+### M2 — Expression evaluator
+
+**Goal:** the hard part. The reduced grammar, compiled and evaluated, with zero dependence
+on org configuration.
+
+**Prompt:**
+> Phase M2. Implement §4 at the §13.3 reduced grammar: `&&`, `||`, parentheses,
+> `== != > >= < <=`; field paths up to 2 segments (`Account__r.Name`); types
+> Number/Currency, String, Picklist, Boolean, Date; literals NUMBER, `'STRING'`, TRUE,
+> FALSE, NULL, `YYYY-MM-DD`; bare `TRUE` as a complete expression, which is what makes the
+> catch-all rule expressible. Classes: `AMF_Lexer` (tracking character position for error
+> messages), `AMF_Parser` (recursive descent → AST), `AMF_ExprCompiler` (parse plus static
+> analysis against the schema — every path resolves via describe, operator/type
+> compatibility enforced at compile time, not runtime false), `AMF_ExprCache` (static map
+> keyed by rule DeveloperName + `Version__c`), `AMF_Evaluator` (AST + SObject → Boolean
+> plus the evaluated-values map), `AMF_FieldPathResolver` (union of paths → one dynamic
+> SOQL per object, §4.4). Precedence per §4.1: comparisons bind tighter than `AND`, which
+> binds tighter than `OR`. Null semantics per §4.3, exhaustively. §4.6 is
+> non-negotiable: **no catch block anywhere in this package may swallow an exception into a
+> boolean.** `IN`, `CONTAINS`, `STARTS_WITH`, `NOT`, `TODAY(±n)`, multipicklist and 3+ hop
+> paths are deferred — structure the lexer, parser and AST so they are purely additive, and
+> do not special-case around their absence. Delete `AMF_Ping`/`AMF_PingTest`, whose only job
+> was to prove the deploy loop before real classes existed.
+> Allowed paths: `force-app/main/default/classes`, `docs`.
+>
+> Acceptance: ≥90% coverage on the evaluator package (§13.4); table-driven suite of
+> `(expression, field values, expected)` triples covering every operator against every
+> supported type, all null rules, precedence, whitespace variants, two-segment paths and
+> bare `TRUE`; plus a malformed-input suite — unbalanced parens, unknown field, over-deep
+> path, bad literal, type mismatch — each asserting the **character position** in the
+> error. Zero dependence on org CMDT rows.
+
+**Gate:** ≥90% evaluator coverage, both suites green.
+
+**You verify:** read `AMF_Evaluator` and `AMF_ExprCompiler` yourself. These are the classes
+an architect will review and the one place subtle type bugs hide. Then run one anonymous
+Apex evaluation against a real `Purchase_Request__c` and eyeball the evaluated-values JSON.
+
+---
+
+### M3 — Engine, templates, submit action
+
+**Goal:** the demo. End to end, one rule change away from different routing.
+
+**Prompt:**
+> Phase M3. Implement §6 steps 1–11, Classic branch only, plus §5.2 and §7's UI row.
+> (1) `SubmissionStrategy` interface + `AMF_ClassicProcessStrategy`, the **only** place in
+> the codebase that calls `Approval.process()`, via
+> `ProcessSubmitRequest.setProcessDefinitionNameOrId(processApiName)`, returning
+> `ProcessInstance` Ids. (2) `AMF_ApprovalMatrixService.submit(List<Id>)` running §6.1
+> exactly: rules by priority → first true expression wins → no match writes a
+> `Blocked_No_Match` log row and throws a clear error → write the decision log with rule,
+> version, expression snapshot and evaluated-values JSON → set `Matrix_Submission__c = true`
+> in the same transaction, before submit → submit → stamp `Execution_Ref_Id__c` back onto
+> the log row. A runtime evaluation error marks the row `Failed`, writes the exception to
+> `Failure_Detail__c`, and **blocks** — it never falls through to the next rule (§4.6).
+> (3) `AMF_DecisionLogWriter`. (4) Two Classic approval processes as metadata XML per §5.2:
+> `PR_Two_Level_Mgmt` — two steps up the Manager hierarchy; `PR_Three_Level_Finance` —
+> three named-user steps (`amfu3` → `amfu4` → `amfu5`). Both carry entry criteria
+> `Matrix_Submission__c = true` (the §6.3 guard) and both reset it to false in their final
+> approval *and* rejection actions, re-arming the guard. (5) The `amfSubmitForApproval`
+> headless LWC quick action — **no preview modal** (§13.1); it submits and reports the
+> matched rule and process. Remove the standard **Submit for Approval** button from the
+> `Purchase_Request__c` layout (§6.3). Bulk chunking is out of MVP scope.
+> Allowed paths: `force-app`, `docs`.
+>
+> Acceptance: deploy green; unit tests use a stub `SubmissionStrategy` asserting the staged
+> guard field and the selected process name without executing a real approval; one thin
+> integration test exercises the real `Approval.process()` path; Jest test for the LWC.
+
+**Gate — the MVP's whole point, and it is manual:** submit a record that routes to
+`PR_Two_Level_Mgmt`. Then edit that rule's `Process_API_Name__c` in Custom Metadata to
+`PR_Three_Level_Finance`, redeploy the CMDT record **only**, and submit an identical
+record. It must route to the three-level process **with no Apex changed and no deploy of
+code**. Read both decision log rows side by side: same expression, different process, and
+each row explains itself.
+
+**You verify, in this order:**
+
+1. Submit a matching record → correct process, work item lands with the right approver,
+   record locks.
+2. Open the `Approval_Decision_Log__c` row → matched rule, version, expression snapshot,
+   evaluated values JSON, `Execution_Ref_Id__c` populated and joining to `ProcessInstance`.
+3. Approve through to the end → `Matrix_Submission__c` is back to false.
+4. Reject instead, on a second record → also back to false.
+5. Submit a record that matches no rule with the catch-all deactivated → blocked, with a
+   `Blocked_No_Match` row explaining it. Nothing routes silently.
+6. Try to edit a decision log row → blocked by the immutability rule.
+7. The rule-flip demo above.
+
+Budget an hour for this phase's QA. It is the heart of the framework and the only place the
+"config release, not a code release" claim is actually proven.
+
+---
+
+### M4 — Configuration validator (post-MVP)
+
+**Goal:** fail a release before an invalid active matrix rule can reach a submission.
+
+**Build:** `AMF_ConfigValidator` compiles every active rule; rejects duplicate priorities;
+requires the Checkbox `Matrix_Submission__c` guard; and verifies every referenced Classic
+process is active for the governed object. `AMF_ApprovalProcessProvider` isolates the
+`ProcessDefinition` query so unit tests use an in-memory process catalog. Expose the validator
+as an invocable action and add `scripts/validate-config.apex` as the post-deploy CI gate.
+
+Salesforce does not expose an approval process's entry criteria on `ProcessDefinition`, so the
+repository-side `scripts/validate-approval-matrix-source.ps1` validates each active rule's
+referenced template file, activation state, and exact `Matrix_Submission__c = TRUE` guard
+formula before the metadata deploy.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. Deploy the package.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
+4. Run `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`.
+
+Acceptance: both gates pass against the shipped matrix; unit tests cover a valid matrix, an
+invalid expression with its character position, duplicate priorities, an absent process, an
+absent guard field, and the throwing pipeline path.
+
+---
+
+### M5 — Preview modal (post-MVP)
+
+**Goal:** before anything is submitted, show the submitter where the record will go and why.
+
+**Build:** `AMF_ApprovalMatrixService.preview(List<Id>)` per §6.4 — the same path as `submit()`,
+stopped after step 7, writing nothing — plus a non-cacheable `previewRecord` entry point. The
+`amfSubmitForApproval` headless action previews, opens `amfSubmitPreview` (a `LightningModal`)
+for a routable result, and submits only on confirm. A blocked or failed preview skips the modal
+and submits, so its decision log row is still written. No new objects, fields, layouts or
+permission-set entries: the preview lives on a class both permission sets already grant.
+
+**Gate, in order:**
+
+1. Deploy the package.
+2. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green, service at 100%.
+3. Jest: `$env:PATH = "C:\Program Files\sf\client\bin;$env:PATH"; node node_modules\jest\bin\jest.js --ci`.
+4. **Manual:** on a Purchase Request not already in approval, choose **Submit for Approval**
+   (the first button on the record header). The modal names the process, the rule, its
+   priority, version, condition and the values it read. **Cancel** submits nothing and writes no
+   log row; **Submit for Approval** submits and toasts the rule and process. With the catch-all
+   deactivated, a non-matching record skips the modal and still gets its `Blocked_No_Match` row.
+
+Acceptance: preview tests prove zero DML, no log row, no guard, strategy never called, and
+byte-for-byte agreement with the row a submission then writes; Jest covers confirm, cancel,
+dismiss, the blocked/failed bypass, a changed route, errors and double clicks.
+
+---
+
+### M6 — Flow approvals technical spike (post-MVP, research only)
+
+**Goal:** answer Round 1's open questions (Appendix A) and find every trap in moving from Classic
+approval processes to Flow approvals, before any `FlowApprovalStrategy` is designed.
+
+**Build:** nothing in `force-app`. Throwaway flows, one discovery test class and anonymous-Apex
+scripts under `spikes/flow-approvals/`, deployed in MDAPI format at the org's API version with
+`scripts/deploy-flows.ps1`. Experiments run on dedicated spike records and spike groups, never on
+demo data or seeded groups. Every claim is labelled CONFIRMED / INFERRED / OPEN in
+`docs/spike-results.md`.
+
+**Gate, in order:**
+
+1. Each Round 1 question is CONFIRMED by execution or stated as still OPEN, with the reason.
+2. The discovery test class is deleted from the org (`scripts/teardown.ps1 -DeleteTestClass`), so it
+   can never join RunLocalTests.
+3. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — unchanged and green.
+4. When the spike's flows are no longer needed: `scripts/teardown.ps1 -DeleteFlows -DeleteGroups
+   -DeleteRecords`.
+
+Acceptance: the migration checklist in `docs/spike-results.md` exists, and §5.3, §12 and
+Appendix A of the architecture match what the org did.
+
+---
+
+### M7 — Decision timeline (post-MVP)
+
+**Goal:** on the governed record, tell the whole story of each submission in one place: why
+the matrix routed it where it did (the decision log) and what has happened to it since (the
+native approval history). This is §8's timeline, Classic half.
+
+**Build:** `AMF_DecisionTimelineService.getTimeline(recordId)`, as described in §8's M7 note.
+It checks read access to the record first, reads log rows `WITH USER_MODE`, joins each
+`Submitted` row to its `ProcessInstance` through `Execution_Ref_Id__c`, orders entries newest
+first and caps them at 50. `AMF_ApprovalHistoryProvider` isolates the `ProcessInstance` read
+and `AMF_ClassicApprovalHistoryProvider` implements it. In the UI, `amfDecisionTimeline` loads
+and refreshes the data and renders one SLDS timeline item per entry through
+`amfDecisionTimelineEntry`. It reloads when the record page refreshes, and `amfSubmitForApproval`
+now raises that refresh after every submission attempt. `Purchase_Request_Record_Page` puts the
+timeline in the record page's sidebar and is activated as the desktop org default; the page
+layout still supplies the actions and the related lists. Both permission sets grant the service
+class. No new objects or fields.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. Deploy the package.
+3. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green; the timeline
+   service and both new provider classes at ≥ 95%.
+4. Jest: `$env:PATH = "C:\Program Files\sf\client\bin;$env:PATH"; node node_modules\jest\bin\jest.js --ci`.
+5. **Manual, as the admin:**
+   - PR-00000010, the M5.7 rehearsal: one entry, *Routed to PR_Three_Level_Finance*, with the
+     values that matched, the condition, and the native steps (submitted, then pending with
+     AMF Approver Three).
+   - M3's QA records, which the *All Decisions* list view finds by outcome: the approved one
+     shows every step through to *Approved*, the rejected one ends at *Rejected*, and the
+     blocked one shows *Not submitted: no rule matched* with the values read and no native
+     steps.
+   - A Purchase Request that was never submitted: the empty state.
+   - A throwaway Purchase Request submitted through the header button: the new entry appears
+     without reloading the page. Its log row is permanent, as M5.7's was.
+6. **Manual, as an approver who can read a record but did not submit it** (M3.10's shares):
+   the approval and its steps show, and the routing reason is labelled as not visible.
+
+Acceptance: service tests prove the join, the newest-first order, the 50 cap, user-mode
+visibility of log rows, refusal without record access, and labels that survive a deleted
+field. The provider is tested once against a real submission. Jest covers loading, empty,
+error, refresh, the stale-response guard, every outcome and step status, and expanding an entry.
+
+---
+
+### M8 — Guard integrity (post-MVP)
+
+**Goal:** close the two ways a record and its guard could disagree with the engine. A recalled
+request left `Matrix_Submission__c` set (technical log M7.8). And a record already in an approval
+process was shown a route that the platform then refused.
+
+**Build:**
+- **Recall clears the guard.** Both templates get a recall action running
+  `AMF_Clear_Matrix_Submission` (§5.2).
+- **The source gate enforces it.** `scripts/validate-approval-matrix-source.ps1` fails any active
+  template that does not clear the guard in its final approval actions, its final rejection
+  actions and, when recall is allowed, its recall actions. It judges each action by what the named
+  field update does, not by its name.
+- **A pending record is refused.** After authorisation and before step 1,
+  `AMF_ApprovalMatrixService` refuses any record with a pending `ProcessInstance`: the whole call,
+  with a message naming the process, and no log row (§6.1's M8 note). The preview refuses too, so
+  the modal never opens on a route the platform would reject.
+- **Housekeeping.** The service's two stale "§9 is out of MVP scope" comments go.
+
+No new objects, fields, classes or permissions.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. Deploy the package.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green.
+5. **One-time repair.** PR-00000010 was recalled before the fix and still carries the guard:
+   `sf data update record --sobject Purchase_Request__c --where "Name='PR-00000010'" --values "Matrix_Submission__c=false" -o amf-dev`.
+   Afterwards, M7.8's query returns no rows.
+6. **Manual, on a throwaway Purchase Request:**
+   - Submit it.
+   - Choose Submit for Approval again. An error toast names the process it is already in; no
+     modal opens and no decision log row is added.
+   - Recall it. *Matrix Submission* is unticked, and the timeline shows *Recalled*.
+   - Submit it again. It routes normally.
+
+Acceptance: the source gate fails a template that is missing any of the three clearing actions,
+and passes one that does not allow recall. An integration test recalls a real submission and
+proves the guard is cleared and that a bypass submission is then refused. Another proves a
+pending record is refused in preview and submit with nothing logged, and that a caller who cannot
+read the record is told about access, not about the approval.
+
+**Gate run 2026-10-08 (technical log M8.7):** steps 1–5 passed. Step 6, the manual UI check, passed
+in the first UI test run, on 2026-10-22 (technical log M12.6, TC-05 to TC-07).
+
+---
+
+### M9 — Full expression grammar (post-MVP)
+
+**Goal:** let an admin write every condition §4.1 describes, so routing that needs a list, a
+negation, a text match, a multi-select picklist, a relative date or a deeper relationship is
+configuration and not a new rule per value.
+
+**Build:** §13.3's deferred list, additively, inside the evaluator package only:
+- `NOT` / `!`, and the word forms `AND` / `OR` / `NOT` (§4.1).
+- `IN` / `NOT IN` over a list of literals; `CONTAINS`, `STARTS_WITH` on text.
+- Multi-select picklists: `==` / `!=` as set equality and `CONTAINS` as membership, against a
+  `';'`-separated text literal (§4.3's M9 note).
+- `TODAY` and `TODAY(±n)`, resolved once per transaction to the submitter's local date and
+  recorded under `TODAY` in `Evaluated_Values__c`.
+- Field paths up to four segments (three hops), one constant shared by compiler and resolver.
+- A broken relationship path becomes *unknown* under three-valued logic, so `NOT` can never turn
+  an unresolvable path into a match.
+
+New AST nodes: `UnaryNode`, `ListNode`, `TodayNode`; new value type `MULTI_SELECT`. No objects,
+fields, metadata, permissions, LWCs or engine classes change. Rules are still org configuration:
+no shipped rule changes.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. Deploy the package.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev` — the shipped matrix still compiles.
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human -c` — all green; every evaluator
+   class at ≥ 95%.
+5. Jest, as in M5 — unchanged and green (no LWC change).
+6. **Optional, manual:** give a throwaway rule (inactive by default) a condition using the new
+   grammar, activate it in the org, and preview a record: the modal shows the condition and, for a
+   `TODAY` rule, the date it used. Deactivate it afterwards.
+
+Acceptance: table-driven cases for every new operator against every type it accepts, the null
+rules for each, `NOT` over a broken path at every hop, and `TODAY` pinned and unpinned; a
+malformed-input case with its character position for every new way to write a bad expression;
+mutation-checked that the three-valued logic and set membership are what the tests catch.
+
+### M10 — Entry points and bulk submission (post-MVP)
+
+**Goal:** submit through the matrix from Flow, Apex and integrations, and keep one record's problem
+from sinking a batch.
+
+**Build:**
+- **A per-record engine entry.** `AMF_ApprovalMatrixService.submitEach(List<Id>)` sits beside the
+  unchanged `submit()` and `preview()`. It groups records by object and answers a duplicate once.
+  An unreadable or pending record is refused by itself (`Refused`, no log row), and a fault that
+  condemns one object's records becomes refusals for those records only.
+- **The log after the answer.** Steps 1–7 become one step that writes nothing, `prepare()`; the
+  preview is that step alone. `execute()` stages the guard and submits, and only then writes each
+  row: with the instance Id, or `Failed` with the platform's reason and the guard re-armed.
+- **A per-record strategy.** `AMF_SubmitResult` carries success or the platform's reason, and
+  `AMF_ClassicProcessStrategy` submits in chunks of 100 with `allOrNone` false.
+- **Entry points.** `AMF_SubmitForMatrixApproval` (the invocable *Submit for Matrix Approval*) and
+  `AMF_MatrixSubmissionResource` (`POST /services/apexrest/approval-matrix/v1/submissions`, at most
+  200 records) share one result shape. Both permission sets grant both classes.
+- **Timeline wording.** A `Failed` entry's title says the attempt failed rather than that routing
+  did, and its summary becomes the first line of its recorded reason, which may now be the
+  platform's rather than the evaluator's.
+- **Guard staging per record** (follow-up, technical log M10.7). Step 9 sets the guard with
+  `allOrNone` false. A record the platform will not let it set (a validation rule, for example)
+  is `Failed` with the platform's reason and is not submitted. Re-arming a refused record stays
+  all-or-nothing. Its real-platform tests use a test-only validation rule, `AMF_Test_Refuse_Guard`,
+  because the lock a final approval leaves did not stop the update in an Apex test (M10.8).
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`
+2. Deploy the package.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev`
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human` — all green (255 since M10.7),
+   including a real 200-record submission and a record whose guard a validation rule refuses
+   failing by itself. If the 200-record test fails on a governor limit, report the numbers it
+   prints: that is a finding about bulk size, not a flake.
+5. Jest, as in M5.
+6. **Manual, the invocable**, through the platform's invocable framework, with no Flow saved.
+   In anonymous Apex, on a throwaway Purchase Request with `Risk_Level__c = High`, so that it
+   routes to the named-user template. The admin running these steps has no manager (M3.7), so a
+   record that reaches the catch-all's `PR_Two_Level_Mgmt` would answer `Failed`
+   (`MANAGER_NOT_DEFINED`), which is correct behaviour but not what this step checks:
+   ```
+   Invocable.Action action = Invocable.Action.createCustomAction('apex', 'AMF_SubmitForMatrixApproval');
+   action.setInvocationParameter('recordId', '<throwaway Id>');
+   System.debug(action.invoke()[0].getOutputParameters());
+   ```
+   The first run returns `submitted` true with a decision log row Id. A second run on the same
+   record returns `Refused`, naming the process it is already in.
+7. **Manual, REST**, with another `Risk_Level__c = High` throwaway. Windows PowerShell strips
+   the double quotes inside an argument it passes to `sf` (technical log M6.6), which would send
+   `{recordIds:[…]}` and earn a 400, so escape them:
+   `sf api request rest /services/apexrest/approval-matrix/v1/submissions --method POST --body '{\"recordIds\":[\"<pending Id>\",\"<another throwaway Id>\"]}' -o amf-dev`
+   (or use Workbench's REST Explorer). It answers 200 with one result per Id: `Refused` for the
+   pending one, `Submitted` for the other. A body without `recordIds`, such as `--body '{}'`,
+   answers 400. Do not test with `''`: PowerShell drops an empty-string argument.
+
+Acceptance: engine tests prove, with in-memory rules and the stub:
+- a platform refusal becomes a `Failed` row with the guard re-armed, while the others submit;
+- an unreadable record is refused alone;
+- every object in a call is answered;
+- a rule that will not compile refuses only its own object's records;
+- duplicates are submitted once;
+- the whole-call contract is unchanged.
+
+Real-platform tests prove that one refused record leaves the others' submissions standing, that
+200 records go through in chunks within one transaction, and (M10.7, fixture replaced in M10.8)
+that a record whose guard a validation rule refuses fails by itself through either entry while the
+other record in the call is submitted. The invocable and REST tests prove one answer per request,
+in order, and the REST 400s.
+
+**Gate run 2026-10-21 (technical log M10.8):** passed, after the locked-record fixture was replaced;
+255/255.
+
+---
+
+### M11 — A second governed object: Opportunity (post-MVP)
+
+**Goal:** prove §3.2's claim that governing an object is configuration plus conventions, with no
+engine change, on the hardest kind of object to get right: a standard one. Opportunity has no
+`__c`, required fields, standard relationships (`Account.Industry`), four layouts tied to
+different profiles, and its own Submit for Approval button. The surprises were expected in
+metadata, the gates and the tests, and finding them is the point (technical log M11).
+
+**Build:**
+- **The guard.** `Opportunity.Matrix_Submission__c`, Checkbox, default false. Read-only in
+  `Approval_Matrix_User`, editable in `Approval_Matrix_Admin` (§3.4, §6.3).
+- **Two Classic templates** (§5.2), both on the submitter's manager hierarchy, so neither names a
+  user and both deploy to any org:
+  - `OPP_Manager_Approval`: one step.
+  - `OPP_Two_Level_Mgmt`: two steps.
+
+  Each has entry criterion `Matrix_Submission__c = TRUE`, and Opportunity's own
+  `AMF_Clear_Matrix_Submission` runs on final approval, final rejection and recall. Neither locks
+  the record after final approval: an approved deal must stay editable. The seeded approvers hold
+  Salesforce Platform licenses, which grant no Opportunity access, so named-user templates would
+  need a full-license approver this org cannot spare.
+- **The standard button removed (§6.3)** from all four Opportunity layouts, each of which listed
+  `Submit` explicitly. `Opportunity.AMF_Submit_For_Approval` goes first in its place, over the
+  unchanged `amfSubmitForApproval`. Each layout also gains the guard (read-only), Approval
+  History, and the Approval Decisions related list.
+- **Rules**, as CMDT rows:
+
+  | Rule | Priority | Expression | Routes to |
+  |---|---|---|---|
+  | `OPP_Large_Deal` | 10 | `Amount >= 250000` | `OPP_Two_Level_Mgmt` |
+  | `OPP_Key_Industry` | 20 | `Account.Industry IN ('Energy', 'Banking')` | `OPP_Two_Level_Mgmt` |
+  | `OPP_Catch_All` | 9999 | `TRUE` | `OPP_Manager_Approval` |
+- **Navigation.** `Approval_Decision_Log__c.Opportunity__c` is a SetNull lookup the log writer
+  finds by describe (M3.12), so it needs no Apex. It is in both permission sets and on the log's
+  layout.
+- **The timeline** on `Opportunity_Record_Page`, which keeps Activity and Chatter. It is activated
+  as the desktop org default through Opportunity's View override. The object file is the org's own
+  settings with that one change.
+- **The source gate** also fails any layout of a governed object that keeps the standard `Submit`
+  button or has no explicit action list. Without one, the platform shows its default set, which
+  includes `Submit` once an approval process exists.
+- **The validator** runs each governed object's union query, exactly as the engine builds it,
+  against no records. A query the platform refuses is then a release finding rather than a failure
+  at submit. This replaces M9.5's count against 55 relationships: in `amf-dev` one Apex query
+  joined 142 and returned its row.
+- **Tests.**
+  - `AMF_OpportunityGovernanceTest`, against both templates: the join, the routing, the bypass,
+    all three ways out, a call across both objects, the timeline and the validator.
+  - Validator unit tests for the union query.
+
+No engine class, LWC, or `Purchase_Request__c` metadata changes.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`.
+   Expect 6 active rules, 4 approval processes, and 5 layouts across 2 objects.
+2. Deploy the package.
+3. `sf apex run --file scripts/validate-config.apex -o amf-dev`. Expect the Opportunity rules
+   compiled, their processes active for Opportunity, and both union queries run.
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`: all green.
+5. Jest, as in M5: unchanged, because no LWC changes.
+6. **The action bar, by the UI API.** `GET /ui-api/actions/record/<Opportunity Id>?formFactor=Large`
+   lists `Opportunity.AMF_Submit_For_Approval` and no `Submit`. This automates M3.9's lesson, a
+   claim about a UI verified only by deploy status. The API answers for the caller's layout only,
+   the admin's *Opportunity Layout*; the source gate covers all four.
+7. **End to end in the org, through the invocable,** on throwaway Opportunities:
+   - a large deal routes to `OPP_Two_Level_Mgmt`;
+   - a small one routes to `OPP_Manager_Approval`;
+   - each has a decision log row whose `Opportunity__c` is set and the guard set;
+   - approval and recall each clear the guard;
+   - the timeline returns each entry with its native steps.
+8. **Manual, in the real UI, as the admin:** on a throwaway Opportunity, the header's first button
+   is Submit for Approval and there is no second one. The modal names the route. After
+   submitting, the timeline shows the entry without a reload, and *Matrix Submission* is ticked.
+
+Acceptance: the real-platform tests prove that an Opportunity enters both templates only through
+the engine, that every way out re-arms the guard, that one call answers a Purchase Request and an
+Opportunity each by its own matrix, and that the timeline explains an Opportunity. The validator
+tests prove that a refused union query is reported, and that the query runs only when every rule
+compiles. The source gate is shown, on scratch copies, to fail a layout with `Submit` and a
+layout with no action list.
+
+**Gate run 2026-10-21 (technical log M11.4):** steps 1–7 passed, with 264/264 Apex tests. Step 8,
+the manual UI check, passed in the first UI test run, on 2026-10-22 (technical log M12.6, TC-11 and
+TC-14). The header shows Follow before Submit for Approval, so the run counted the action rather
+than its position.
+
+### M12 — Template lifecycle, queue and committee templates, portability (post-MVP)
+
+**Goal:** make §5.1's convention that a live template is never edited in place enforceable by the
+gate rather than by discipline. Add the two approver shapes the MVP did not build, a queue and a
+committee. Let the framework's source deploy to an org other than `amf-dev`. Three decisions
+(technical log M12): a fingerprint manifest, Classic committees now, and org configuration in its
+own package directory.
+
+**Build:**
+- **Template lifecycle (§5.1).** `config/template-releases.json` lists every released template with
+  a SHA-256 fingerprint of its source: the XML without `<active>`, with insignificant whitespace
+  dropped and line endings normalised. The source gate fails:
+  - a released template whose fingerprint has changed (only its active flag may change);
+  - a template in source that is not released (the message gives its fingerprint, so releasing it
+    is one deliberate line);
+  - a released template missing from source;
+  - a superseded version that is still active, where `X_v2` supersedes `X` and `X_v3` supersedes
+    both;
+  - a rule that names a superseded version.
+
+  The guard checks (entry criterion, the guard cleared on every way out) now run on every active
+  template in source, not only those a rule names.
+- **Two Classic templates on `Purchase_Request__c`** (§5.2, §5.4), each with the guard as its only
+  entry criterion and `AMF_Clear_Matrix_Submission` on approval, rejection and recall:
+  - `PR_Credit_Risk_Queue`: one step, assigned to the queue `Q_Credit_Risk`; any member decides.
+  - `PR_Finance_Committee`: `amfu1`, `amfu2` and `amfu3` unanimously, then `amfu4` or `amfu5`,
+    first response.
+
+  Classic cannot name a public group as an approver. The committee therefore lists its members as
+  users, and the seed script makes `G_Finance_Approvers` the queue's member, so that the queue
+  reaches the group.
+- **Rules:** `PR_Committee_Spend` (5, `Amount__c >= 1000000`, to the committee) and
+  `PR_Credit_Risk_Review` (30, `Risk_Level__c == 'Medium' && Amount__c >= 50000`, to the queue).
+- **Portability.**
+  - Templates name users as `<alias>@{{AMF_USERNAME_DOMAIN}}`. A `sfdx-project.json` replacement
+    fills the domain from the environment variable of that name at deploy, and the CLI refuses a
+    deploy without it. The gate refuses a literal username, and a replacement config that does not
+    cover approval processes.
+  - Opportunity's four layouts and its object settings are `amf-dev`'s own configuration, so they
+    move, unchanged, to a second package directory, `org-config/amf-dev`. The gate reads every
+    package directory, and fails a standard object's layout or object settings in `force-app`.
+- **Rider:** `New` and `MassChangeOwner` are excluded from the Approval Decisions related list on
+  all five governed layouts (M11.5).
+- **Tests:** `AMF_TemplateShapesTest`, real-platform tests of both templates:
+  - the queue's work item is with the queue, and any member decides, directly or through a group;
+  - the committee needs every member, then either leader;
+  - one committee rejection rejects the request;
+  - the bypass, and all three ways out, on both templates;
+  - the timeline names the queue and the true actor;
+  - the validator passes the new rules.
+
+No engine class, LWC or validator class changes.
+
+**Gate, in order:**
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`.
+   Expect 8 active rules, 6 approval processes, all 6 released and unchanged, and 5 layouts across
+   2 objects.
+2. **The gate fails broken scratch copies of the project:**
+   - a released template edited;
+   - an unreleased template, whose message gives its fingerprint;
+   - a released template deleted;
+   - a `_v2` with its predecessor still active;
+   - a rule naming the predecessor;
+   - a literal username;
+   - the replacement removed;
+   - a standard object's layout moved back into `force-app`.
+
+   The copy with `_v2` released, `X` deactivated and the rules repointed passes.
+3. **Portability, offline:**
+   - `force-app` converts with `SF_APPLY_REPLACEMENTS_ON_CONVERT=true` and another domain, and
+     every approver carries that domain;
+   - without `AMF_USERNAME_DOMAIN`, conversion is refused;
+   - `force-app` holds no `amf-dev` Id or domain.
+4. Deploy both package directories with `AMF_USERNAME_DOMAIN` set. Run the seed script, which adds
+   the queue's member.
+5. **The org holds what is released:** retrieve all six templates. Each, with its domain put back
+   to the placeholder, has its released fingerprint. For `PR_Three_Level_Finance` this proves that
+   the placeholder change was representational only.
+6. `sf apex run --file scripts/validate-config.apex -o amf-dev`: the matrix is valid.
+7. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`: all green.
+8. Jest: unchanged, because no LWC changes.
+9. **The rider, by the UI API:** `GET /ui-api/actions/record/<Id>/related-list/Approval_Decisions__r`
+   lists neither `New` nor `MassChangeOwner`, for a Purchase Request and for an Opportunity.
+10. **End to end in the org:** on throwaway Purchase Requests, a medium-risk request of 60,000
+    routes to `PR_Credit_Risk_Queue`, with its work item on the queue. A request of 1,200,000
+    routes to `PR_Finance_Committee`, with three work items. Approving those three moves it to
+    the leaders, one leader's approval completes it, and the guard clears. The queue request,
+    recalled, clears its guard.
+11. **Manual, in the real UI:** a medium-risk request's modal names `PR_Credit_Risk_Queue`. After
+    submitting, the timeline shows the step with *Credit Risk*, and the Approval Decisions list
+    offers no New button.
+
+Acceptance: the gate makes an in-place edit of a released template a release failure, and shows it
+on scratch copies. Real-platform tests prove queue and committee semantics, the guard on both new
+templates, and the timeline's account of who acted. `force-app` deploys with any org's domain, and
+`amf-dev` holds exactly the released templates.
+
+**Gate run 2026-10-22 (technical log M12.4):** steps 1–10 passed, with 274/274 Apex tests. Step 11,
+the manual UI check, passed in the first UI test run that day (technical log M12.6, TC-01 and
+TC-03). A second org was not used: the guardrail allows `amf-dev` alone, so portability is shown
+offline (step 3).
+
+**Follow-up M12.6 (2026-10-22): two timeline display fixes.** The first UI test run
+(`docs/ui-tests/`) found two defects in M7's `amfDecisionTimelineEntry`:
+- its times followed the browser's time zone, not the viewer's Salesforce one;
+- its "Approval history:" line lost the space after its comma.
+
+The entry now gives both date components `@salesforce/i18n/timeZone`, and the comma has a span of
+its own. No Apex or other metadata changes. Gate:
+1. Jest: the new time-zone test and the whole-heading assertion fail before the fix and pass after
+   it, and every suite passes.
+2. The source gate, the deploy, the post-deploy check and RunLocalTests, as in M12.
+3. **Manual, the UI suite's re-run** (`docs/ui-tests/README.md`): TC-03.4 reads the heading with its
+   space, and TC-03.6 finds the timeline's time equal to Approval History's.
+
+**Gate run 2026-10-22 (technical log M12.6, M12.7):** steps 1 and 2 passed in M12.6. Step 3, the
+re-run, confirmed both fixes (M12.7). Its two FAILs were the script's: it allowed no reload for a
+related-list card after a submission, and now it does.
+
+---
+
+### M13 — AI around the engine: the Approval Matrix Assistant and plain-English explanations (post-MVP)
+
+**Goal:** the first two AI use cases the user chose. Submit by chat: an Agentforce agent that finds a
+record, shows where its approval will go and why, and submits it once the user confirms. A
+plain-English "why": any recorded decision explained in everyday words. Both sit around the engine
+and never inside it (architecture §1 principle 6): no model chooses a route, evaluates a rule,
+writes a log row or approves anything.
+
+**Build:**
+- **Plain-English explanations (§8, M13 note).**
+  - `AMF_DecisionExplainer` writes one timeline entry out as plain-text facts: the row's snapshot
+    and the native steps, as `AMF_DecisionTimelineService` already shows them to the reader.
+  - `AMF_ExplanationGenerator` is the seam. `AMF_EinsteinExplanationGenerator` runs the
+    `AMF_Explain_Approval_Decision` Flex template through `ConnectApi.EinsteinLLM`, with two text
+    inputs, Facts and Question.
+  - `amfDecisionExplanation` is an **Explain in plain English** button, then a card: AI-generated
+    badge, "write it again", and provenance naming the row. It sits at the top of an entry's
+    details, above the recorded facts, and is put away when the approval's history changes.
+  - `amfErrors` holds one shared error-text helper for new components.
+  - `AMF_DecisionTimelineService` gains `describeValues()` (additive).
+- **The Approval Matrix Assistant (§7, M13 note).** An employee agent in Agent Script,
+  `AMF_Approval_Assistant`: a router and two subagents, preview-and-submit and explain. Four
+  invocable actions:
+  - `AMF_AgentFindRecord`: governed objects only, learned from the rules; user mode; never guesses
+    between several matches.
+  - `AMF_AgentPreviewRoute`: `preview()`, writes nothing.
+  - `AMF_AgentSubmitRoute`: M10's `submitEach()`; Route Changed computed in Apex; who it is waiting
+    on, named from `ActorId`.
+  - `AMF_AgentExplainDecision`: the explainer, with the user's question.
+
+  `AMF_AgentSupport` reads the Ids the model passes as text. Submit is available only after a
+  preview that reached a decision. Its record and expected process are bound by the runtime, and it
+  requires the user's confirmation.
+- **Packaging.**
+  - The template and the authoring bundle go in a new package directory, `agentforce/`, because
+    they deploy only where Einstein generative AI and Agentforce are on (§12 item 9).
+  - `sourceApiVersion` rises to 66.0 for Agent Script; Apex stays at 62.0.
+  - Both permission sets grant the five new entry classes.
+  - `AMF_Approval_Assistant_Access` (`agentAccesses`) is `org-config/amf-dev`'s, deployed after the
+    agent is published.
+- **Tests.** 60 new Apex tests, one of them a real approval. 15 new Jest tests.
+  `specs/AMF_Approval_Assistant-testSpec.yaml` holds 9 agent test cases, none of which submits.
+
+No engine class, rule, template, object or field changes.
+
+**Gate, in order.** In `amf-dev`, with `$env:AMF_USERNAME_DOMAIN = 'amf.00daj000012gj9b.dev'` set:
+
+0. **Once, in Setup, by an administrator.** Einstein generative AI is already on in `amf-dev`.
+   - Turn on Agentforce: **Setup → Agentforce Agents**.
+   - Assign to the admin, and to any tester, **Prompt Template User** and **Access Agentforce
+     Default Agent**:
+     `sf org assign permset --name EinsteinGPTPromptTemplateUser --name CopilotSalesforceUser -o amf-dev`.
+     Add **Agent Platform Builder** (`AgentPlatformBuilder`) if step 8's publish is refused for
+     permission.
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`:
+   unchanged.
+2. Offline:
+   - Jest, as in M5: 75 tests.
+   - `sf agent validate authoring-bundle --json --api-name AMF_Approval_Assistant -o amf-dev`:
+     `success: true`.
+3. **Deploy, without `org-config` the first time**:
+   `sf project deploy start -o amf-dev --source-dir force-app --source-dir agentforce`.
+4. `sf apex run --file scripts/validate-config.apex -o amf-dev`: the matrix is valid.
+5. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`: all green, 334 tests (274 + 60).
+6. **The explanation, live:** `sf apex run --file scripts/explain-decision.apex -o amf-dev`. It
+   prints PR-00000042's newest recorded decision and two to four plain sentences that name the same
+   rule and process, and nothing the row does not hold.
+7. **Agent preview before publishing, live actions, on a throwaway Purchase Request** (60,000,
+   AMER, Medium: `PR_Credit_Risk_Review` routes it to `PR_Credit_Risk_Queue`):
+   - `sf agent preview start --json --authoring-bundle AMF_Approval_Assistant --use-live-actions -o amf-dev`
+   - `sf agent preview send --json --authoring-bundle AMF_Approval_Assistant --session-id <id> -u "Where would <its PR number> go for approval?"`
+     names `PR_Credit_Risk_Queue` and `PR_Credit_Risk_Review`, and says nothing was submitted. No
+     log row is added.
+   - `-u "Submit it."` asks for confirmation. `-u "Yes."` submits: `Submitted`, waiting on Credit
+     Risk, with a decision log name.
+   - `-u "Why did it go there?"` explains it.
+   - `sf agent preview end --json --authoring-bundle AMF_Approval_Assistant --session-id <id>`.
+     Recall the throwaway afterwards.
+8. **Publish and activate:**
+   `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-agent.ps1`. It ends
+   "Agent AMF_Approval_Assistant activated." The script publishes from a throwaway project, because
+   `sf agent publish authoring-bundle` looks only in the default package directory (technical log
+   M13.7b). It passes `--skip-retrieve`, so no generated Bot metadata reaches `force-app`.
+9. **Agent access:**
+   - `sf project deploy start -o amf-dev --source-dir org-config/amf-dev`
+   - `sf org assign permset --name AMF_Approval_Assistant_Access -o amf-dev`
+
+   From now on, the plain `sf project deploy start -o amf-dev` deploys all three directories.
+10. **Agent tests:**
+    - `sf agent test create --json --spec specs/AMF_Approval_Assistant-testSpec.yaml --api-name AMF_Approval_Assistant_Tests --force-overwrite -o amf-dev`
+    - `sf agent test run --json --api-name AMF_Approval_Assistant_Tests --wait 10 -o amf-dev`
+
+    All 9 cases pass all three assertions. A topic name the platform reports differently is
+    corrected as the spec's header says, not by loosening an expected outcome. `test create` writes
+    the generated definition into `force-app`; move it to `org-config/amf-dev`.
+11. **Manual, in the real UI:**
+    - On PR-00000042, the newest timeline entry's details open with **Explain in plain English**.
+      It shows "Einstein is writing…", then a card with the AI-generated badge and "Written by
+      Einstein at … from decision log ADL-…". The recorded rule, condition and values stay below
+      it. The refresh icon writes it again.
+    - On a throwaway Purchase Request, open the Agentforce panel and choose **Approval Matrix
+      Assistant**:
+      - "Where would this go?" shows the route, and nothing is submitted.
+      - "Submit it" asks for confirmation; confirm, and it reports the process and who it is
+        waiting on.
+      - The timeline's refresh button shows the new entry.
+      - "Why did it go there?" explains it.
+      - Recall the throwaway afterwards.
+
+Acceptance:
+- The explainer's tests pin what reaches the model: the snapshot only, under field labels, with
+  the native steps. A reason the reader cannot see is said to be hidden, never guessed. The
+  question is passed on, and every refusal is worded for the reader.
+- A preview writes nothing.
+- The agent's submission takes M10's path: guard staged, row written, route change computed in
+  Apex. A real approval names who it is waiting on.
+- The finder searches only governed objects, in user mode, and lists several matches rather than
+  choosing one.
+- Jest covers the explanation's every state, including an answer that arrives after the approval
+  moved on.
+
+**Gate run 2026-10-23 (technical log M13.7):** steps 0 to 10 passed. The user turned on Agentforce
+and assigned the permission sets. Deploy 145/145. 334/334 Apex. Einstein explained PR-00000042's
+decision accurately. A live preview session submitted throwaway PR-00000049 only after
+confirmation, and it was then recalled. The agent tests ran 9/9 on v2. Six defects were found and
+fixed on the way:
+- the template's active version;
+- publish reading only `force-app`;
+- a description over 255 characters;
+- the explanation script's Aura wrapper;
+- the platform's Reverse_Engineering guardrail, and an approve request routed to preview;
+- the test definition written into `force-app`.
+
+Step 11, the manual UI check, passed on 2026-10-24 within M14's step 9, run by Grok Bot (technical
+log M15.7).
+
+### M14 — The assistant for submitters and approvers (post-MVP)
+
+**Goal:** four more of the assistant's uses, chosen by the user on 2026-10-23 with the admin uses
+that become M15, and one change to who may read the routing reason. All four sit around the engine
+(architecture §1 principle 6): the engine answers the what-if, and the briefing describes a decision
+without recommending one.
+
+**Build:**
+- **Engine (§6.4, M14 note):** `previewWith(recordId, changes)`, write-nothing, the record's own
+  fields only, checked after authorisation. A private `prepare()` overload carries the changes; the
+  existing entries pass none.
+- **The current approver sees why (§8, §11, M14 notes):** `AMF_ApproverScope` (the user, their queues
+  and groups to depth 5, the users they are delegated approver for), and one rule in
+  `AMF_DecisionTimelineService.build()` with `Decision.visibleAsApprover`.
+- **`AMF_DecisionExplainer.briefLatest()`** and `BRIEFING_QUESTION`, additive, through the existing
+  `AMF_Explain_Approval_Decision` template.
+- **Four invocables (§7, M14 note):** `AMF_AgentWhatIfRoute`, `AMF_AgentMyRequests`,
+  `AMF_AgentMyApprovals` and `AMF_AgentBriefApproval`, in both permission sets. `AMF_AgentSupport`
+  gains `labelsOf`, `actorNamesOf` and `whenOf`.
+- **The agent:** a third router branch and a `my_work` subagent for the two lists; the explain
+  subagent also briefs; `route_and_submit` gains `what_if`, which clears `can_submit`. Five more
+  Testing Center cases, none of which submits.
+
+No object, field, template, rule or LWC changes.
+
+**Gate, in order.** In `amf-dev`, with `$env:AMF_USERNAME_DOMAIN = 'amf.00daj000012gj9b.dev'` set:
+
+1. `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/validate-approval-matrix-source.ps1`:
+   unchanged.
+2. Offline: Jest, 75 tests, unchanged; `sf agent validate authoring-bundle --json --api-name
+   AMF_Approval_Assistant -o amf-dev`: `success: true`.
+3. Deploy all three directories: `sf project deploy start -o amf-dev`.
+4. `sf apex run --file scripts/validate-config.apex -o amf-dev`: the matrix is valid.
+5. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`: all green, M13's 334 plus M14's.
+6. **Agent preview before publishing, live actions** (`sf agent preview start --authoring-bundle
+   AMF_Approval_Assistant --use-live-actions`), counting decision log rows before and after:
+   - "What if PR-00000047 had an amount of 120000 and region APAC?" names `PR_Three_Level_Finance`
+     and `PR_High_Value_APAC`, says today is `PR_Two_Level_Mgmt`, and adds no row.
+   - "Where do my approval requests stand?" lists the user's own records.
+   - **Briefing:** submit a throwaway Purchase Request (500, AMER, Low: the catch-all) with anonymous
+     Apex, and reassign its work item to the CLI user. "What is waiting for my approval?" lists it, and
+     "Brief me on it" briefs it without recommending a decision. Recall the throwaway afterwards, and
+     check that *Matrix Submission* is cleared.
+   - The CLI user has View All on the log, so the current-approver rule itself is proved by the Apex
+     tests, which run as an `Approval_Matrix_User`.
+7. **Publish and activate:** `scripts/publish-agent.ps1`, which makes v3.
+8. **Agent tests:** `sf agent test create --json --spec specs/AMF_Approval_Assistant-testSpec.yaml
+   --api-name AMF_Approval_Assistant_Tests --force-overwrite -o amf-dev`, then `sf agent test run
+   --json --api-name AMF_Approval_Assistant_Tests --wait 10 -o amf-dev`. All 14 cases pass. Run them
+   only when nothing is assigned to the CLI user, because one case expects nothing waiting. Move the
+   generated definition to `org-config/amf-dev`.
+9. **Manual, in the real UI, owed by the user.** It includes M13's step 11:
+   - the Explain button on PR-00000042's newest timeline entry;
+   - in the Agentforce panel, on a record: "Where would this go?", "What if the amount were
+     120000?", "Where do my requests stand?" and "What is waiting for my approval?";
+   - a throwaway submitted, then reassigned to the tester: "Brief me on it". Then recall it.
+
+Acceptance:
+- A what-if writes nothing, routes by the engine's own walk, and refuses what `preview()` refuses.
+- The current approver, and only while the approval waits on them, is shown the row their sharing
+  hides, and it is flagged. A reader the approval does not wait on is shown nothing new.
+- A briefing is refused to anyone the approval is not waiting on, and never asks the model to
+  recommend.
+- The lists show only the user's own requests, and only governed records the user can read.
+
+**Gate run 2026-10-23 (technical log M14.5):** steps 1 to 8 passed.
+- Deployed 163/163, and the matrix is valid.
+- RunLocalTests 370/370, then 371/371 once a gate finding added a test.
+- A live session's what-ifs wrote no row. A throwaway, PR-00000050, was reassigned to the CLI user,
+  listed as waiting, briefed, and recalled.
+- The agent was published to v7. Its 14-case suite passed 42/42 assertions in two consecutive runs.
+
+Two defects were found and fixed on the way:
+- the explainer described a reassigned step the wrong way round;
+- the published agent routed "brief me" by its descriptions, so a briefing moved to the explain
+  subagent.
+
+Step 9, the manual UI check, which includes M13's step 11, passed on 2026-10-24. Grok Bot ran it in
+the browser with `docs/ui-tests/ai-check-scripts.md` (technical log M15.7). The panel passes the open
+record. A submission is confirmed once, in the chat, though that confirmation named the route in the
+model's own words.
+
+### M15 — The Approval Matrix Admin Assistant (post-MVP)
+
+**Goal:** the three administrator uses the user chose on 2026-10-23, in a second agent for
+administrators only. It drafts a rule from a description, checks what a change would do before it
+is released, and reports how the matrix has been doing. It changes nothing. A draft routes nothing
+until it is released as an ordinary configuration release (architecture §1, principles 1 and 6).
+
+**Build:**
+- **Engine (§6.4, M15 note):** `previewEach(recordIds)`, write-nothing, per-record refusals.
+- **The prompt seam:** `AMF_PromptRunner`, `AMF_EinsteinPromptRunner`, `AMF_PromptException`.
+- **`AMF_DraftRuleProvider`:** the live matrix with one rule added, replaced (at a new version) or
+  taken out.
+- **`AMF_RuleDrafter`:** context, the `AMF_Draft_Matrix_Rule` template, §9's checks on the draft,
+  one corrected attempt, and the Custom Metadata file.
+- **`AMF_MatrixImpact`:** two `previewEach()` runs, live and changed, over the object's records
+  decided in the last 90 days.
+- **`AMF_MatrixHealthService`:** counted facts and the `AMF_Summarize_Matrix_Health` summary.
+- **Three invocables, in `Approval_Matrix_Admin` only:** `AMF_AgentDraftRule`,
+  `AMF_AgentCheckImpact`, `AMF_AgentMatrixHealth`. `AMF_AgentSupport` gains `governedObjectNamed`.
+- **`agentforce/`:** the two templates, and the `AMF_Matrix_Admin_Assistant` bundle.
+- **`org-config/amf-dev`:** `AMF_Matrix_Admin_Assistant_Access`, and the agent's test definition.
+- **`specs/AMF_Matrix_Admin_Assistant-testSpec.yaml`:** six cases, none of which changes anything.
+
+No object, field, template, rule or LWC changes.
+
+**Gate, in order.** In `amf-dev`, with `$env:AMF_USERNAME_DOMAIN = 'amf.00daj000012gj9b.dev'` set:
+
+1. The source gate: unchanged.
+2. Offline: Jest, 75 tests, unchanged; `sf agent validate authoring-bundle` for both agents.
+3. **Deploy, without `org-config`,** because the new access set names an agent not yet published:
+   `sf project deploy start -o amf-dev --source-dir force-app --source-dir agentforce`.
+4. `sf apex run --file scripts/validate-config.apex -o amf-dev`: the matrix is valid.
+5. `sf apex run test -o amf-dev -l RunLocalTests -w 10 -r human`: all green.
+6. **The templates' active versions (M13.7a):** retrieve both, take the retrieved form, with
+   `activeVersionIdentifier`, into source, redeploy `agentforce/`, and check that a retrieve then
+   matches.
+7. **Agent preview before publishing, live actions**
+   (`sf agent preview start --authoring-bundle AMF_Matrix_Admin_Assistant --use-live-actions`).
+   Count the decision log rows and the matrix's rules before and after:
+   - "Draft a rule for purchase requests: anything over 500,000 in EMEA should go to the finance
+     committee." gives a valid draft for `PR_Finance_Committee`, with its file.
+   - "What would that draft change for recent requests?" reports the comparison.
+   - "How has the matrix been doing over the last 90 days?" gives a summary whose figures are in its
+     facts.
+   - Nothing is added to the log or the matrix.
+8. **Publish and activate:**
+   `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/publish-agent.ps1 -AgentName AMF_Matrix_Admin_Assistant`.
+9. **Agent access:** `sf project deploy start -o amf-dev --source-dir org-config/amf-dev`, then
+   `sf org assign permset --name AMF_Matrix_Admin_Assistant_Access -o amf-dev`.
+10. **Agent tests:** `sf agent test create --json --spec specs/AMF_Matrix_Admin_Assistant-testSpec.yaml
+    --api-name AMF_Matrix_Admin_Assistant_Tests --force-overwrite -o amf-dev`, then `sf agent test
+    run --json --api-name AMF_Matrix_Admin_Assistant_Tests --wait 15 -o amf-dev`. Run it twice; all
+    cases should pass both times. Move the generated definition to `org-config/amf-dev`.
+11. **Manual, in the real UI, owed by the user:** choose Approval Matrix Admin Assistant in the
+    Agentforce panel. Draft a rule, check its impact, and ask for a health report. Check that it
+    refuses "deploy it".
+
+Acceptance:
+- A draft is shown only when it compiles, its name is valid and free, its priority is free, its
+  process is active, and the engine's query runs. One corrected attempt is allowed; otherwise it is a
+  refusal with reasons.
+- The impact check writes nothing. Both sides are the engine's, and refused records are skipped.
+- Every figure in a health report is counted in Apex; the facts come back without a summary too.
+- Nothing in M15 writes a rule, a log row or a record.
+
+**Gate run 2026-10-23 (technical log M15.5):** steps 1 to 10 passed.
+- Deployed 176/176. The matrix is valid. RunLocalTests 404/404.
+- Both templates were taken in their retrieved form, and a retrieve matches them.
+- **Live sessions:**
+  - Drafts were valid and checked.
+  - The draft's impact covered 16 requests, with 7 pending ones skipped.
+  - The health report gave the log's real figures.
+  - The log stayed at 29 rows and the matrix at 9 rules.
+- The agent was published to v1 and its access deployed. The 6-case suite passed 18/18 assertions
+  in two consecutive runs.
+
+The gate found that the model answered without calling its tools. The fix was in the script's
+wording: what the model does not know, tools named as lookups, and no answer templates.
+
+Step 11, the manual UI check, passed on 2026-10-24, run by Grok Bot (technical log M15.7).
+
+### M16 — The Claude connector (post-MVP)
+
+**Goal:** Claude, in claude.ai, Claude Desktop, the mobile apps and Claude Code, works with the matrix
+as the signed-in user, smoothly: records named as people name them, a link in every answer, and a
+submission that takes one confirmation. Principle 6 holds: the engine routes, approvers decide, and
+Claude writes from facts Apex returns (architecture §1, §7's M16 note).
+
+**Build:**
+- **`mcp/`, a fourth package directory:**
+  - twelve `global` invocable facades, `AMF_Mcp*`, over the existing actions and services, with
+    `AMF_McpSupport` (references, links, the preview token) and `AMF_McpFactsOnly`;
+  - `AMF_Mcp_Settings__c`, a protected hierarchy setting holding the preview key;
+  - `AMF_Claude_Connector_User` (eight tools) and `AMF_Claude_Connector_Admin` (all twelve);
+  - two `McpServerDefinition`s, `AMFApprovalMatrix` and `AMFApprovalMatrixAdmin`, `.forceignore`d
+    because they deploy at Metadata API 67.0.
+- **`org-config/amf-dev`:** the External Client App `AMFClaudeConnector`, with its OAuth settings and
+  a hardened policy.
+- **`scripts/`:** `setup-claude-connector.ps1` (deploy, servers at 67.0, activate, key, access, how
+  to connect), `setup-mcp.apex` (the key) and `mcp-probe.mjs` (an MCP client for the gate).
+- **`docs/claude-connector.md`:** the guide.
+
+No engine, M13 to M15 class, existing object, field, rule, template or LWC changes, and neither agent.
+
+**Gate, in order.** In `amf-dev`:
+
+1. The source gate: unchanged counts.
+2. Jest, 75 tests, unchanged.
+3. `scripts/setup-claude-connector.ps1 -Admin`: every step succeeds; all twelve tools are listed
+   with their annotations (eleven read-only, `submit_for_approval` destructive); both servers active.
+4. `sf apex run test -o amf-dev -l RunLocalTests -w 30 -r human -c`: all green, every new class at
+   90% or more.
+5. A check-only deploy of every package directory: no errors.
+6. **REST smoke, as the CLI user,** through `/services/data/v66.0/actions/custom/apex/AMF_Mcp*`,
+   counting decision log rows and matrix rules before and after:
+   - `preview_route` "PR-00000047": `PR_Two_Level_Mgmt` via `PR_Catch_All`, a link and a token;
+   - `what_if_route` 120,000 in APAC: `PR_Three_Level_Finance` via `PR_High_Value_APAC`;
+   - `get_decision_facts` "PR-00000042": its newest decision's facts;
+   - `get_briefing_facts` "PR-00000045": not waiting on the user;
+   - `submit_for_approval` with a forged token, and with a real token for another process: refused;
+   - both lists, `find_record`, and the four admin tools on the EMEA draft;
+   - nothing written.
+7. **MCP:** `scripts/mcp-probe.mjs` against both servers, with one browser login: `initialize`,
+   `tools/list` with the annotations, and `tools/call preview_route`.
+8. **Manual, owed by the user:** connect claude.ai and Claude Code (`docs/claude-connector.md` §3)
+   and run the conversations in its section 4, including a throwaway submitted through Claude after
+   confirming, reassigned to the tester, briefed and recalled.
+
+Acceptance:
+- Every route, rule, figure and approver Claude is given comes from an existing action or service.
+- A submission needs a preview token for the same user, record and process within 15 minutes, and
+  the route unchanged; otherwise nothing is written.
+- The read tools write nothing.
+- No tool approves, rejects, recalls or reassigns.
+
+**Gate run 2026-10-24 (technical log M16.5).**
+- Steps 1 to 6 passed.
+  - Source gate unchanged.
+  - Jest 75/75.
+  - The setup script succeeded, with all twelve tools annotated.
+  - RunLocalTests 451/451 at 97%, every new class at 97% or more.
+  - Check-only deploy 221/221.
+  - The REST smoke test gave the expected answers, with 30 rows and 9 rules before and after.
+- Step 7 passed after the user's one browser login (M16.7).
+  - Both servers initialised over MCP and listed their tools with the right annotations.
+  - `preview_route` answered.
+  - A forged `submit_for_approval` was refused, with nothing written.
+  - `get_health_facts` gave the log's figures.
+- Step 8 is owed.
+
+---
+
+## Part 4 — When Things Go Wrong
+
+- **Claude Code invents schema** (a field not in §3): stop it, point at the doc, restate
+  the `CLAUDE.md` rule. If it happens twice in a phase, `/clear` and re-run the phase — a
+  context that has argued with you produces worse code than a fresh one.
+- **A phase reveals a real doc gap:** fix `docs/architecture.md` first, log one line in
+  `docs/decisions.md`, then continue. The doc stays truthful or the later phases rot.
+- **A deploy fails with `UNKNOWN_EXCEPTION` and zero component errors:** do not retry it —
+  **split it**. Deploy `--source-dir` per group until the API attributes real errors. This
+  cost most of an afternoon in Phase 1 and hid two genuine bugs.
+- **Fields describe as missing but `FieldDefinition` says they exist:** it is FLS, not a
+  stale describe cache. Assign one of the two permission sets to the running user.
+- **Tests pass but org behavior is wrong:** most likely in M3, where approval mechanics
+  resist unit testing. Trust your manual QA over the green run, and hand Claude Code the
+  *observed* org behavior verbatim as the bug report.
+- **Context feels degraded** (repeating itself, forgetting conventions): `/clear` costs
+  nothing. `CLAUDE.md`, the architecture doc and the technical log carry the state — the
+  conversation does not.
+
+---
+
+## Part 5 — Proposed roadmap (not authorised)
+
+> **A proposal, not a permission.** Recorded on 2026-10-08, after M9, so the plan survives the
+> session boundary. Nothing in this part may be built until `CLAUDE.md`'s *Current authorised
+> post-MVP work* names the phase and the phase has its own entry in Part 3 with a gate. The order
+> is a recommendation; revisit it whenever a phase completes. Each phase's leftovers live in the
+> technical log's *Carried into later phases* tables, which this part draws on.
+
+### Owed before any new phase
+
+| Item | Where |
+|---|---|
+| ~~M8's manual UI check: submit, submit again (refused by name, no modal, no log row), recall (*Matrix Submission* unticked), resubmit~~ **passed 2026-10-22** in the first UI test run | technical log M12.6 |
+| Optional: M9's manual check, a throwaway rule using the new grammar previewed in the UI. The UI suite's TC-15 runs it when `RUN_OPTIONAL` is `yes` | technical log M9.4 |
+| ~~M10's org gate: deploy, RunLocalTests (255), the invocable and REST checks~~ **passed 2026-10-21** | technical log M10.8 |
+| ~~M11's manual UI check: on a throwaway Opportunity, one Submit for Approval button, the modal names the route, the timeline updates without a reload, *Matrix Submission* ticked~~ **passed 2026-10-22** in the first UI test run | technical log M12.6 |
+| ~~M12's manual UI check: a medium-risk request's modal names `PR_Credit_Risk_Queue`, the timeline shows the step with *Credit Risk*, and the Approval Decisions list offers no New button~~ **passed 2026-10-22** in the first UI test run | technical log M12.6 |
+| ~~The UI suite's re-run against M12.6, whose TC-03.4 and TC-03.6 check the two timeline fixes~~ **passed 2026-10-22** | technical log M12.7 |
+| ~~M13's, M14's and M15's manual UI checks: the Explain button, the Approval Matrix Assistant in the panel, the Admin Assistant~~ **passed 2026-10-24**, run by Grok Bot | technical log M15.7 |
+| M16's step 8: the conversations in claude.ai and Claude Code. The AI-check script's AI-04 runs claude.ai's half; Claude Code needs a person | technical log M16.6, M15.7 |
+
+### M10 — Entry points and bulk submission *(authorised and built, 2026-10-08)*
+
+Moved to Part 3, with its gate. The three decisions it needed were taken: per-record outcomes for
+the bulk entry points, `TODAY` as the running user's date, and one shared result shape
+(`docs/decisions.md`, 2026-10-08).
+
+### M11 — A second governed object *(authorised and built, 2026-10-21)*
+
+Moved to Part 3, with its gate. The user chose Opportunity over a second custom object. The
+55-relationship item below rode along, changed by measurement (technical log M11).
+
+### M12 — Template lifecycle, queue and committee templates, portability *(authorised and built, 2026-10-22)*
+
+Moved to Part 3, with its gate. The three decisions it needed were taken:
+- in-place edits are detected by a fingerprint manifest;
+- committee steps are built on Classic now;
+- the org's own configuration lives in its own package directory.
+
+The related-list buttons rode along (technical log M12).
+
+### M13 — AI around the engine *(authorised, built and gated 2026-10-23; its manual UI check passed 2026-10-24)*
+
+Moved to Part 3. The user chose two of the five AI use cases proposed that day: submit by chat, and
+a plain-English "why". Three more stay as proposals, each needing its own authorisation:
+- **A rule-writing assistant.** An admin describes a rule; a model drafts `Expression__c` and a
+  priority; `AMF_ExprCompiler` and the validator must accept the draft before any person sees it;
+  it ships as an ordinary config release.
+- **An approver briefing** on the work item.
+- **A matrix-health report** over the decision log: catch-all share, and blocked or failed trends.
+
+Lightning types, for richer cards in the agent panel, are a possible follow-up to M13.
+
+**All three, and three more, authorised 2026-10-23.** The user chose six more AI uses: the
+approver briefing, "where are my requests", "what is waiting for me" and a what-if became **M14**;
+the rule-writing assistant, a rule-change impact check and the matrix-health report became **M15**,
+in a second agent for administrators. Both are in Part 3.
+
+### M16 — The Claude connector *(authorised and built 2026-10-24; its MCP login passed, its conversations in Claude are owed)*
+
+Moved to Part 3. Of the Claude integrations proposed on 2026-10-24, the user chose the matrix as an
+MCP server, over Salesforce Hosted MCP Servers. Still proposals, each needing its own authorisation:
+- **Claude as Agentforce's model.** The prompt templates and agents name a Claude model where the org
+  offers one, inside the Trust Layer.
+- **Claude behind `AMF_PromptRunner`.** An Apex runner over the Claude API, for structured outputs
+  and PDF citations, in orgs without Agentforce.
+- **A policy conformance check.** Claude reads a written approval policy and tests the matrix at its
+  thresholds through the connector's previews. It is now mostly a matter of instructions.
+- **Rule changes reviewed in CI**, and a scheduled matrix guardian on Claude Managed Agents.
+
+### Grammar and validator hardening *(small; can join M10 or M11)*
+
+- ~~**The 55-relationship limit.**~~ **Done in M11, differently.** The documented limit of 55
+  child-to-parent relationships is not enforced in `amf-dev`: one Apex query at API 62 joined 142
+  distinct relationships and returned its row. So `AMF_ConfigValidator` runs each object's real
+  union query rather than counting against a number (technical log M11).
+- **Field types still refused:** DateTime (it needs a time-zone decision), Email, Phone, URL, Text
+  Area. Each is a type-map entry plus tests.
+
+### Flow approvals *(largest; partly blocked)*
+
+**Goal:** the second execution strategy §5.3 and §6.2 design, so rules can move from Classic to
+Flow one row at a time.
+
+**Sketch:**
+- `Execution_Type__c` on the rule and the log (§3.1, §3.3).
+- `AMF_FlowApprovalStrategy` (§5.3, §6.2).
+- A Flow history provider behind `AMF_ApprovalHistoryProvider` for the timeline (§8, M7.6).
+- Active-`ApprovalWorkflow` checks in the validator (§9).
+- A guard reset for cancelled submissions (§12 item 7, M6.5).
+- At least one Flow template with its companion screen flows.
+
+**Blocked on:** the unanimous-approval metadata value (§12 item 1), if committee templates are
+wanted on Flow. **Bound by** `docs/spike-results.md` Round 2's migration checklist, and by engine
+classes staying at API ≤ 66 (§12 item 6). **Cleanup it owns:** the M6 teardown, which also removes
+PR-00000014 to PR-00000025 and the guards they still carry (technical log M8.7c).
+
+### Smaller items, not phases
+
+| Item | Source |
+|---|---|
+| Phones keep the default record page; the sidebar Activity panel is not on the new page | M7.6 |
+| UI strings are English literals; Custom Labels when translation is needed | M7.6 |
+| `messageOf` is duplicated in two LWCs; `.prettierrc` (2 spaces) disagrees with the code (4) | M7.6 |
+| Rule descriptions are not snapshotted, so the timeline shows DeveloperNames; it would need a log field | `docs/decisions.md` |
+| Approvers cannot read the routing reason for others' submissions; a sharing decision on the log | `docs/decisions.md` |
+| Field-to-field multipicklist comparisons are refused | M9.5 |
+| ~~The Approval Decisions related list offers New and Mass Change Owner on both objects' layouts; `excludeButtons` removes them~~ **done in M12** | M11.5 |
+
+### Not on the roadmap
+
+Appendix B's superseded designs stay out: approver resolution, chain objects, the Group Work
+Item pattern and the SLA batch. So does the template registry, unless §12 item 4's threshold is
+reached (dozens of rules sharing shapes).

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomObject xmlns="http://soap.sforce.com/2006/04/metadata">
+    <customSettingsType>Hierarchy</customSettingsType>
+    <description>The Claude connector's own settings (M16). Holds the key that signs a preview, so that a submission through Claude is always of a record its user has just previewed. Seeded once per org by scripts/setup-mcp.apex.</description>
+    <enableFeeds>false</enableFeeds>
+    <label>AMF MCP Settings</label>
+    <visibility>Protected</visibility>
+</CustomObject>

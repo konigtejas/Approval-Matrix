@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CustomField xmlns="http://soap.sforce.com/2006/04/metadata">
+    <fullName>Object_API_Name__c</fullName>
+    <description>Object the governed record belongs to. Denormalised so the log is readable and reportable without resolving Record_Id__c back to an SObject type (arch doc 3.3).</description>
+    <externalId>false</externalId>
+    <label>Object API Name</label>
+    <length>80</length>
+    <required>false</required>
+    <trackTrending>false</trackTrending>
+    <type>Text</type>
+    <unique>false</unique>
+</CustomField>

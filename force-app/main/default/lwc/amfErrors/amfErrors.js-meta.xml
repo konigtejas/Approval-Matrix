@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<LightningComponentBundle xmlns="http://soap.sforce.com/2006/04/metadata">
+    <apiVersion>62.0</apiVersion>
+    <description>Shared helper for the framework's components: the text of an Apex or JavaScript error, whatever its shape (M13).</description>
+    <isExposed>false</isExposed>
+</LightningComponentBundle>
