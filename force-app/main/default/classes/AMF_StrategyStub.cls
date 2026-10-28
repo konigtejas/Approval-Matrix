@@ -31,6 +31,13 @@ public class AMF_StrategyStub implements AMF_SubmissionStrategy {
     /** When set, submit() throws it -- for proving the engine does not swallow it. */
     public Exception failWith;
 
+    /**
+     * Object API names on which submit() throws before answering. submitEach()
+     * of two objects uses this to prove an earlier object's submissions roll
+     * back with the failure.
+     */
+    public Set<String> failForObjects = new Set<String>();
+
     /** When true, submit() returns results with no execution reference. */
     public Boolean returnBlankReference = false;
 
@@ -55,6 +62,14 @@ public class AMF_StrategyStub implements AMF_SubmissionStrategy {
      */
     public List<AMF_SubmitResult> submit(List<AMF_SubmitRequest> requests) {
         calls++;
+
+        if (!requests.isEmpty()) {
+            String objectApiName = String.valueOf(requests[0].recordId.getSObjectType());
+            if (failForObjects.contains(objectApiName)) {
+                throw new AMF_SubmissionException('The strategy failed for ' + objectApiName);
+            }
+        }
+
         received.addAll(requests);
 
         if (failWith != null) {

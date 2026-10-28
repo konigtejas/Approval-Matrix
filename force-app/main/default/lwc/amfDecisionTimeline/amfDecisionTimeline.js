@@ -1,6 +1,7 @@
 import { LightningElement, api } from 'lwc';
 import { registerRefreshHandler, unregisterRefreshHandler } from 'lightning/refresh';
 import getTimeline from '@salesforce/apex/AMF_DecisionTimelineService.getTimeline';
+import { messageOf } from 'c/amfErrors';
 
 /**
  * The decision timeline: arch doc 8's "read-only timeline LWC [that] renders
@@ -15,6 +16,8 @@ import getTimeline from '@salesforce/apex/AMF_DecisionTimelineService.getTimelin
  * the next decision on the record. So it is called imperatively, and re-read
  * on three occasions:
  *   - when the component connects;
+ *   - when recordId changes without the component being recreated, which is
+ *     how a record page moves from one record to the next;
  *   - when the record page refreshes (lightning/refresh), which
  *     c/amfSubmitForApproval raises after every submission attempt, so a new
  *     entry appears without a page reload;
@@ -25,7 +28,25 @@ import getTimeline from '@salesforce/apex/AMF_DecisionTimelineService.getTimelin
  * An older answer arriving late must not overwrite a newer one.
  */
 export default class AmfDecisionTimeline extends LightningElement {
-    @api recordId;
+    _recordId;
+
+    /**
+     * Set before the component connects, and again when the page navigates to
+     * another record without destroying this one. The second case must re-read:
+     * connectedCallback does not run again.
+     */
+    @api
+    get recordId() {
+        return this._recordId;
+    }
+
+    set recordId(value) {
+        const changed = value !== this._recordId;
+        this._recordId = value;
+        if (changed && this.isConnected) {
+            this.load();
+        }
+    }
 
     entries = [];
     hasMore = false;
@@ -72,7 +93,7 @@ export default class AmfDecisionTimeline extends LightningElement {
                 // on showing what it read last time as if it were current.
                 this.entries = [];
                 this.hasMore = false;
-                this.error = messageOf(error);
+                this.error = messageOf(error, 'The approval timeline could not be loaded.');
             }
         } finally {
             if (ticket === this.latestRequest) {
@@ -97,18 +118,4 @@ export default class AmfDecisionTimeline extends LightningElement {
     get isEmpty() {
         return this.hasLoaded && !this.error && this.entries.length === 0;
     }
-}
-
-/**
- * Apex errors reach LWC in several shapes depending on how they were raised.
- * Falling back through them keeps the service's own sentence -- for instance,
- * that the user needs read access to the record -- in front of the user.
- */
-function messageOf(error) {
-    return (
-        error?.body?.message ||
-        error?.body?.pageErrors?.[0]?.message ||
-        error?.message ||
-        'The approval timeline could not be loaded.'
-    );
 }

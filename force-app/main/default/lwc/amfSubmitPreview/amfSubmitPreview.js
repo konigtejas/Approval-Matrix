@@ -74,6 +74,9 @@ function displayOf(value) {
     if (value === null || value === undefined) {
         return '(blank)';
     }
+    if (typeof value === 'object' && value.unresolved === true) {
+        return '(no related record)';
+    }
     if (typeof value === 'boolean') {
         return value ? 'TRUE' : 'FALSE';
     }

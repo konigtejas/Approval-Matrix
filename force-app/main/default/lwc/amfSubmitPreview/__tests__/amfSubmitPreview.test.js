@@ -42,7 +42,7 @@ describe('c-amf-submit-preview', () => {
         }
     });
 
-    it('names the process, the rule that chose it, and the rule\'s condition', () => {
+    it("names the process, the rule that chose it, and the rule's condition", () => {
         const element = render(HIGH_VALUE_APAC);
 
         expect(byId(element, 'process').textContent).toBe('PR_Three_Level_Finance');
@@ -53,7 +53,7 @@ describe('c-amf-submit-preview', () => {
         expect(byId(element, 'expression').textContent).toBe("Amount__c > 100000 && Region__c == 'APAC'");
     });
 
-    it('shows each value the rule read, numbers formatted for the viewer\'s locale', () => {
+    it("shows each value the rule read, numbers formatted for the viewer's locale", () => {
         const element = render(HIGH_VALUE_APAC);
 
         const rows = element.shadowRoot.querySelectorAll('[data-id="value-row"]');
@@ -83,6 +83,16 @@ describe('c-amf-submit-preview', () => {
             (cell) => cell.textContent
         );
         expect(cells).toEqual(['Region__c', '(blank)', 'Account__r.Is_Strategic__c', 'FALSE']);
+    });
+
+    it('shows a missing related record separately from a blank field', () => {
+        const element = render({
+            ...HIGH_VALUE_APAC,
+            evaluatedValuesJson: '{"Account__r.Name":{"unresolved":true},"Region__c":null}'
+        });
+
+        const cells = [...element.shadowRoot.querySelectorAll('[data-id="value-row"] td')].map((cell) => cell.textContent);
+        expect(cells).toEqual(['Account__r.Name', '(no related record)', 'Region__c', '(blank)']);
     });
 
     it('says the catch-all reads no fields instead of showing an empty table', () => {

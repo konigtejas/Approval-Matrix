@@ -58,8 +58,8 @@ public class AMF_ExprCompiler {
         Schema.DisplayType.PERCENT => AMF_Ast.ValueType.NUMERIC,
         Schema.DisplayType.STRING => AMF_Ast.ValueType.TEXT,
         Schema.DisplayType.PICKLIST => AMF_Ast.ValueType.TEXT,
-        Schema.DisplayType.ID => AMF_Ast.ValueType.TEXT,
-        Schema.DisplayType.REFERENCE => AMF_Ast.ValueType.TEXT,
+        Schema.DisplayType.ID => AMF_Ast.ValueType.ID_VALUE,
+        Schema.DisplayType.REFERENCE => AMF_Ast.ValueType.ID_VALUE,
         Schema.DisplayType.BOOLEAN => AMF_Ast.ValueType.BOOLEAN_VALUE,
         Schema.DisplayType.DATE => AMF_Ast.ValueType.DATE_VALUE,
         Schema.DisplayType.MULTIPICKLIST => AMF_Ast.ValueType.MULTI_SELECT
@@ -74,7 +74,8 @@ public class AMF_ExprCompiler {
     private static final Set<AMF_Ast.ValueType> EQUALITY_ONLY_TYPES = new Set<AMF_Ast.ValueType>{
         AMF_Ast.ValueType.BOOLEAN_VALUE,
         AMF_Ast.ValueType.TEXT,
-        AMF_Ast.ValueType.MULTI_SELECT
+        AMF_Ast.ValueType.MULTI_SELECT,
+        AMF_Ast.ValueType.ID_VALUE
     };
 
     private static final Set<String> EQUALITY_OPERATORS = new Set<String>{ '==', '!=' };
@@ -266,7 +267,7 @@ public class AMF_ExprCompiler {
      */
     private void checkScalarComparison(AMF_Ast.ComparisonNode node) {
         requireSameType(node.left, node.right, node.position);
-        node.operandType = node.left.valueType != null ? node.left.valueType : node.right.valueType;
+        node.operandType = operandTypeOf(node.left, node.right);
         requireOperatorSupports(node);
     }
 
@@ -346,12 +347,29 @@ public class AMF_ExprCompiler {
         AMF_Ast.ValueType leftType = left.valueType;
         AMF_Ast.ValueType rightType = right.valueType;
 
-        if (leftType != null && rightType != null && leftType != rightType) {
+        if (leftType != null && rightType != null && leftType != rightType && !idAndText(leftType, rightType)) {
             throw AMF_ExpressionException.at(
                 'Cannot compare ' + describeOperand(left) + ' with ' + describeOperand(right),
                 position
             );
         }
+    }
+
+    /**
+     * An Id field is written in a rule as a text literal ('005...'), the form a
+     * URL or a report gives. The literal stays TEXT; the comparison is an Id
+     * comparison, so 15- and 18-character forms of one Id are equal.
+     */
+    private static Boolean idAndText(AMF_Ast.ValueType left, AMF_Ast.ValueType right) {
+        return (left == AMF_Ast.ValueType.ID_VALUE &&
+            right == AMF_Ast.ValueType.TEXT) || (left == AMF_Ast.ValueType.TEXT && right == AMF_Ast.ValueType.ID_VALUE);
+    }
+
+    private static AMF_Ast.ValueType operandTypeOf(AMF_Ast.Node left, AMF_Ast.Node right) {
+        if (left.valueType == AMF_Ast.ValueType.ID_VALUE || right.valueType == AMF_Ast.ValueType.ID_VALUE) {
+            return AMF_Ast.ValueType.ID_VALUE;
+        }
+        return left.valueType != null ? left.valueType : right.valueType;
     }
 
     private void requireOperatorSupports(AMF_Ast.ComparisonNode node) {

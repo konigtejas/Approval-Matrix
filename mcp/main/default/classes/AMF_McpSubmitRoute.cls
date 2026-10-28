@@ -7,16 +7,17 @@
  * preview), 7 (entry points, and its M16 note), 11.
  *
  * THREE CHECKS, ALL IN APEX, BEFORE ANYTHING IS WRITTEN:
- *   1. The token: AMF_McpSupport.tokenProblem() accepts only a signature
- *      preview_route made for this user, this record and this process within
- *      15 minutes. A model that never previewed, or previewed another record or
- *      another route, has no such token, and nothing is submitted.
- *   2. The route now: the engine previews the record again. If it would now go
- *      anywhere other than the process the user confirmed, nothing is
- *      submitted and the answer says where it would go instead. This is
+ *   1. The token: AMF_McpSupport.checkToken() accepts only a signature
+ *      preview_route made for this user and this record within 15 minutes, and
+ *      the call's Expected Process has to be the process that signature names.
+ *      A model that never previewed, or previewed another record or another
+ *      route, has no such token, and nothing is submitted.
+ *   2. The decision now: the engine previews the record again. If the process,
+ *      the rule or the values differ from what the token signed, nothing is
+ *      submitted and the answer says what would happen instead. The same
+ *      process over different values was not what the user confirmed. This is
  *      stricter than the assistant's Submit Previewed Route, which submits and
- *      says the route changed (M13): here the user approved a call that names
- *      the process, so a different process was never approved.
+ *      says the route changed (M13).
  *   3. Whether the record can be submitted at all, which is the engine's own
  *      refusal (already pending, unreadable, ungoverned).
  *
@@ -130,9 +131,13 @@ global with sharing class AMF_McpSubmitRoute {
             return refused(null, 'This record cannot be submitted: ' + AMF_AgentSupport.notAnId(request?.recordId));
         }
 
-        String problem = AMF_McpSupport.tokenProblem(request.submitToken, recordId, expected);
-        if (problem != null) {
-            return refused(recordId, problem);
+        AMF_McpSupport.TokenCheck check = AMF_McpSupport.checkToken(request.submitToken, recordId);
+        if (check.problem != null) {
+            return refused(recordId, check.problem);
+        }
+        String signedProcess = check.shown.processName == null ? '' : check.shown.processName;
+        if (signedProcess != expected) {
+            return refused(recordId, AMF_McpSupport.NOT_PREVIEWED);
         }
 
         AMF_AgentPreviewRoute.Request previewRequest = new AMF_AgentPreviewRoute.Request();
@@ -145,8 +150,7 @@ global with sharing class AMF_McpSubmitRoute {
             return refused(recordId, now.summary);
         }
 
-        String nowProcess = now.selectedProcess == null ? '' : now.selectedProcess;
-        if (nowProcess != expected) {
+        if (!AMF_McpSupport.sameDecision(check.shown, now.selectedProcess, now.matchedRule, now.ruleVersion, now.evaluatedValuesJson)) {
             Result changed = refused(recordId, routeChangedSummary(now, expected));
             changed.routeChanged = true;
             changed.selectedProcess = now.selectedProcess;
@@ -179,6 +183,18 @@ global with sharing class AMF_McpSubmitRoute {
     }
 
     private static String routeChangedSummary(AMF_AgentPreviewRoute.Result now, String expected) {
+        String nowProcess = now.selectedProcess == null ? '' : now.selectedProcess;
+        if (nowProcess == expected) {
+            String still = String.isBlank(nowProcess) ? 'would still not enter an approval process' : 'would still go to approval process ' + nowProcess + ' under rule ' + now.matchedRule;
+            return 'Nothing was submitted. ' +
+                now.recordLabel +
+                ' ' +
+                still +
+                ', but the rule or the values are not what the preview showed. ' +
+                'The record or the approval matrix changed after the preview. ' +
+                'Preview it again and submit once the user confirms the new route.';
+        }
+
         // The two are never both blank: the caller found them different.
         String nowRoute = String.isBlank(now.selectedProcess)
             ? 'would now be blocked or fail instead of going to ' + expected

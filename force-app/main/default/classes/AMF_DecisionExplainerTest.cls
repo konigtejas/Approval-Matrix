@@ -495,6 +495,9 @@ private class AMF_DecisionExplainerTest {
         value.kind = 'blank';
         Assert.areEqual('(blank)', AMF_DecisionExplainer.displayOf(value));
 
+        value.kind = 'unresolved';
+        Assert.areEqual('(no related record)', AMF_DecisionExplainer.displayOf(value));
+
         value.kind = 'text';
         value.text = 'APAC';
         Assert.areEqual('APAC', AMF_DecisionExplainer.displayOf(value));

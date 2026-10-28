@@ -58,6 +58,10 @@ public with sharing class AMF_DecisionTimelineService {
     @TestVisible
     private static final String KIND_BLANK = 'blank';
 
+    /** A relationship path that stopped because a hop was null. Not a blank leaf. */
+    @TestVisible
+    private static final String KIND_UNRESOLVED = 'unresolved';
+
     /** The whole recorded snapshot, when it could not be read as field values. */
     @TestVisible
     private static final String KIND_UNPARSED = 'unparsed';
@@ -166,7 +170,7 @@ public with sharing class AMF_DecisionTimelineService {
         @AuraEnabled
         public String label;
 
-        /** number, boolean, text, blank or unparsed. */
+        /** number, boolean, text, blank, unresolved or unparsed. */
         @AuraEnabled
         public String kind;
 
@@ -487,6 +491,8 @@ public with sharing class AMF_DecisionTimelineService {
 
         if (raw == null) {
             value.kind = KIND_BLANK;
+        } else if (AMF_Evaluator.isUnresolved(raw)) {
+            value.kind = KIND_UNRESOLVED;
         } else if (raw instanceof Boolean) {
             value.kind = KIND_BOOLEAN;
             value.text = String.valueOf(raw);
@@ -497,8 +503,8 @@ public with sharing class AMF_DecisionTimelineService {
             value.kind = KIND_TEXT;
             value.text = (String) raw;
         } else {
-            // A nested object or list: the evaluator writes neither, but showing
-            // it as JSON is honest where guessing a presentation would not be.
+            // A nested object or list other than the unresolved-path marker.
+            // Showing it as JSON is honest where guessing a presentation would not be.
             value.kind = KIND_TEXT;
             value.text = JSON.serialize(raw);
         }

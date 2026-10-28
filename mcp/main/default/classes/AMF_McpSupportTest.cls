@@ -78,11 +78,32 @@ private class AMF_McpSupportTest {
     }
 
     @IsTest
+    static void aTokenIsBoundToTheRuleAndTheValuesItShowed() {
+        withKey();
+        Purchase_Request__c record = insertRequest();
+        AMF_McpSupport.ShownDecision shown = new AMF_McpSupport.ShownDecision();
+        shown.processName = TWO_LEVEL;
+        shown.ruleName = 'PR_Low';
+        shown.ruleVersion = 3;
+        shown.valuesJson = '{"Amount__c":10000}';
+
+        String token = AMF_McpSupport.tokenFor(record.Id, shown);
+        AMF_McpSupport.TokenCheck check = AMF_McpSupport.checkToken(token, record.Id);
+
+        Assert.isNull(check.problem);
+        Assert.isTrue(AMF_McpSupport.sameDecision(check.shown, ' ' + TWO_LEVEL + ' ', 'PR_Low', 3, '{"Amount__c":10000}'), 'The signed decision, spaces aside');
+        Assert.isFalse(AMF_McpSupport.sameDecision(check.shown, TWO_LEVEL, 'PR_Low', 3, '{"Amount__c":500000}'), 'The same process over different values is a different decision');
+        Assert.isFalse(AMF_McpSupport.sameDecision(check.shown, TWO_LEVEL, 'PR_High', 3, '{"Amount__c":10000}'));
+        Assert.isFalse(AMF_McpSupport.sameDecision(check.shown, THREE_LEVEL, 'PR_Low', 3, '{"Amount__c":10000}'));
+        Assert.areEqual(AMF_McpSupport.NOT_PREVIEWED, AMF_McpSupport.tokenProblem(token, record.Id, THREE_LEVEL));
+    }
+
+    @IsTest
     static void aBlockIsPreviewedAndSubmittedWithNoProcess() {
         withKey();
         Purchase_Request__c record = insertRequest();
 
-        String token = AMF_McpSupport.tokenFor(record.Id, null);
+        String token = AMF_McpSupport.tokenFor(record.Id, (String) null);
 
         Assert.isNull(AMF_McpSupport.tokenProblem(token, record.Id, ''));
         Assert.isNull(AMF_McpSupport.tokenProblem(token, record.Id, null));
@@ -117,8 +138,13 @@ private class AMF_McpSupportTest {
             'not a token',
             parts[1],
             parts[0] + '.',
-            parts[0] + '.' + parts[1].left(parts[1].length() - 1) + lastHexDigit,
-            String.valueOf(Long.valueOf(parts[0]) + 1) + '.' + parts[1],
+            parts[0] +
+            '.' +
+            parts[1].left(parts[1].length() - 1) +
+            lastHexDigit,
+            EncodingUtil.base64Encode(Blob.valueOf('["1","","","",""]')).replace('\r', '').replace('\n', '') +
+            '.' +
+            parts[1],
             '1234567890123456789012.' + parts[1],
             parts[0] + '.' + parts[1] + '.extra'
         };

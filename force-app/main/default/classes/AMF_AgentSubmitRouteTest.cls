@@ -152,6 +152,19 @@ private class AMF_AgentSubmitRouteTest {
     }
 
     @IsTest
+    static void aPreviewThatShowedABlockAndThenFindsARouteSaysTheRouteChanged() {
+        Purchase_Request__c record = insertRequest('High');
+        overStub();
+
+        AMF_AgentSubmitRoute.Result result = submitOne(record.Id, '');
+
+        Assert.isTrue(result.submitted, result.summary);
+        Assert.isTrue(result.routeChanged, 'A blank expected process is the block the user confirmed');
+        Assert.isTrue(result.summary.startsWith('Submitted, but by a different route than previewed. '), result.summary);
+        Assert.isTrue(result.summary.contains('would not enter an approval process'), result.summary);
+    }
+
+    @IsTest
     static void aRecordThatNoLongerMatchesTheRoutePreviewedIsAChangedRoute() {
         Purchase_Request__c record = insertRequest('Low');
         overStub();

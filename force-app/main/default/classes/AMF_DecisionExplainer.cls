@@ -488,6 +488,9 @@ public with sharing class AMF_DecisionExplainer {
             when 'blank' {
                 return '(blank)';
             }
+            when 'unresolved' {
+                return '(no related record)';
+            }
             when else {
                 return value.text == null ? '' : value.text;
             }
@@ -525,31 +528,6 @@ public with sharing class AMF_DecisionExplainer {
      * object has no name field or the name cannot be read.
      */
     public static String recordLabelOf(Id recordId) {
-        Schema.DescribeSObjectResult described = recordId.getSObjectType().getDescribe();
-        String nameField = nameFieldOf(described);
-
-        if (nameField != null) {
-            try {
-                List<SObject> rows = Database.query(
-                    'SELECT ' + nameField + ' FROM ' + described.getName() + ' WHERE Id = :recordId LIMIT 1',
-                    AccessLevel.USER_MODE
-                );
-                if (!rows.isEmpty() && rows[0].get(nameField) != null) {
-                    return described.getLabel() + ' ' + String.valueOf(rows[0].get(nameField));
-                }
-            } catch (Exception e) {
-                // An unreadable name is not a reason to withhold the explanation.
-            }
-        }
-        return described.getLabel() + ' ' + recordId;
-    }
-
-    private static String nameFieldOf(Schema.DescribeSObjectResult described) {
-        for (Schema.SObjectField field : described.fields.getMap().values()) {
-            if (field.getDescribe().isNameField()) {
-                return field.getDescribe().getName();
-            }
-        }
-        return null;
+        return AMF_AgentSupport.labelsOf(new Set<Id>{ recordId }).get(recordId);
     }
 }

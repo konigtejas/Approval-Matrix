@@ -336,9 +336,23 @@ private class AMF_DecisionTimelineServiceTest {
         Assert.areEqual('Gone__r.Name', values.get('Gone__r.Name').label, 'So does a relationship');
         Assert.areEqual('x', values.get('Gone__c').text, 'And its value is still shown');
 
-        // The evaluator never records a nested value; one is shown as JSON, not guessed at.
+        // A nested value other than the unresolved-path marker is shown as JSON, not guessed at.
         Assert.areEqual(AMF_DecisionTimelineService.KIND_TEXT, values.get('Nested__c').kind);
         Assert.areEqual('{"a":1}', values.get('Nested__c').text);
+    }
+
+    @IsTest
+    static void anUnresolvedPathIsNotShownAsABlankField() {
+        List<AMF_DecisionTimelineService.Value> values = AMF_DecisionTimelineService.describeValues('{"Account__r.Name":{"unresolved":true},"Region__c":null}', Purchase_Request__c.SObjectType);
+        Map<String, AMF_DecisionTimelineService.Value> byPath = new Map<String, AMF_DecisionTimelineService.Value>();
+        for (AMF_DecisionTimelineService.Value value : values) {
+            byPath.put(value.path, value);
+        }
+
+        Assert.areEqual(AMF_DecisionTimelineService.KIND_UNRESOLVED, byPath.get('Account__r.Name').kind);
+        Assert.areEqual(AMF_DecisionTimelineService.KIND_BLANK, byPath.get('Region__c').kind);
+        Assert.areEqual('(no related record)', AMF_DecisionExplainer.displayOf(byPath.get('Account__r.Name')));
+        Assert.areEqual('(blank)', AMF_DecisionExplainer.displayOf(byPath.get('Region__c')));
     }
 
     @IsTest

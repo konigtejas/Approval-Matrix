@@ -84,7 +84,7 @@ global with sharing class AMF_McpPreviewRoute {
 
         @InvocableVariable(
             label='Submit Token'
-            description='Pass this unchanged to submit_for_approval, with Record ID and Selected Process, if the user confirms. Valid for 15 minutes, for this user, record and process only. Empty when the record cannot be submitted.'
+            description='Pass this unchanged to submit_for_approval, with Record ID and Selected Process, if the user confirms. Valid for 15 minutes, and only for this user, record, process, rule and the values this preview showed. Empty when the record cannot be submitted.'
         )
         global String submitToken;
 
@@ -147,9 +147,14 @@ global with sharing class AMF_McpPreviewRoute {
         result.condition = previewed.condition;
         result.valuesRead = previewed.valuesRead;
         result.canSubmit = previewed.canSubmit == true;
-        result.submitToken = result.canSubmit
-            ? AMF_McpSupport.tokenFor(resolution.recordId, previewed.selectedProcess)
-            : null;
+        if (result.canSubmit) {
+            AMF_McpSupport.ShownDecision shown = new AMF_McpSupport.ShownDecision();
+            shown.processName = previewed.selectedProcess;
+            shown.ruleName = previewed.matchedRule;
+            shown.ruleVersion = previewed.ruleVersion;
+            shown.valuesJson = previewed.evaluatedValuesJson;
+            result.submitToken = AMF_McpSupport.tokenFor(resolution.recordId, shown);
+        }
         return result;
     }
 }

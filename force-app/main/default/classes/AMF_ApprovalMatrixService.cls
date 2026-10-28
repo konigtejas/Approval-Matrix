@@ -10,7 +10,9 @@
  * answers "where would this go, and why" with nothing written or submitted,
  * and drives the quick action's confirmation modal. previewWith() (M14) is the
  * same preview with some of the record's field values replaced in memory
- * after step 4, for the assistant's what-if; it too writes nothing.
+ * after step 4, for the assistant's what-if. Formula fields the rules read
+ * are then recalculated, and a changed lookup is re-read, still with nothing
+ * written.
  * previewEach() (M15) is the preview record by record, with submitEach()'s
  * per-record refusals, for the admin assistant's impact check.
  *
@@ -39,8 +41,10 @@
  * and 10, then 8: each decision log row is written once the platform has
  * answered for its record, so step 11's reference goes onto the row as it is
  * written. A record the platform refuses is therefore one Failed row, with its
- * guard re-armed, rather than a rollback of every record in the call. So is a
- * record the platform will not let step 9 set the guard on (M10.3b): it is
+ * guard re-armed, rather than a rollback of every record in the call. The
+ * exception is a record the platform says is already in an approval when a
+ * pending ProcessInstance confirms it: the guard stays set for that approval.
+ * So is a record the platform will not let step 9 set the guard on (M10.3b): it is
  * Failed by itself and never submitted.
  *
  * TWO CONTRACTS ON THAT ONE PATH (M10). submit() and preview() answer for the
@@ -110,6 +114,14 @@ public without sharing class AMF_ApprovalMatrixService {
 
     /** UserRecordAccess answers for at most 200 records per query. */
     private static final Integer ACCESS_QUERY_LIMIT = 200;
+
+    /**
+     * Test seam for the re-arm check. A record in this set is treated as having
+     * a pending approval when a refusal comes back ALREADY_IN_PROCESS. Empty
+     * in production; a test cannot commit a concurrent submit.
+     */
+    @TestVisible
+    private static Set<Id> pendingAtRearm = new Set<Id>();
 
     /**
      * One record's answer: what happened, and everything needed to explain it.
@@ -388,8 +400,10 @@ public without sharing class AMF_ApprovalMatrixService {
      *
      * @param recordIds The records to submit, of any objects.
      * @return One Outcome per Id supplied, in the order supplied. Empty for none.
-     * @throws AMF_SubmissionException If the strategy fails as a whole; that
-     *         object's submissions are rolled back first.
+     * @throws AMF_SubmissionException If the strategy fails as a whole. Every
+     *         object already submitted in this call is rolled back with it, so
+     *         a caller that catches the exception, such as a Flow fault path,
+     *         keeps none of them.
      */
     public List<Outcome> submitEach(List<Id> recordIds) {
         List<Outcome> outcomes = new List<Outcome>();
@@ -398,6 +412,19 @@ public without sharing class AMF_ApprovalMatrixService {
             return outcomes;
         }
 
+        // One savepoint for the whole call. execute() rolls back only the
+        // object that threw; without this, an earlier object's submissions
+        // would remain when the caller caught the exception.
+        Savepoint beforeAnyObject = Database.setSavepoint();
+        try {
+            return submitEachObject(recordIds, outcomes);
+        } catch (Exception e) {
+            Database.rollback(beforeAnyObject);
+            throw e;
+        }
+    }
+
+    private List<Outcome> submitEachObject(List<Id> recordIds, List<Outcome> outcomes) {
         // One object at a time, in the order first supplied, each record once:
         // the rule set and the union query are per object (6.1 steps 1 and 4).
         Map<String, List<Id>> idsByObject = new Map<String, List<Id>>();
@@ -616,6 +643,7 @@ public without sharing class AMF_ApprovalMatrixService {
             for (SObject record : recordsById.values()) {
                 applyChanges(record, checked);
             }
+            refreshWhatIf(plan.objectApiName, recordsById, checked, AMF_FieldPathResolver.unionPaths(compiled));
         }
 
         // Steps 5-7, per record.
@@ -727,6 +755,7 @@ public without sharing class AMF_ApprovalMatrixService {
         // Step 10. The only route to Approval.process(), through the interface.
         Map<Id, AMF_SubmitResult> answers = answersFor(requests, strategy.submit(requests));
         Set<Id> refused = new Set<Id>();
+        Set<Id> claimedPending = new Set<Id>();
 
         for (Outcome result : plan.outcomes) {
             if (!routed.contains(result.recordId)) {
@@ -766,15 +795,49 @@ public without sharing class AMF_ApprovalMatrixService {
                     answer.errorMessage
                 );
                 refused.add(result.recordId);
+                if (isAlreadyInProcess(answer.errorMessage)) {
+                    claimedPending.add(result.recordId);
+                }
             }
         }
 
         // A refused record entered no process, so its guard is re-armed in this
         // same transaction (6.3). Left set, it would let a submission that
         // bypasses the engine pass entry criteria.
+        //
+        // ALREADY_IN_PROCESS is the exception. Another transaction can pass the
+        // pending check, submit, and commit between this call's check and
+        // Approval.process. Rearming then clears the guard under a live
+        // approval. Re-read pending approvals and leave the guard set on any
+        // record that is actually in one. A refusal that only claims to be
+        // already pending, with no ProcessInstance to show for it, is still
+        // re-armed: the guard must not stay true when nothing is in flight.
+        if (!claimedPending.isEmpty()) {
+            refused.removeAll(pendingNow(new List<Id>(claimedPending)).keySet());
+        }
         if (!refused.isEmpty()) {
             rearmGuard(plan.objectApiName, refused);
         }
+    }
+
+    /** The platform's status code for a record that is already in an approval. */
+    private static Boolean isAlreadyInProcess(String errorMessage) {
+        return errorMessage != null && errorMessage.startsWith('ALREADY_IN_PROCESS');
+    }
+
+    /**
+     * Pending approvals as the database reports them, plus the test seam
+     * pendingAtRearm: a unit test cannot commit a second transaction between
+     * the pending check and the strategy's answer.
+     */
+    private Map<Id, String> pendingNow(List<Id> recordIds) {
+        Map<Id, String> live = pendingProcessesOf(recordIds);
+        for (Id recordId : recordIds) {
+            if (pendingAtRearm.contains(recordId)) {
+                live.put(recordId, live.get(recordId));
+            }
+        }
+        return live;
     }
 
     /**
@@ -970,7 +1033,7 @@ public without sharing class AMF_ApprovalMatrixService {
 
         for (Integer i = 0; i < records.size(); i++) {
             if (!saves[i].isSuccess()) {
-                unstaged.put(records[i].Id, reasonOf(saves[i].getErrors()));
+                unstaged.put(records[i].Id, AMF_SubmitResult.reasonOf(saves[i].getErrors()));
             }
         }
         return unstaged;
@@ -1007,23 +1070,6 @@ public without sharing class AMF_ApprovalMatrixService {
             records.add(record);
         }
         return records;
-    }
-
-    /**
-     * The platform's reason as it gave it, status code first, in the form the
-     * Classic strategy reports a refused submission: the code is what an admin
-     * searches for, and the message is what a submitter can act on.
-     */
-    private static String reasonOf(List<Database.Error> errors) {
-        List<String> reasons = new List<String>();
-
-        if (errors != null) {
-            for (Database.Error error : errors) {
-                reasons.add(String.valueOf(error.getStatusCode()) + ': ' + error.getMessage());
-            }
-        }
-
-        return reasons.isEmpty() ? 'The platform refused it without giving a reason' : String.join(reasons, '; ');
     }
 
     /**
@@ -1139,6 +1185,292 @@ public without sharing class AMF_ApprovalMatrixService {
                 ' field. Every governed object carries the guard (arch doc 3.2, 6.3).'
             );
         }
+    }
+
+    /**
+     * After previewWith() has put its changes onto the queried rows: re-read a
+     * lookup the what-if changed, load whatever a formula the rules read still
+     * needs, and recalculate those formulas. put() does none of the three, so
+     * without this a what-if of Amount answers from Expected Revenue's old
+     * value, and a what-if of Account__c still sees the previous Account.
+     *
+     * Roll-up summaries are left as queried. A what-if changes this record,
+     * not its children, so the stored roll-up is the one a submit would read.
+     */
+    private static void refreshWhatIf(String objectApiName, Map<Id, SObject> records, Map<String, Object> changes, Set<String> paths) {
+        if (records == null || records.isEmpty() || paths == null || paths.isEmpty()) {
+            return;
+        }
+
+        Map<String, Schema.SObjectField> fields = Schema.getGlobalDescribe().get(objectApiName).getDescribe().fields.getMap();
+        Set<String> relationshipPaths = pathsThroughChangedLookups(fields, changes, paths);
+        relationshipPaths.addAll(formulaRelationshipPaths(fields, paths));
+        reloadRelationships(records, fields, changes, relationshipPaths);
+        loadLocalFormulaInputs(records, fields, paths, changes);
+        recalculateFormulas(records, fields, paths);
+    }
+
+    /** Rule paths whose first hop is a lookup this what-if changed. */
+    private static Set<String> pathsThroughChangedLookups(Map<String, Schema.SObjectField> fields, Map<String, Object> changes, Set<String> paths) {
+        Set<String> relationships = changedRelationshipNames(fields, changes);
+        Set<String> selected = new Set<String>();
+
+        for (String path : paths) {
+            Integer dot = path == null ? -1 : path.indexOf('.');
+            if (dot > 0 && relationships.contains(path.substring(0, dot))) {
+                selected.add(path);
+            }
+        }
+        return selected;
+    }
+
+    /**
+     * Relationship paths a root formula mentions. When the lookup changed, the
+     * queried parent is stale. When it did not, the parent may never have been
+     * queried, and recalculating the formula would then read it as null.
+     */
+    private static Set<String> formulaRelationshipPaths(Map<String, Schema.SObjectField> fields, Set<String> paths) {
+        Set<String> selected = new Set<String>();
+
+        for (String formula : formulasIn(fields, paths)) {
+            for (String reference : referencesIn(fields.get(formula).getDescribe().getCalculatedFormula())) {
+                Integer dot = reference.indexOf('.');
+                if (dot < 1) {
+                    continue;
+                }
+                if (lookupNamed(fields, reference.substring(0, dot)) == null) {
+                    continue;
+                }
+                selected.add(reference);
+            }
+        }
+        return selected;
+    }
+
+    private static Set<String> changedRelationshipNames(Map<String, Schema.SObjectField> fields, Map<String, Object> changes) {
+        Set<String> names = new Set<String>();
+
+        for (String fieldName : changes.keySet()) {
+            Schema.DescribeFieldResult describe = fields.get(fieldName).getDescribe();
+            if (describe.getType() == Schema.DisplayType.REFERENCE && String.isNotBlank(describe.getRelationshipName())) {
+                names.add(describe.getRelationshipName());
+            }
+        }
+        return names;
+    }
+
+    /** Root formula fields the rules actually read, by API name. */
+    private static List<String> formulasIn(Map<String, Schema.SObjectField> fields, Set<String> paths) {
+        List<String> formulas = new List<String>();
+
+        for (String path : paths) {
+            if (path == null || path.contains('.')) {
+                continue;
+            }
+            Schema.SObjectField token = fields.get(path);
+            if (token != null && String.isNotBlank(token.getDescribe().getCalculatedFormula())) {
+                formulas.add(token.getDescribe().getName());
+            }
+        }
+        return formulas;
+    }
+
+    private static List<String> referencesIn(String formula) {
+        List<String> references = new List<String>();
+        if (String.isBlank(formula)) {
+            return references;
+        }
+        Matcher matcher = Pattern.compile('(?i)[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)*').matcher(formula);
+        while (matcher.find()) {
+            references.add(matcher.group());
+        }
+        return references;
+    }
+
+    /** The lookup field whose relationship name is the one given, or null. */
+    private static Schema.DescribeFieldResult lookupNamed(Map<String, Schema.SObjectField> fields, String relationshipName) {
+        for (Schema.SObjectField token : fields.values()) {
+            Schema.DescribeFieldResult describe = token.getDescribe();
+            if (relationshipName.equalsIgnoreCase(describe.getRelationshipName())) {
+                return describe;
+            }
+        }
+        return null;
+    }
+
+    private static void reloadRelationships(Map<Id, SObject> records, Map<String, Schema.SObjectField> fields, Map<String, Object> changes, Set<String> relationshipPaths) {
+        Map<String, Set<String>> suffixesByRelationship = new Map<String, Set<String>>();
+
+        for (String path : relationshipPaths) {
+            Integer dot = path.indexOf('.');
+            if (dot < 1) {
+                continue;
+            }
+            String relationship = path.substring(0, dot);
+            if (lookupNamed(fields, relationship) == null) {
+                continue;
+            }
+            if (!suffixesByRelationship.containsKey(relationship)) {
+                suffixesByRelationship.put(relationship, new Set<String>());
+            }
+            suffixesByRelationship.get(relationship).add(path.substring(dot + 1));
+        }
+        if (suffixesByRelationship.isEmpty()) {
+            return;
+        }
+
+        // A formula can name a relationship the what-if did not change. The
+        // lookup id is then the record's own, which the union query may not
+        // have selected. Read it before following it.
+        Set<String> lookupFields = new Set<String>();
+        for (String relationship : suffixesByRelationship.keySet()) {
+            lookupFields.add(lookupNamed(fields, relationship).getName());
+        }
+        ensureFieldsLoaded(records, lookupFields, changes);
+
+        for (String relationship : suffixesByRelationship.keySet()) {
+            String lookupField = lookupNamed(fields, relationship).getName();
+            Map<Schema.SObjectType, Set<Id>> idsByType = new Map<Schema.SObjectType, Set<Id>>();
+
+            for (SObject record : records.values()) {
+                Id parentId = (Id) record.get(lookupField);
+                if (parentId == null) {
+                    record.putSObject(relationship, null);
+                    continue;
+                }
+                Schema.SObjectType parentType = parentId.getSObjectType();
+                if (!idsByType.containsKey(parentType)) {
+                    idsByType.put(parentType, new Set<Id>());
+                }
+                idsByType.get(parentType).add(parentId);
+            }
+
+            Map<Id, SObject> parents = new Map<Id, SObject>();
+            for (Schema.SObjectType parentType : idsByType.keySet()) {
+                Set<String> usable = new Set<String>();
+                for (String suffix : suffixesByRelationship.get(relationship)) {
+                    if (pathResolves(parentType, suffix)) {
+                        usable.add(suffix);
+                    }
+                }
+                Set<Id> parentIds = idsByType.get(parentType);
+                if (usable.isEmpty()) {
+                    for (Id parentId : parentIds) {
+                        parents.put(parentId, parentType.newSObject(parentId));
+                    }
+                } else {
+                    parents.putAll(AMF_FieldPathResolver.load(parentType.getDescribe().getName(), usable, parentIds));
+                }
+            }
+
+            for (SObject record : records.values()) {
+                Id parentId = (Id) record.get(lookupField);
+                record.putSObject(relationship, parentId == null ? null : parents.get(parentId));
+            }
+        }
+    }
+
+    /** Local fields a root formula names and the row does not yet carry. */
+    private static void loadLocalFormulaInputs(Map<Id, SObject> records, Map<String, Schema.SObjectField> fields, Set<String> paths, Map<String, Object> changes) {
+        Set<String> needed = new Set<String>();
+
+        for (String formula : formulasIn(fields, paths)) {
+            for (String reference : referencesIn(fields.get(formula).getDescribe().getCalculatedFormula())) {
+                if (reference.contains('.') || fieldWasChanged(changes, reference)) {
+                    continue;
+                }
+                Schema.SObjectField input = fields.get(reference);
+                if (input != null) {
+                    needed.add(input.getDescribe().getName());
+                }
+            }
+        }
+        ensureFieldsLoaded(records, needed, changes);
+    }
+
+    /**
+     * Puts fields the row was not queried with, from the database, except a
+     * field the what-if already set. One query for the whole set.
+     */
+    private static void ensureFieldsLoaded(Map<Id, SObject> records, Set<String> fieldNames, Map<String, Object> changes) {
+        if (fieldNames == null || fieldNames.isEmpty() || records.isEmpty()) {
+            return;
+        }
+
+        SObject sample = new List<SObject>(records.values())[0];
+        Set<String> missing = new Set<String>();
+        for (String fieldName : fieldNames) {
+            if (fieldWasChanged(changes, fieldName)) {
+                continue;
+            }
+            try {
+                sample.get(fieldName);
+            } catch (SObjectException e) {
+                missing.add(fieldName);
+            }
+        }
+        if (missing.isEmpty()) {
+            return;
+        }
+
+        String objectApiName = sample.getSObjectType().getDescribe().getName();
+        Map<Id, SObject> loaded = AMF_FieldPathResolver.load(objectApiName, missing, records.keySet());
+        for (Id recordId : records.keySet()) {
+            SObject extra = loaded.get(recordId);
+            if (extra == null) {
+                continue;
+            }
+            SObject record = records.get(recordId);
+            for (String fieldName : missing) {
+                record.put(fieldName, extra.get(fieldName));
+            }
+        }
+    }
+
+    private static void recalculateFormulas(Map<Id, SObject> records, Map<String, Schema.SObjectField> fields, Set<String> paths) {
+        if (formulasIn(fields, paths).isEmpty()) {
+            return;
+        }
+        try {
+            Formula.recalculateFormulas(new List<SObject>(records.values()));
+        } catch (Exception e) {
+            throw new AMF_SubmissionException('The what-if could not recalculate formula fields: ' + e.getMessage());
+        }
+    }
+
+    private static Boolean pathResolves(Schema.SObjectType sobjectType, String path) {
+        List<String> segments = path.split('\\.');
+        Schema.SObjectType current = sobjectType;
+
+        for (Integer i = 0; i < segments.size(); i++) {
+            Map<String, Schema.SObjectField> fields = current.getDescribe().fields.getMap();
+            Boolean last = i == segments.size() - 1;
+            if (last) {
+                return fields.containsKey(segments[i]);
+            }
+            Schema.DescribeFieldResult relationship = null;
+            for (Schema.SObjectField token : fields.values()) {
+                Schema.DescribeFieldResult describe = token.getDescribe();
+                if (segments[i].equalsIgnoreCase(describe.getRelationshipName())) {
+                    relationship = describe;
+                    break;
+                }
+            }
+            if (relationship == null || relationship.getReferenceTo().isEmpty()) {
+                return false;
+            }
+            current = relationship.getReferenceTo()[0];
+        }
+        return false;
+    }
+
+    private static Boolean fieldWasChanged(Map<String, Object> changes, String fieldName) {
+        for (String key : changes.keySet()) {
+            if (key.equalsIgnoreCase(fieldName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
