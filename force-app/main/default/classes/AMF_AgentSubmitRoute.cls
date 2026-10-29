@@ -12,8 +12,10 @@
  * decision log row a Flow or the REST resource would. Expected Process is the
  * route the user was shown. When the record or the matrix changed after the
  * preview, the route taken can differ, and Route Changed says so, as the
- * header button's warning toast does (M5). It is a comparison of two names
- * here, in Apex, not a judgement left to the model.
+ * header button's warning toast does (M5). It is a comparison of the two
+ * process names in Apex, not a judgement left to the model. A preview that
+ * showed a block has a blank name, and a record that then enters a process
+ * is a changed route.
  *
  * ONLY THE PREVIEWED RECORD. The agent's script binds Record ID to the record
  * it last previewed and offers this action only after a preview that reached a
@@ -165,14 +167,13 @@ public with sharing class AMF_AgentSubmitRoute {
         result.ruleVersion = outcome.ruleVersion;
         result.decisionLogName = logNames.get(outcome.decisionLogId);
         result.waitingOn = waitingOn.get(outcome.executionRefId);
-        result.routeChanged = String.isNotBlank(expectedProcess) && outcome.selectedProcess != expectedProcess.trim();
+        String expected = expectedProcess == null ? '' : expectedProcess.trim();
+        String actual = outcome.selectedProcess == null ? '' : outcome.selectedProcess.trim();
+        result.routeChanged = expected != actual;
 
-        String logged = result.decisionLogName == null
-            ? ' The attempt is recorded in the decision log.'
-            : ' The attempt is recorded in decision log ' + result.decisionLogName + '.';
-        String changed = result.routeChanged
-            ? ' The preview had shown ' + expectedProcess.trim() + ': the record or the approval matrix changed after it.'
-            : '';
+        String logged = result.decisionLogName == null ? ' The attempt is recorded in the decision log.' : ' The attempt is recorded in decision log ' + result.decisionLogName + '.';
+        String shown = String.isBlank(expected) ? 'that it would not enter an approval process' : expected;
+        String changed = result.routeChanged ? ' The preview had shown ' + shown + ': the record or the approval matrix changed after it.' : '';
 
         if (result.submitted) {
             result.summary =
@@ -284,7 +285,7 @@ public with sharing class AMF_AgentSubmitRoute {
             actorIds.add(item.ActorId);
         }
 
-        Map<Id, String> names = namesOf(actorIds);
+        Map<Id, String> names = AMF_AgentSupport.actorNamesOf(actorIds);
         for (String key : actorsByInstance.keySet()) {
             List<String> actors = new List<String>();
             for (Id actorId : actorsByInstance.get(key)) {
@@ -295,17 +296,5 @@ public with sharing class AMF_AgentSubmitRoute {
             waitingOn.put(key, String.join(actors, ', '));
         }
         return waitingOn;
-    }
-
-    /** An approver is a user, or a queue, which is a Group. */
-    private static Map<Id, String> namesOf(Set<Id> actorIds) {
-        Map<Id, String> names = new Map<Id, String>();
-        for (User approver : [SELECT Id, Name FROM User WHERE Id IN :actorIds]) {
-            names.put(approver.Id, approver.Name);
-        }
-        for (Group queue : [SELECT Id, Name FROM Group WHERE Id IN :actorIds]) {
-            names.put(queue.Id, queue.Name);
-        }
-        return names;
     }
 }

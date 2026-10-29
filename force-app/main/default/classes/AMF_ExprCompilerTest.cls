@@ -152,13 +152,21 @@ private class AMF_ExprCompilerTest {
         }
 
         for (String expression : new List<String>{ 'Channel == \'Email;Phone\'', 'Channel CONTAINS \'Email\'' }) {
-            AMF_Ast.ComparisonNode root = (AMF_Ast.ComparisonNode) AMF_ExprCompiler.compile('QuickText', expression)
-                .root;
-            Assert.areEqual(
-                AMF_Ast.ValueType.MULTI_SELECT,
-                root.operandType,
-                'A multi-select comparison is a set comparison: ' + expression
-            );
+            AMF_Ast.ComparisonNode root = (AMF_Ast.ComparisonNode) AMF_ExprCompiler.compile('QuickText', expression).root;
+            Assert.areEqual(AMF_Ast.ValueType.MULTI_SELECT, root.operandType, 'A multi-select comparison is a set comparison: ' + expression);
+        }
+    }
+
+    @IsTest
+    static void anIdFieldIsComparedAsAnId() {
+        AMF_Ast.ComparisonNode root = (AMF_Ast.ComparisonNode) AMF_ExprCompiler.compile(PURCHASE_REQUEST, 'OwnerId == \'' + UserInfo.getUserId() + '\'').root;
+        Assert.areEqual(AMF_Ast.ValueType.ID_VALUE, root.operandType, 'A lookup is not case-insensitive text');
+
+        try {
+            AMF_ExprCompiler.compile(PURCHASE_REQUEST, 'OwnerId CONTAINS \'005\'');
+            Assert.fail('CONTAINS has no meaning for an Id');
+        } catch (AMF_ExpressionException e) {
+            Assert.isTrue(e.getMessage().contains('not supported for Id'), e.getMessage());
         }
     }
 

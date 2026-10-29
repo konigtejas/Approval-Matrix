@@ -394,18 +394,23 @@ function Test-StandardSubmitRemoved {
         $layout = $entry.File
         $layoutDocument = Read-MetadataXml -Path $layout.FullName
         $namespace = New-MetadataNamespaceManager -Document $layoutDocument
-        $actionList = $layoutDocument.SelectSingleNode('/m:Layout/m:platformActionList', $namespace)
+        # A layout carries one platformActionList per action context (record,
+        # list view, related list). SelectSingleNode would see only the first,
+        # so a record list that still contains Submit would pass the gate.
+        $actionLists = $layoutDocument.SelectNodes('/m:Layout/m:platformActionList', $namespace)
 
-        if ($null -eq $actionList) {
+        if ($actionLists.Count -eq 0) {
             $errors.Add("$($layout.Name) has no platformActionList, so its record page shows the platform's default actions, which include the standard Submit for Approval button (arch doc 6.3). Give it an explicit list without Submit.")
             continue
         }
 
-        foreach ($item in $actionList.SelectNodes('m:platformActionListItems', $namespace)) {
-            $name = Get-ChildText -Node $item -Name 'actionName' -Namespace $namespace
-            $type = Get-ChildText -Node $item -Name 'actionType' -Namespace $namespace
-            if ($name -eq 'Submit' -and $type -eq 'StandardButton') {
-                $errors.Add("$($layout.Name) keeps the standard Submit for Approval button (Submit / StandardButton) in its platformActionList; remove it, so that every submission goes through the engine (arch doc 6.3).")
+        foreach ($actionList in $actionLists) {
+            foreach ($item in $actionList.SelectNodes('m:platformActionListItems', $namespace)) {
+                $name = Get-ChildText -Node $item -Name 'actionName' -Namespace $namespace
+                $type = Get-ChildText -Node $item -Name 'actionType' -Namespace $namespace
+                if ($name -eq 'Submit' -and $type -eq 'StandardButton') {
+                    $errors.Add("$($layout.Name) keeps the standard Submit for Approval button (Submit / StandardButton) in its platformActionList; remove it, so that every submission goes through the engine (arch doc 6.3).")
+                }
             }
         }
     }

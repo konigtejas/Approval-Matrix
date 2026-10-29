@@ -479,8 +479,23 @@ describe('c-amf-decision-timeline-entry', () => {
         entry.decision.values = [
             { path: 'Amount__c', label: 'Amount', kind: 'number', text: '1234.5678' },
             { path: 'Region__c', label: 'Region', kind: 'blank' },
-            { path: 'Account__r.Is_Strategic__c', label: 'Account > Strategic', kind: 'boolean', text: 'true' },
-            { path: 'Matrix_Submission__c', label: 'Matrix Submission', kind: 'boolean', text: 'false' },
+            {
+                path: 'Account__r.Name',
+                label: 'Account > Account Name',
+                kind: 'unresolved'
+            },
+            {
+                path: 'Account__r.Is_Strategic__c',
+                label: 'Account > Strategic',
+                kind: 'boolean',
+                text: 'true'
+            },
+            {
+                path: 'Matrix_Submission__c',
+                label: 'Matrix Submission',
+                kind: 'boolean',
+                text: 'false'
+            },
             { path: 'Gone__c', label: 'Gone__c', kind: 'text', text: 'x' },
             { path: 'Odd__c', label: 'Odd', kind: 'number', text: 'not a number' }
         ];
@@ -490,6 +505,7 @@ describe('c-amf-decision-timeline-entry', () => {
         expect(allById(element, 'value').map(textOf)).toEqual([
             'Amount = 1,234.5678',
             'Region = (blank)',
+            'Account > Account Name = (no related record)',
             'Account > Strategic = TRUE',
             'Matrix Submission = FALSE',
             'Gone__c = x',
@@ -520,7 +536,7 @@ describe('c-amf-decision-timeline-entry', () => {
         expect(textOf(byId(element, 'summary'))).toBe('No outcome was recorded.');
     });
 
-    it('falls back to the platform\'s own name for a status it has no wording for', () => {
+    it("falls back to the platform's own name for a status it has no wording for", () => {
         const entry = clone(UNEXPLAINED);
         entry.approval.status = 'Held';
         entry.approval.steps.push({
@@ -539,7 +555,7 @@ describe('c-amf-decision-timeline-entry', () => {
         expect(icons[1].iconName).toBe('utility:info');
     });
 
-    it('opens and closes on the toggle, and keeps the user\'s choice', async () => {
+    it("opens and closes on the toggle, and keeps the user's choice", async () => {
         const element = render(ROUTED);
         const toggle = byId(element, 'toggle');
 

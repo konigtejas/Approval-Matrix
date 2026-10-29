@@ -60,6 +60,14 @@ public class AMF_Evaluator {
     public static final String TODAY_KEY = 'TODAY';
 
     /**
+     * The key of the object a broken relationship path is recorded as. A null
+     * leaf and a path that stopped at a null hop are different facts: the first
+     * is a blank field, the second was never read. The log, the modal and the
+     * explainer all read this marker.
+     */
+    public static final String UNRESOLVED = 'unresolved';
+
+    /**
      * The value separator of a multi-select picklist, in stored values and in the
      * text literals compared with them.
      */
@@ -138,7 +146,7 @@ public class AMF_Evaluator {
 
         Map<String, Object> evaluatedValues = new Map<String, Object>();
         for (String path : compiled.fieldPaths) {
-            evaluatedValues.put(path, resolve(record, path).value);
+            evaluatedValues.put(path, recordedValue(resolve(record, path)));
         }
         if (compiled.usesToday == true) {
             evaluatedValues.put(TODAY_KEY, today());
@@ -322,7 +330,8 @@ public class AMF_Evaluator {
         if (
             node.operandType == AMF_Ast.ValueType.TEXT ||
             node.operandType == AMF_Ast.ValueType.BOOLEAN_VALUE ||
-            node.operandType == AMF_Ast.ValueType.MULTI_SELECT
+            node.operandType == AMF_Ast.ValueType.MULTI_SELECT ||
+            node.operandType == AMF_Ast.ValueType.ID_VALUE
         ) {
             return applyEquality(node, areEqual(node, left, right));
         }
@@ -355,6 +364,14 @@ public class AMF_Evaluator {
                 // 4.3: text comparison is case-insensitive, so a rule written
                 // Region__c == 'apac' matches a record whose Region__c is APAC.
                 return String.valueOf(left).equalsIgnoreCase(String.valueOf(right));
+            }
+            when ID_VALUE {
+                // 15- and 18-character forms of one Id are equal. A literal that
+                // is not an Id equals nothing; it does not become an error, and
+                // it is not folded case-insensitively the way text is.
+                Id leftId = asId(left);
+                Id rightId = asId(right);
+                return leftId != null && leftId == rightId;
             }
             when BOOLEAN_VALUE {
                 return (Boolean) left == (Boolean) right;
@@ -449,6 +466,47 @@ public class AMF_Evaluator {
             transactionToday = Date.today();
         }
         return transactionToday;
+    }
+
+    /**
+     * @param raw A value from an evaluated-values map, or from its JSON.
+     * @return True when the path stopped at a null relationship.
+     */
+    public static Boolean isUnresolved(Object raw) {
+        if (!(raw instanceof Map<String, Object>)) {
+            return false;
+        }
+        return ((Map<String, Object>) raw).get(UNRESOLVED) == true;
+    }
+
+    /** A broken path is recorded as a marker; a null leaf stays null. */
+    private static Object recordedValue(PathValue resolved) {
+        if (resolved.broken == true) {
+            return new Map<String, Object>{ UNRESOLVED => true };
+        }
+        return resolved.value;
+    }
+
+    /**
+     * @param value An Id field value or a text literal.
+     * @return The Id, in either character length, or null when it is not one.
+     */
+    private static Id asId(Object value) {
+        if (value == null) {
+            return null;
+        }
+        if (value instanceof Id) {
+            return (Id) value;
+        }
+        String text = String.valueOf(value).trim();
+        if (String.isBlank(text)) {
+            return null;
+        }
+        try {
+            return Id.valueOf(text);
+        } catch (Exception e) {
+            return null;
+        }
     }
 
     /**

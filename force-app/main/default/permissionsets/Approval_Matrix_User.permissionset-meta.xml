@@ -85,6 +85,11 @@
     </fieldPermissions>
     <fieldPermissions>
         <editable>false</editable>
+        <field>Purchase_Request__c.Amount_Doubled__c</field>
+        <readable>true</readable>
+    </fieldPermissions>
+    <fieldPermissions>
+        <editable>false</editable>
         <field>Purchase_Request__c.Matrix_Submission__c</field>
         <readable>true</readable>
     </fieldPermissions>

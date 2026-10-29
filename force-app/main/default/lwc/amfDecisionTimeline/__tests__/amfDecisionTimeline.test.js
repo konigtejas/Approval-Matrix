@@ -60,7 +60,7 @@ describe('c-amf-decision-timeline', () => {
         jest.clearAllMocks();
     });
 
-    it('reads its record\'s timeline as soon as it connects, with a spinner meanwhile', async () => {
+    it("reads its record's timeline as soon as it connects, with a spinner meanwhile", async () => {
         const read = deferred();
         getTimeline.mockReturnValue(read.promise);
 
@@ -78,6 +78,23 @@ describe('c-amf-decision-timeline', () => {
         expect(byId(element, 'spinner')).toBeNull();
         expect(byId(element, 'refresh').disabled).toBe(false);
         expect(entriesOf(element)).toHaveLength(1);
+    });
+
+    it('reads again when the record changes without the component reconnecting', async () => {
+        const otherId = 'a00000000000002AAA';
+        getTimeline.mockResolvedValue({ entries: [entry('a1')], hasMore: false });
+
+        const element = render();
+        await flushPromises();
+        expect(getTimeline).toHaveBeenCalledTimes(1);
+
+        getTimeline.mockResolvedValue({ entries: [entry('b1')], hasMore: false });
+        element.recordId = otherId;
+        await flushPromises();
+
+        expect(getTimeline).toHaveBeenCalledTimes(2);
+        expect(getTimeline).toHaveBeenLastCalledWith({ recordId: otherId });
+        expect(entriesOf(element).map((child) => child.entry.key)).toEqual(['b1']);
     });
 
     it('renders one entry per submission attempt, in the order given, with only the newest open', async () => {
@@ -115,8 +132,11 @@ describe('c-amf-decision-timeline', () => {
         expect(byId(element, 'has-more')).not.toBeNull();
     });
 
-    it('shows the service\'s own message when a read fails, and drops what it read before', async () => {
-        getTimeline.mockResolvedValueOnce({ entries: [entry('a1')], hasMore: true });
+    it("shows the service's own message when a read fails, and drops what it read before", async () => {
+        getTimeline.mockResolvedValueOnce({
+            entries: [entry('a1')],
+            hasMore: true
+        });
         const element = render();
         await flushPromises();
         expect(entriesOf(element)).toHaveLength(1);

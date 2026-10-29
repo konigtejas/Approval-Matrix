@@ -16,6 +16,7 @@ const RECALL = 'Removed';
 const NUMBER = 'number';
 const BOOLEAN = 'boolean';
 const BLANK = 'blank';
+const UNRESOLVED = 'unresolved';
 const UNPARSED = 'unparsed';
 
 /** ProcessInstance.Status, as a person reads it. Anything else is shown as the platform names it. */
@@ -324,6 +325,8 @@ function displayOf(value) {
             return value.text === 'true' ? 'TRUE' : 'FALSE';
         case BLANK:
             return '(blank)';
+        case UNRESOLVED:
+            return '(no related record)';
         default:
             return value.text ?? '';
     }

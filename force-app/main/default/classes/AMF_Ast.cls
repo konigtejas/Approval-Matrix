@@ -34,13 +34,18 @@ public class AMF_Ast {
      *
      * MULTI_SELECT is a multi-select picklist: a set of values, which is why it is
      * a type of its own rather than TEXT (4.3).
+     *
+     * ID_VALUE is an Id or lookup. It is not TEXT: a 15-character literal and the
+     * 18-character value Salesforce returns are the same Id, and Id comparison is
+     * case-sensitive. Treating one as text routed a record to the next rule.
      */
     public enum ValueType {
         NUMERIC,
         TEXT,
         BOOLEAN_VALUE,
         DATE_VALUE,
-        MULTI_SELECT
+        MULTI_SELECT,
+        ID_VALUE
     }
 
     private static final Map<ValueType, String> TYPE_LABELS = new Map<ValueType, String>{
@@ -48,7 +53,8 @@ public class AMF_Ast {
         ValueType.TEXT => 'text',
         ValueType.BOOLEAN_VALUE => 'boolean',
         ValueType.DATE_VALUE => 'date',
-        ValueType.MULTI_SELECT => 'multi-select picklist'
+        ValueType.MULTI_SELECT => 'multi-select picklist',
+        ValueType.ID_VALUE => 'Id'
     };
 
     /**

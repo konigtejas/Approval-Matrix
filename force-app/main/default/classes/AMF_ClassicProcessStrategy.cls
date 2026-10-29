@@ -105,7 +105,7 @@ public inherited sharing class AMF_ClassicProcessStrategy implements AMF_Submiss
 
     private AMF_SubmitResult resultOf(AMF_SubmitRequest request, Approval.ProcessResult platformResult) {
         if (!platformResult.isSuccess()) {
-            return AMF_SubmitResult.refused(request.recordId, reasonOf(platformResult.getErrors()));
+            return AMF_SubmitResult.refused(request.recordId, AMF_SubmitResult.reasonOf(platformResult.getErrors()));
         }
 
         String executionRefId = platformResult.getInstanceId();
@@ -124,23 +124,6 @@ public inherited sharing class AMF_ClassicProcessStrategy implements AMF_Submiss
         }
 
         return new AMF_SubmitResult(request.recordId, executionRefId);
-    }
-
-    /**
-     * The platform's reason as it gave it, status code first, for example
-     * "MANAGER_NOT_DEFINED: Manager undefined." The code is what an admin
-     * searches for; the message is what a submitter can act on.
-     */
-    private static String reasonOf(List<Database.Error> errors) {
-        List<String> reasons = new List<String>();
-
-        if (errors != null) {
-            for (Database.Error error : errors) {
-                reasons.add(String.valueOf(error.getStatusCode()) + ': ' + error.getMessage());
-            }
-        }
-
-        return reasons.isEmpty() ? 'The platform refused it without giving a reason' : String.join(reasons, '; ');
     }
 
     private void validate(AMF_SubmitRequest request) {

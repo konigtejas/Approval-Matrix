@@ -58,4 +58,23 @@ public class AMF_SubmitResult {
         result.errorMessage = errorMessage;
         return result;
     }
+
+    /**
+     * The platform's reason as it gave it, status code first, for example
+     * "MANAGER_NOT_DEFINED: Manager undefined." The code is what an admin
+     * searches for; the message is what a submitter can act on. Shared by the
+     * Classic strategy and the engine's guard update, so a refusal reads the
+     * same whichever of them the platform handed it to.
+     */
+    public static String reasonOf(List<Database.Error> errors) {
+        List<String> reasons = new List<String>();
+
+        if (errors != null) {
+            for (Database.Error error : errors) {
+                reasons.add(String.valueOf(error.getStatusCode()) + ': ' + error.getMessage());
+            }
+        }
+
+        return reasons.isEmpty() ? 'The platform refused it without giving a reason' : String.join(reasons, '; ');
+    }
 }

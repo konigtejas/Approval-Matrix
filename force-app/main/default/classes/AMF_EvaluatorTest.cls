@@ -717,11 +717,30 @@ private class AMF_EvaluatorTest {
         AMF_Evaluator.Result result = AMF_Evaluator.evaluate(compiled, pr(100));
 
         Assert.isFalse(result.matched, 'An unresolvable path matches nothing');
-        Assert.isTrue(
-            result.evaluatedValues.containsKey('Account__r.Name'),
-            'The log still has to show which path could not be resolved'
+        Assert.isTrue(result.evaluatedValues.containsKey('Account__r.Name'), 'The log still has to show which path could not be resolved');
+        Assert.isTrue(AMF_Evaluator.isUnresolved(result.evaluatedValues.get('Account__r.Name')), 'A missing parent is not a blank name');
+        Assert.isTrue(AMF_Evaluator.isUnresolved(((Map<String, Object>) JSON.deserializeUntyped(result.toJson())).get('Account__r.Name')), 'The log keeps the marker');
+
+        AMF_Evaluator.Result blank = AMF_Evaluator.evaluate(AMF_ExprCompiler.compile(PURCHASE_REQUEST, 'Region__c == \'APAC\''), pr(100));
+        Assert.areEqual(null, blank.evaluatedValues.get('Region__c'), 'A blank leaf stays null');
+        Assert.isFalse(AMF_Evaluator.isUnresolved(blank.evaluatedValues.get('Region__c')));
+    }
+
+    @IsTest
+    static void anIdLiteralMatchesTheFifteenAndEighteenCharacterForms() {
+        Id ownerId = UserInfo.getUserId();
+        Purchase_Request__c record = new Purchase_Request__c(OwnerId = ownerId);
+        String full = String.valueOf(ownerId);
+        String shortId = full.left(15);
+
+        Assert.isTrue(AMF_Evaluator.evaluate(AMF_ExprCompiler.compile(PURCHASE_REQUEST, 'OwnerId == \'' + shortId + '\''), record).matched, 'The 15-character Id from a URL is the same record');
+        Assert.isTrue(AMF_Evaluator.evaluate(AMF_ExprCompiler.compile(PURCHASE_REQUEST, 'OwnerId == \'' + full + '\''), record).matched, 'The 18-character form matches too');
+        Assert.isFalse(
+            AMF_Evaluator.evaluate(AMF_ExprCompiler.compile(PURCHASE_REQUEST, 'OwnerId != \'' + shortId + '\''), record).matched,
+            '!= of that same Id is false, so a later rule does not win'
         );
-        Assert.areEqual(null, result.evaluatedValues.get('Account__r.Name'), 'And that it read as null');
+        Assert.isTrue(AMF_Evaluator.evaluate(AMF_ExprCompiler.compile(PURCHASE_REQUEST, 'OwnerId IN (\'' + shortId + '\')'), record).matched);
+        Assert.isFalse(AMF_Evaluator.evaluate(AMF_ExprCompiler.compile(PURCHASE_REQUEST, 'OwnerId == \'005000000000000\''), record).matched, 'A different Id does not match');
     }
 
     @IsTest

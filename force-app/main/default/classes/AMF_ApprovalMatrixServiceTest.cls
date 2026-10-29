@@ -1502,6 +1502,98 @@ private class AMF_ApprovalMatrixServiceTest {
         }
     }
 
+    @IsTest
+    static void aWhatIfOnALookupReadsTheNewParentAndLeavesTheRecord() {
+        Account before = new Account(Name = 'Before');
+        Account after = new Account(Name = 'After');
+        insert new List<Account>{ before, after };
+        Purchase_Request__c record = request(500, 'EMEA', 'Low');
+        record.Account__c = before.Id;
+        insert record;
+
+        List<AMF_RuleDefinition> rules = new List<AMF_RuleDefinition>{
+            new AMF_RuleBuilder().named('PR_After').withPriority(10).withExpression('Account__r.Name == \'After\'').routingTo(THREE_LEVEL).build(),
+            new AMF_RuleBuilder().named('PR_Catch_All').withPriority(9999).withExpression('TRUE').routingTo(TWO_LEVEL).build()
+        };
+
+        AMF_ApprovalMatrixService.Outcome outcome = serviceWith(rules, new AMF_StrategyStub()).previewWith(record.Id, new Map<String, Object>{ 'Account__c' => after.Id });
+
+        Assert.areEqual('PR_After', outcome.matchedRule, outcome.evaluatedValuesJson);
+        Assert.areEqual(before.Id, [SELECT Account__c FROM Purchase_Request__c WHERE Id = :record.Id].Account__c);
+    }
+
+    @IsTest
+    static void aWhatIfOnAnInputRecalculatesAFormulaTheRuleReads() {
+        Purchase_Request__c record = request(10000, 'EMEA', 'Low');
+        insert record;
+
+        List<AMF_RuleDefinition> rules = new List<AMF_RuleDefinition>{
+            new AMF_RuleBuilder().named('PR_Doubled').withPriority(10).withExpression('Amount_Doubled__c > 20000').routingTo(THREE_LEVEL).build(),
+            new AMF_RuleBuilder().named('PR_Catch').withPriority(9999).withExpression('TRUE').routingTo(TWO_LEVEL).build()
+        };
+        AMF_ApprovalMatrixService service = serviceWith(rules, new AMF_StrategyStub());
+
+        AMF_ApprovalMatrixService.Outcome today = service.preview(new List<Id>{ record.Id })[0];
+        AMF_ApprovalMatrixService.Outcome tried = service.previewWith(record.Id, new Map<String, Object>{ 'Amount__c' => 100000 });
+
+        Assert.areEqual('PR_Catch', today.matchedRule, today.evaluatedValuesJson);
+        Assert.areEqual('PR_Doubled', tried.matchedRule, tried.evaluatedValuesJson);
+        Assert.areEqual(10000, [SELECT Amount__c FROM Purchase_Request__c WHERE Id = :record.Id].Amount__c);
+    }
+
+    @IsTest
+    static void aRefusalThatFindsTheRecordAlreadyPendingLeavesTheGuardSet() {
+        Purchase_Request__c record = request(250000, 'APAC', 'Low');
+        insert record;
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+        strategy.refuse.add(record.Id);
+        strategy.refusalMessage = 'ALREADY_IN_PROCESS: This record is currently in an approval process.';
+        AMF_ApprovalMatrixService.pendingAtRearm.add(record.Id);
+
+        AMF_ApprovalMatrixService.Outcome outcome = serviceWith(shippedShape(), strategy).submit(new List<Id>{ record.Id })[0];
+
+        Assert.areEqual('Failed', outcome.outcome);
+        Assert.isTrue(guardOf(record.Id), 'A live approval keeps the guard the winner set');
+    }
+
+    @IsTest
+    static void alreadyInProcessWithNothingPendingRearmsTheGuard() {
+        Purchase_Request__c record = request(250000, 'APAC', 'Low');
+        insert record;
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+        strategy.refuse.add(record.Id);
+        strategy.refusalMessage = 'ALREADY_IN_PROCESS: This record is currently in an approval process.';
+
+        serviceWith(shippedShape(), strategy).submit(new List<Id>{ record.Id });
+
+        Assert.isFalse(guardOf(record.Id), 'A refusal with no approval behind it re-arms the guard');
+    }
+
+    @IsTest
+    static void aFailureOnALaterObjectRollsBackTheEarlierSubmission() {
+        Purchase_Request__c purchase = request(500, 'EMEA', 'Low');
+        insert purchase;
+        Opportunity deal = new Opportunity(Name = 'Deal', StageName = 'Prospecting', CloseDate = Date.today().addDays(30));
+        insert deal;
+
+        AMF_StrategyStub strategy = new AMF_StrategyStub();
+        strategy.failForObjects.add('Opportunity');
+        List<AMF_RuleDefinition> rules = new List<AMF_RuleDefinition>();
+        rules.addAll(shippedShape());
+        rules.add(new AMF_RuleBuilder().forObject('Opportunity').named('Opp_Catch').withExpression('TRUE').routingTo(TWO_LEVEL).build());
+
+        try {
+            serviceWith(rules, strategy).submitEach(new List<Id>{ purchase.Id, deal.Id });
+            Assert.fail('The Opportunity strategy failure must escape');
+        } catch (AMF_SubmissionException e) {
+            Assert.isTrue(e.getMessage().contains('Opportunity'), e.getMessage());
+        }
+
+        Assert.isFalse(guardOf(purchase.Id), 'The Purchase Request submitted first is rolled back with the failure');
+        Assert.areEqual(0, [SELECT COUNT() FROM Approval_Decision_Log__c]);
+        Assert.isFalse([SELECT Matrix_Submission__c FROM Opportunity WHERE Id = :deal.Id].Matrix_Submission__c);
+    }
+
     private static Boolean guardOf(Id recordId) {
         return [SELECT Matrix_Submission__c FROM Purchase_Request__c WHERE Id = :recordId]
         .Matrix_Submission__c;

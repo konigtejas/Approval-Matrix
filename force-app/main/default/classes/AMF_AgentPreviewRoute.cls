@@ -101,6 +101,12 @@ public with sharing class AMF_AgentPreviewRoute {
             description='The field values the decision rested on, by field label, such as Risk Level = Medium and Amount = 60,000.'
         )
         public String valuesRead;
+
+        /**
+         * Evaluated values as the engine recorded them. The Claude preview token
+         * is bound to this. Not an invocable output: the agent speaks valuesRead.
+         */
+        public String evaluatedValuesJson;
     }
 
     /**
@@ -162,6 +168,7 @@ public with sharing class AMF_AgentPreviewRoute {
         result.ruleDescription = outcome.matchedRuleDescription;
         result.condition = outcome.matchedExpression;
         result.valuesRead = AMF_AgentSupport.sentenceOf(outcome.evaluatedValuesJson, recordId.getSObjectType());
+        result.evaluatedValuesJson = outcome.evaluatedValuesJson;
         // A blocked or failed preview still reaches a decision, and the header
         // button submits it so the attempt is recorded (6.1 step 6, M5). The
         // agent may do the same, once the user says so.

@@ -178,6 +178,26 @@ private class AMF_McpSubmitRouteTest {
     }
 
     @IsTest
+    static void theSameProcessOverDifferentValuesIsNotSubmitted() {
+        withKey();
+        AMF_StrategyStub strategy = over(
+            new List<AMF_RuleDefinition>{ new AMF_RuleBuilder().named('PR_Amount').withPriority(10).withExpression('Amount__c > 1000').routingTo(THREE_LEVEL).atVersion(1).build() }
+        );
+        Purchase_Request__c record = insertRequest('Low');
+        AMF_McpPreviewRoute.Result preview = previewOf(record.Id);
+        update new Purchase_Request__c(Id = record.Id, Amount__c = 500000);
+
+        AMF_McpSubmitRoute.Result result = submitOf(preview.recordId, preview.selectedProcess, preview.submitToken);
+
+        Assert.isFalse(result.submitted);
+        Assert.isTrue(result.routeChanged);
+        Assert.areEqual(THREE_LEVEL, result.selectedProcess, 'The process is unchanged');
+        Assert.areEqual('PR_Amount', result.matchedRule);
+        Assert.isTrue(result.summary.contains('not what the preview showed'), result.summary);
+        assertNothingWritten(record.Id, strategy);
+    }
+
+    @IsTest
     static void aRouteThatMovedToAnotherProcessSaysWhereItWouldGoNow() {
         withKey();
         AMF_StrategyStub strategy = over(highRiskRules());
